@@ -15,7 +15,7 @@ export default defineNuxtConfig({
         css: {
             preprocessorOptions: {
                 scss: {
-                    //additionalData: '@import "~/assets/styles/_variables.scss";@import "@/assets/styles/_typography-mixins.scss";@import "@/assets/styles/_functions.scss";@import "@/assets/styles/_transitions.scss";'
+                    additionalData: '@import "~/assets/styles/_variables.scss";@import "@/assets/styles/_typography-mixins.scss";@import "@/assets/styles/_functions.scss";@import "@/assets/styles/_transitions.scss";'
                 }
             }
         },
