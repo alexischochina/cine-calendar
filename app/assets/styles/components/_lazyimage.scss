@@ -1,0 +1,9 @@
+[data-component="LazyImage"], [data-component="LazyImageIntersection"] {
+  [data-bkg-desktop], &[data-bkg-desktop] {
+    transition: opacity linear .2s;
+
+    &:not(.loaded) {
+      opacity: 0!important;
+    }
+  }
+}

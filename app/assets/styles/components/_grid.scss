@@ -1,0 +1,78 @@
+.grid {
+    display: grid;
+    grid-gap: var(--grid-gap);
+    grid-auto-flow: dense;
+    grid-template-columns: repeat(var(--grid-col-number), 1fr);
+
+    &.-no-gap {
+        --grid-gap: 0;
+    }
+
+    &.-two {
+        --grid-col-number: 2;
+    }
+
+    > .col {
+        --grid-col-width: 3;
+        min-width: 0;
+        grid-column: 1 / calc(var(--grid-col-width) + 1);
+
+        &.-auto {
+            grid-column: auto / span var(--grid-col-width);
+        }
+
+        &.-half {
+            --grid-col-width: calc(var(--grid-col-number) / 2);
+        }
+
+        &.-one {
+            --grid-col-width: 1;
+        }
+
+        &.-two {
+            --grid-col-width: 2;
+        }
+
+        &.-four {
+            --grid-col-width: 4;
+        }
+
+        &.-five {
+            --grid-col-width: 5;
+        }
+
+        &.-six {
+            --grid-col-width: 6;
+        }
+
+        &.-seven {
+            --grid-col-width: 7;
+        }
+
+        &.-eight {
+            --grid-col-width: 8;
+        }
+
+        &.-full {
+            --grid-col-width: var(--grid-col-number);
+        }
+
+        &.-right {
+            grid-column: calc(var(--grid-col-number) - var(--grid-col-width) + 1) / calc(var(--grid-col-number) + 1);
+        }
+    }
+
+    &.-vcenter {
+        align-items: center;
+    }
+
+    &.-vstart {
+        align-items: flex-start;
+    }
+
+    @media #{$mobile} {
+        &:not(.-keep-mobile) {
+            display: block;
+        }
+    }
+}

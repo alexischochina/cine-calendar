@@ -1,0 +1,60 @@
+@mixin full($position : absolute) {
+    position: $position;
+    height : 100%;
+    width:100%;
+    left: 0;
+    top: 0;
+}
+
+@mixin placeholder {
+    &::-webkit-input-placeholder {@content}
+    &:-moz-placeholder           {@content}
+    &::-moz-placeholder          {@content}
+    &:-ms-input-placeholder      {@content}
+}
+
+@mixin colorSVGChilds ($color) {
+    .fill {
+        fill: $color;
+    }
+
+    .stroke {
+        stroke: $color;
+    }
+}
+
+@mixin textinput() {
+    input[type="text"], input[type="email"], input[type="number"], input[type="password"], input[type="tel"], input[type="url"], textarea {
+        @content;
+    }
+}
+
+@mixin absoluteCentering() {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+}
+
+@mixin hideScrollbar() {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+
+    &::-webkit-scrollbar {
+        display: none;
+    }
+}
+
+@mixin scroller() {
+    margin-left: calc(-1 * var(--wrapper-padding));
+    margin-right: calc(-1 * var(--wrapper-padding));
+    padding-left: calc(1 * var(--wrapper-padding));
+    padding-right: calc(1 * var(--wrapper-padding));
+    width: auto;
+    overflow-x: scroll;
+    @include hideScrollbar();
+}
+
+@function calcOnGrid($col_number) {
+    @return calc(var(--width-grid-col) * $col_number + var(--grid-gap) * ($col_number - 1));
+}

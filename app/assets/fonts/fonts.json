@@ -1,0 +1,17 @@
+{
+  "FuturaPT light": {
+    "weight": "light",
+    "style": "normal",
+    "scssName": "font-futurapt"
+  },
+  "FuturaPT medium" : {
+    "weight" : "medium",
+    "style" : "normal",
+    "scssName" : "font-futurapt"
+  },
+  "DoHyeon regular" : {
+    "weight" : "regular",
+    "style" : "normal",
+    "scssName" : "font-do-hyeon"
+  }
+}

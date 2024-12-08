@@ -1,0 +1,46 @@
+#error_browser_wrapper {
+    display: none;
+}
+
+.error--browser {
+    width: 100%;
+    height: 100%;
+    position: relative;
+
+    #header-wrapper, #page, #footer-wrapper {
+        display: none!important;
+    }
+
+    #error_browser_wrapper {
+        display: block;
+        @include full();
+        text-align: center;
+    }
+
+    #error_browser {
+        width: 500px;
+        margin: 100px 0 0 -250px;
+        position: relative;
+        left: 50%;
+
+        .logo {
+            margin: 0 auto;
+        }
+
+        ul li {
+            float: left;
+            width: 25%;
+
+            a {
+                white-space: nowrap;
+                color:white;
+                text-decoration: none;
+
+                img {
+                    height: 60px;
+                    width: auto;
+                }
+            }
+        }
+    }
+}

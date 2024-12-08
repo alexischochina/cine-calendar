@@ -1,0 +1,23 @@
+@mixin appearFromAlpha($state: 'hidden', $delay: 0, $duration: 0.2) {
+    @if $state == 'hidden' {
+        visibility: hidden;
+        opacity: 0;
+        transition: opacity #{$duration}s linear #{$delay}s, visibility 0s linear #{$delay + $duration}s
+    } @else {
+        opacity: 1;
+        visibility: visible;
+        transition : opacity #{$duration}s linear #{$delay}s, visibility 0s linear #{$delay}s;
+    }
+}
+
+@mixin appearFromBottom($state: 'hidden', $delay: 0, $duration: 0.5) {
+    @if $state == 'hidden' {
+        opacity: 0;
+        transform : translate3d(0, 40px, 0);
+        transition: transform #{$duration}s $sine-ease-out #{$delay}s, opacity #{$duration - 0.1}s linear #{$delay + 0.1}s, visibility 0s linear #{$delay + $duration}s;
+    } @else {
+        transition: transform #{$duration}s $sine-ease-out #{$delay}s, opacity #{$duration - 0.1}s linear #{$delay + 0.1}s, visibility 0s linear #{$delay}s;
+        opacity: 1;
+        transform: none;
+    }
+}

@@ -1,0 +1,27 @@
+@font-face {
+    font-family: 'f';
+    src: url('../fonts/FuturaPT-Light.woff2') format('woff2'),
+    url('../fonts/FuturaPT-Light.woff') format('woff');
+    font-weight: $light;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'f';
+    src: url('../fonts/FuturaPT-Medium.woff2') format('woff2'),
+    url('../fonts/FuturaPT-Medium.woff') format('woff');
+    font-weight: $medium;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'd';
+    src: url('../fonts/DoHyeon-Regular.woff2') format('woff2'),
+    url('../fonts/DoHyeon-Regular.woff') format('woff');
+    font-weight: $regular;
+    font-style: normal;
+    font-display: swap;
+}
+

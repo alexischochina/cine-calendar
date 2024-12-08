@@ -1,0 +1,131 @@
+/* default classes */
+.center {
+    text-align: center;
+}
+
+.full {
+    @include full();
+}
+
+.inline-list {
+    font-size: 0;
+
+    & > * {
+        display: inline-block;
+        vertical-align: middle;
+    }
+}
+
+.bkg-cover {
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: cover;
+}
+
+.bkg-contain {
+    background-repeat: no-repeat;
+    background-position: center center;
+    background-size: contain;
+}
+
+.link-extend {
+    &:before {
+        content: '';
+        z-index: 1;
+        @include full();
+    }
+}
+
+.ratio-wrapper {
+    position: relative;
+    --ratio-image: 56.25%;
+
+    &:before {
+        content: '';
+        display: block;
+        padding-bottom: var(--ratio-image);
+    }
+
+    &.-square {
+        --ratio-image: 100%;
+    }
+
+    &.-video {
+        --ratio-image: 56.25%;
+    }
+}
+
+.image-wrapper {
+    line-height: 0;
+    display: block;
+
+    svg, img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    &.-full {
+        svg, img {
+            width: 100%;
+        }
+    }
+}
+
+img, video {
+    &.cover {
+        object-fit: cover;
+    }
+
+    &.contain {
+        object-fit: contain;
+    }
+}
+
+.wrapper {
+    margin-left:auto;
+    margin-right:auto;
+    width: 100%;
+    position: relative;
+
+    &.-right {
+        margin-right: 0;
+    }
+
+    &.-left {
+        margin-left: 0;
+    }
+
+    &.-padded {
+        padding-left: var(--wrapper-padding);
+        padding-right: var(--wrapper-padding);
+    }
+
+    @each $name, $size in $wrappers {
+        &.-#{$name} {
+            max-width: #{$size}rem;
+
+            &.-padded {
+                max-width: calc(#{$size * 1rem} + var(--wrapper-padding) * 2);
+            }
+        }
+    }
+}
+
+.vertical-center-wrapper {
+    display: flex;
+    align-items: center;
+
+    .inner {
+        width: 100%;
+    }
+
+    .no-flexbox & {
+        display: block;
+
+        .inner {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+        }
+    }
+}

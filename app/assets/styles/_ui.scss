@@ -1,0 +1,39 @@
+/* default classes */
+:target, :focus {
+    scroll-margin-top: 10rem;
+}
+
+html:focus-within {
+    scroll-behavior: smooth;
+}
+
+#full-wrapper {
+    overflow: hidden;
+}
+
+body {
+    background-color: $color-xdark-grey;
+    color: $color-white;
+}
+
+@media #{$nomobile} {
+    .mobile-only {
+        display: none !important;
+    }
+}
+
+@media #{$mobile} {
+    .desktop-only {
+        display: none !important;
+    }
+}
+
+@media #{$tablet-portrait} {
+    #wpadminbar {
+        display: none!important;
+    }
+
+    html {
+        margin-top: 0!important;
+    }
+}

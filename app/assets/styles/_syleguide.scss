@@ -1,0 +1,57 @@
+@import '_reset';
+@import '_variables';
+@import '_fonts';
+@import '_functions';
+@import '_typography';
+@import '_ui';
+
+.typos-wrapper, .colors-wrapper {
+  margin: 60px 0;
+
+  & > h1 {
+    margin-bottom: 50px;
+  }
+}
+
+pre {
+  background-color: rgba(lightgrey, .2);
+  padding: 10px;
+  font: normal 14px/1.2 "Courier New";
+  text-align: left;
+}
+
+.typo-item {
+  padding-bottom: 20px;
+
+  &:not(:last-child) {
+    margin-bottom: 20px;
+    border-bottom: 1px solid lightgrey;
+  }
+
+  pre {
+    margin-top: 15px;
+  }
+}
+
+
+.color-item {
+  display: inline-block;
+  vertical-align: top;
+  width: calc(50% - 30px);
+  margin-right: 20px;
+  margin-bottom: 20px;
+}
+
+.colors-wrapper {
+  text-align: center;
+}
+
+.rectangle {
+  width: 100%;
+
+  &:after {
+    content:'';
+    display: block;
+    padding-bottom: 56.25%;
+  }
+}
