@@ -1,3 +1,14 @@
+<script setup>
+
+</script>
+
 <template>
-    <slot/>
+    <div class="default">
+        <NavHeader/>
+        <slot/>
+    </div>
 </template>
+
+<style lang="scss" scoped>
+
+</style>
