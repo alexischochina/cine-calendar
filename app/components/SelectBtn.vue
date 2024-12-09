@@ -10,18 +10,16 @@ const props = defineProps({
         validator: value => ['cinema', 'unknown', 'netflix', 'primeVideo', 'disney+', 'vod', 'unseen', 'seen', 'downloadAvailable'].includes(value)
     },
 })
-const options = ref([])
-const isOpen = ref(false)
-const option = ref([])
+const options = ref([]);
+const isOpen = ref(false);
+const option = ref([]);
+const emits = defineEmits(['option-selected']);
 
 if (props.type === 'media') {
     options.value = ['cinema', 'vod', 'primeVideo', 'disney+', 'netflix'];
 } else if (props.type === 'state') {
     options.value = ['unseen', 'seen', 'downloadAvailable'];
 }
-
-options.value = options.value.filter(option => option !== props.selected)
-options.value.splice(options.value.length / 2, 0, props.selected)
 
 const handleOpen = (() => {
     isOpen.value = true;
@@ -36,34 +34,55 @@ const handleClose = (() => {
     option.value.forEach((op, index) => {
         op.classList.remove('-show')
     })
-    setTimeout(() => {
-        isOpen.value = false;
-    }, 300)
+    isOpen.value = false;
 })
+
+const handleOnClick = ((option) => {
+    handleClose();
+    emits('option-selected', option)
+})
+
+const sortedOptions = computed(() => {
+    if (!options.value.includes(props.selected)) {
+        return options.value;
+    }
+    const newOptions = options.value.filter(option => option !== props.selected);
+    const middleIndex = Math.floor(newOptions.length / 2);
+    newOptions.splice(middleIndex, 0, props.selected);
+    return newOptions;
+});
 </script>
 
 <template>
-    <div class="select flex -align-center -justify-center" :class="[{ [`-${props.type}`]: true, '-open': isOpen }]"
-         @mouseenter="handleOpen" @mouseleave="handleClose">
-        <NuxtImg class="selected-icon" :src="`/images/${props.selected}.png`"/>
-        <div class="options flex -direction-column">
-            <button class="option" v-for="option in options" ref="option">
-                <NuxtImg class="icon" :src="`/images/${option}.png`"/>
-            </button>
+    <ClientOnly>
+        <div class="select flex -align-center -justify-center"
+             :class="[{ [`-${props.type}`]: true, '-open': isOpen }]"
+             @mouseenter="handleOpen" @mouseleave="handleClose">
+            <NuxtImg v-if="props.type === 'media'" class="selected-icon" :class="`-${props.selected}`"
+                     :src="`/images/${props.selected}.png`"/>
+            <Svg v-if="props.type === 'state'" :name="props.selected" class="selected-icon" :class="`-${props.selected}`"/>
+            <div class="options flex -direction-column">
+                <button class="option" :class="{'-selected' : option === props.selected}" v-for="option in sortedOptions"
+                        :key="option" ref="option" @click="handleOnClick(option)">
+                    <NuxtImg v-if="props.type === 'media'" class="icon" :src="`/images/${option}.png`"/>
+                    <Svg v-if="props.type === 'state'" :name="option" class="icon" :class="`-${option}`"/>
+                </button>
+            </div>
         </div>
-    </div>
+    </ClientOnly>
 </template>
 
 <style lang="scss" scoped>
 .select {
     border-radius: .5rem;
     transition: background-color .2s linear;
-    cursor: pointer;
     position: relative;
     padding: .8rem;
 
-    &.-open .options {
-        transform: translateY(-50%) scaleY(1);
+    &.-open {
+        .options {
+            transform: translateY(-50%) scaleY(1);
+        }
     }
 }
 
@@ -74,6 +93,14 @@ const handleClose = (() => {
     object-fit: contain;
     z-index: 10;
     pointer-events: none;
+
+    &.-seen {
+        color: $color-yellow;
+    }
+
+    .-cinema &.-seen {
+        color: $color-green;
+    }
 }
 
 .options {
@@ -94,10 +121,16 @@ const handleClose = (() => {
     transition: transform .2s $cubic-ease-in;
     width: 3.5rem;
     height: 3.5rem;
+    cursor: pointer;
 
-    &.-show > .icon {
+    &.-selected {
+        pointer-events: none;
+        cursor: default;
+    }
+
+    &:not(.-selected).-show > .icon {
+        opacity: 1;
         transform: scale(1);
-        //opacity: 1;
     }
 }
 
@@ -105,9 +138,21 @@ const handleClose = (() => {
     width: 100%;
     aspect-ratio: 1;
     object-fit: contain;
-    transition: transform .3s $cubic-ease-out;
-    transform: scale(0);
-    //opacity: 0;
+    transition: transform .2s $cubic-ease-out, opacity .2s linear;
+    opacity: 0;
+    transform: scale(.5);
+
+    &.-downloadAvailable {
+        color: $color-orange;
+    }
+
+    &.-seen {
+        color: $color-yellow;
+    }
+
+    .-cinema &.-seen {
+        color: $color-green;
+    }
 }
 
 @media (hover: hover) {
@@ -115,7 +160,7 @@ const handleClose = (() => {
         background-color: $color-dark-grey;
     }
 
-    .option:hover > .icon {
+    .option:not(.-selected):hover > .icon {
         transform: scale(1.2);
     }
 }

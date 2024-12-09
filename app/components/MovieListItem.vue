@@ -27,19 +27,29 @@ const props = defineProps({
         validator: value => ['unseen', 'seen', 'downloadAvailable'].includes(value)
     },
 })
+const selectedMedia = ref('cinema');
+const selectedState = ref('unseen');
+
+const onMediaSelected = (option) => {
+    selectedMedia.value = option;
+}
+
+const onStateSelected = (option) => {
+    selectedState.value = option;
+}
 </script>
 
 <template>
     <div class="movie-list-item flex -align-center -justify-space-between"
-         :class="`-${props.media} -${props.platform} -${props.stat}`">
+         :class="`-${selectedMedia}`">
         <div class="movie-infos flex -align-center">
             <div class="title-4">04</div>
             <NuxtImg src="/images/poster.jpg" class="poster"/>
             <div class="title-5">Babylon</div>
         </div>
         <div class="stream-infos flex -align-center">
-            <SelectBtn type="media" selected="cinema"/>
-            <Svg :name="props.stat" :class="props.stat"/>
+            <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>
+            <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected"/>
         </div>
     </div>
 </template>
