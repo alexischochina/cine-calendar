@@ -25,7 +25,18 @@ export default defineNuxtConfig({
             isCustomElement: (tag) => ['swiper-container', 'swiper-slide'].includes(tag)
         }
     },
-    modules: ["@nuxt/image", 'nuxt-swiper'],
+    modules: ["@nuxt/image", 'nuxt-swiper', '@nuxtjs/supabase'],
+    supabase: {
+        url: process.env.SUPABASE_URL,
+        key: process.env.SUPABASE_KEY,
+        redirect: false,
+    },
+    runtimeConfig: {
+        public: {
+            SUPABASE_URL: process.env.SUPABASE_URL,
+            SUPABASE_KEY: process.env.SUPABASE_KEY,
+        }
+    },
     routeRules: {
         '/': {prerender: true},
     },

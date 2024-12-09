@@ -14,6 +14,8 @@ const options = ref([]);
 const isOpen = ref(false);
 const option = ref([]);
 const emits = defineEmits(['option-selected']);
+const selectedIcon = ref([]);
+const onFront = ref(false)
 
 if (props.type === 'media') {
     options.value = ['cinema', 'vod', 'primeVideo', 'disney+', 'netflix'];
@@ -23,6 +25,7 @@ if (props.type === 'media') {
 
 const handleOpen = (() => {
     isOpen.value = true;
+    onFront.value = true;
     setTimeout(() => {
         option.value.forEach((op, index) => {
             op.classList.add('-show')
@@ -35,6 +38,9 @@ const handleClose = (() => {
         op.classList.remove('-show')
     })
     isOpen.value = false;
+    setTimeout(() => {
+        onFront.value = false;
+    }, 400)
 })
 
 const handleOnClick = ((option) => {
@@ -58,11 +64,14 @@ const sortedOptions = computed(() => {
         <div class="select flex -align-center -justify-center"
              :class="[{ [`-${props.type}`]: true, '-open': isOpen }]"
              @mouseenter="handleOpen" @mouseleave="handleClose">
-            <NuxtImg v-if="props.type === 'media'" class="selected-icon" :class="`-${props.selected}`"
-                     :src="`/images/${props.selected}.png`"/>
-            <Svg v-if="props.type === 'state'" :name="props.selected" class="selected-icon" :class="`-${props.selected}`"/>
+            <NuxtImg v-if="props.type === 'media'" class="selected-icon"
+                     :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]"
+                     :src="`/images/${props.selected}.png`" ref="selectedIcon"/>
+            <Svg v-if="props.type === 'state'" :name="props.selected" class="selected-icon"
+                 :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]" ref="selectedIcon"/>
             <div class="options flex -direction-column">
-                <button class="option" :class="{'-selected' : option === props.selected}" v-for="option in sortedOptions"
+                <button class="option" :class="{'-selected' : option === props.selected}"
+                        v-for="option in sortedOptions"
                         :key="option" ref="option" @click="handleOnClick(option)">
                     <NuxtImg v-if="props.type === 'media'" class="icon" :src="`/images/${option}.png`"/>
                     <Svg v-if="props.type === 'state'" :name="option" class="icon" :class="`-${option}`"/>
@@ -91,8 +100,9 @@ const sortedOptions = computed(() => {
     width: 3.5rem;
     aspect-ratio: 1;
     object-fit: contain;
-    z-index: 10;
+    z-index: 1;
     pointer-events: none;
+    transition: color .2s linear;
 
     &.-seen {
         color: $color-yellow;
@@ -100,6 +110,10 @@ const sortedOptions = computed(() => {
 
     .-cinema &.-seen {
         color: $color-green;
+    }
+
+    &.-on-front {
+        z-index: 10;
     }
 }
 
@@ -142,10 +156,6 @@ const sortedOptions = computed(() => {
     opacity: 0;
     transform: scale(.5);
 
-    &.-downloadAvailable {
-        color: $color-orange;
-    }
-
     &.-seen {
         color: $color-yellow;
     }
@@ -153,6 +163,10 @@ const sortedOptions = computed(() => {
     .-cinema &.-seen {
         color: $color-green;
     }
+}
+
+.-downloadAvailable {
+    color: $color-orange;
 }
 
 @media (hover: hover) {

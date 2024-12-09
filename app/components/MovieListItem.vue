@@ -1,6 +1,4 @@
 <script setup>
-import SelectBtn from "~/components/SelectBtn.vue";
-
 const props = defineProps({
     releaseDate: {
         type: Date,
@@ -14,28 +12,44 @@ const props = defineProps({
     media: {
         type: String,
         default: 'unknown',
-        validator: value => ['cinema', 'streaming', 'unknown'].includes(value)
+        validator: value => ['cinema', 'streaming', 'netflix', 'primeVideo', 'disney+', 'vod'].includes(value)
     },
-    platform: {
-        type: String,
-        default: 'vod',
-        validator: value => ['netflix', 'primeVideo', 'disney+', 'vod'].includes(value)
-    },
-    stat: {
+    state: {
         type: String,
         default: 'unseen',
         validator: value => ['unseen', 'seen', 'downloadAvailable'].includes(value)
     },
+    id: {
+        type: Number,
+        required: true,
+    }
 })
-const selectedMedia = ref('cinema');
-const selectedState = ref('unseen');
+const selectedMedia = ref(props.media);
+const selectedState = ref(props.state);
+const client = useSupabaseClient();
 
 const onMediaSelected = (option) => {
     selectedMedia.value = option;
+    updateMedia(option)
 }
 
 const onStateSelected = (option) => {
     selectedState.value = option;
+    updateState(option);
+}
+
+const updateMedia = async (newMedia) => {
+    const { data, error } = await client
+        .from('calendar')
+        .update({ media: newMedia })
+        .eq('id', props.id)
+}
+
+const updateState = async (newState) => {
+    const { data, error } = await client
+        .from('calendar')
+        .update({ state: newState })
+        .eq('id', props.id)
 }
 </script>
 
@@ -45,7 +59,7 @@ const onStateSelected = (option) => {
         <div class="movie-infos flex -align-center">
             <div class="title-4">04</div>
             <NuxtImg src="/images/poster.jpg" class="poster"/>
-            <div class="title-5">Babylon</div>
+            <div class="title-5">{{ props.title }}</div>
         </div>
         <div class="stream-infos flex -align-center">
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>

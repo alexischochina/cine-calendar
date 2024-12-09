@@ -1,14 +1,36 @@
 <script setup>
-const containerRef = ref(null)
-const slides = ref(Array.from({length: 10}))
+definePageMeta({
+    middleware: ['auth'],
+})
 
-const swiper = useSwiper(containerRef)
+const containerRef = ref(null)
+//const slides = ref(Array.from({length: 10}))
+//const swiper = useSwiper(containerRef)
+
+const client = useSupabaseClient()
+
+const movies = ref([])
+async function getMovies() {
+    const {data, error} = await client.from('calendar').select('*').order('created_at');
+    if (!error) {
+        movies.value = data
+    }
+}
+
+onMounted(() => {
+    getMovies()
+})
 
 </script>
 
 <template>
     <div class="home-wrapper wrapper -medium">
-        <MovieListItem/>
+        <MovieListItem v-for="movie in movies"
+                       :title="movie.title"
+                       :media="movie.media"
+                       :state="movie.state"
+                       :id="movie.id"
+        />
     </div>
     <!--    <ClientOnly>
             <swiper-container ref="containerRef">
@@ -26,7 +48,7 @@ const swiper = useSwiper(containerRef)
 
 <style lang="scss">
 .home-wrapper {
-    margin-top: 20rem;
+    padding-top: 20rem;
     height: 100vh;
 }
 
