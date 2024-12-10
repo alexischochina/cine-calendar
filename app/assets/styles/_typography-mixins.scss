@@ -23,9 +23,17 @@
 }
 
 @mixin body() {
-    font: $normal 2.2rem/1.7 $font-do-hyeon;
+    font: $normal 2.2rem/1.1 $font-do-hyeon;
 
     @media #{$mobile} {
         font-size: 1.8rem;
+    }
+}
+
+@mixin input-body() {
+    font: $light 2rem/1.1 $font-futura;
+
+    @media #{$mobile} {
+        font-size: 1.5rem;
     }
 }

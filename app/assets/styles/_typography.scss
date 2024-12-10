@@ -42,6 +42,10 @@ body, .block-editor-block-list__layout, .body {
     @include body();
 }
 
+.input-body {
+    @include input-body();
+}
+
 a {
     cursor: pointer;
     color: inherit;

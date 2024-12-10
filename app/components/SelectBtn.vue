@@ -9,6 +9,11 @@ const props = defineProps({
         default: 'unknown',
         validator: value => ['cinema', 'unknown', 'netflix', 'primeVideo', 'disney+', 'vod', 'unseen', 'seen', 'downloadAvailable'].includes(value)
     },
+    openDirection: {
+        type: String,
+        default: 'center',
+        validator: value => ['center', 'bottom'].includes(value)
+    }
 })
 const options = ref([]);
 const isOpen = ref(false);
@@ -53,8 +58,13 @@ const sortedOptions = computed(() => {
         return options.value;
     }
     const newOptions = options.value.filter(option => option !== props.selected);
-    const middleIndex = Math.floor(newOptions.length / 2);
-    newOptions.splice(middleIndex, 0, props.selected);
+
+    if (props.openDirection === 'center') {
+        const middleIndex = Math.floor(newOptions.length / 2);
+        newOptions.splice(middleIndex, 0, props.selected);
+    } else if (props.openDirection === 'bottom') {
+        newOptions.splice(options.value.length, 0, props.selected);
+    }
     return newOptions;
 });
 </script>
@@ -62,7 +72,7 @@ const sortedOptions = computed(() => {
 <template>
     <ClientOnly>
         <div class="select flex -align-center -justify-center"
-             :class="[{ [`-${props.type}`]: true, '-open': isOpen }]"
+             :class="[{ [`-${props.type}`]: true, '-open': isOpen, [`-${props.openDirection}`]: true }]"
              @mouseenter="handleOpen" @mouseleave="handleClose">
             <NuxtImg v-if="props.type === 'media'" class="selected-icon"
                      :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]"
@@ -91,6 +101,21 @@ const sortedOptions = computed(() => {
     &.-open {
         .options {
             transform: translateY(-50%) scaleY(1);
+        }
+
+        &.-bottom {
+            .options {
+                transform: translateY(0) scaleY(1);
+            }
+        }
+    }
+
+    &.-bottom {
+        .options {
+            transform: translateY(0) scaleY(0);
+            top: auto;
+            bottom: 0;
+            transform-origin: bottom;
         }
     }
 }
