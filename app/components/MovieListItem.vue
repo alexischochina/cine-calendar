@@ -1,13 +1,13 @@
 <script setup>
 const props = defineProps({
-    releaseDate: {
-        type: Date,
+    releaseDay: {
+        type: String,
     },
     poster: {
         type: String,
     },
-    title: {
-        type: String,
+    movieId: {
+        type: Number,
     },
     media: {
         type: String,
@@ -22,11 +22,14 @@ const props = defineProps({
     id: {
         type: Number,
         required: true,
-    }
+    },
 })
 const selectedMedia = ref(props.media);
 const selectedState = ref(props.state);
 const client = useSupabaseClient();
+const config = useRuntimeConfig();
+const movieTitle = ref('');
+const moviePosterUrl = ref('');
 
 const onMediaSelected = (option) => {
     selectedMedia.value = option;
@@ -39,27 +42,45 @@ const onStateSelected = (option) => {
 }
 
 const updateMedia = async (newMedia) => {
-    const { data, error } = await client
+    const {data, error} = await client
         .from('calendar')
-        .update({ media: newMedia })
+        .update({media: newMedia})
         .eq('id', props.id)
 }
 
 const updateState = async (newState) => {
-    const { data, error } = await client
+    const {data, error} = await client
         .from('calendar')
-        .update({ state: newState })
+        .update({state: newState})
         .eq('id', props.id)
 }
+
+const getMovieById = async (id) => {
+    const {data: movieData} = await useFetch(`/api/movies/${id}`);
+
+    if (movieData.value) {
+        movieTitle.value = movieData.value.title;
+        moviePosterUrl.value = movieData.value.poster_path
+    }
+}
+
+const getDayFrom = ((fullDate) => {
+    const date = new Date(fullDate)
+    return date.getDate();
+})
+
+onMounted(() => {
+    getMovieById(props.movieId);
+});
 </script>
 
 <template>
     <div class="movie-list-item flex -align-center -justify-space-between"
-         :class="`-${selectedMedia}`">
+         :class="`-${selectedMedia} -id-${props.movieId}`">
         <div class="movie-infos flex -align-center">
-            <div class="title-4">04</div>
-            <NuxtImg src="/images/poster.jpg" class="poster"/>
-            <div class="title-5">{{ props.title }}</div>
+            <div class="title-4">{{ props.releaseDay }}</div>
+            <NuxtImg :src="`https://image.tmdb.org/t/p/w500${moviePosterUrl}`" class="poster"/>
+            <div class="title-5">{{ movieTitle }}</div>
         </div>
         <div class="stream-infos flex -align-center">
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>
@@ -70,8 +91,6 @@ const updateState = async (newState) => {
 
 <style lang="scss" scoped>
 .movie-list-item {
-    border-top: 1px solid $color-white;
-    border-bottom: 1px solid $color-white;
     padding: 1rem 3rem;
     width: 100%;
 }
@@ -92,5 +111,9 @@ const updateState = async (newState) => {
         width: 3.5rem;
         height: auto;
     }
+}
+
+.title-4 {
+    min-width: 5rem;
 }
 </style>

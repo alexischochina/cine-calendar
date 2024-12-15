@@ -32,12 +32,9 @@ export default defineNuxtConfig({
         redirect: false,
     },
     runtimeConfig: {
-        public: {
-            SUPABASE_URL: process.env.SUPABASE_URL,
-            SUPABASE_KEY: process.env.SUPABASE_KEY,
-        },
         apiKey: '',
         apiBaseUrl: '',
+        apiImgUrl: '',
     },
     routeRules: {
         '/': {prerender: true},

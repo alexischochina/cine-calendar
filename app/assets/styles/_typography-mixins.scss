@@ -15,7 +15,7 @@
 }
 
 @mixin title-5() {
-    font: $regular 2.6rem/1.3 $font-do-hyeon;
+    font: $regular 2.6rem/1 $font-do-hyeon;
 
     @media #{$mobile} {
         font-size: 1.8rem;
@@ -27,6 +27,14 @@
 
     @media #{$mobile} {
         font-size: 1.8rem;
+    }
+}
+
+@mixin small-body() {
+    font: $light 1.5rem/1 $font-futura;
+
+    @media #{$mobile} {
+        font-size: 1.2rem;
     }
 }
 

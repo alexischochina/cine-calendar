@@ -71,7 +71,7 @@ const sortedOptions = computed(() => {
 
 <template>
     <ClientOnly>
-        <div class="select flex -align-center -justify-center"
+        <div class="select-btn flex -align-center -justify-center"
              :class="[{ [`-${props.type}`]: true, '-open': isOpen, [`-${props.openDirection}`]: true }]"
              @mouseenter="handleOpen" @mouseleave="handleClose">
             <NuxtImg v-if="props.type === 'media'" class="selected-icon"
@@ -92,11 +92,11 @@ const sortedOptions = computed(() => {
 </template>
 
 <style lang="scss" scoped>
-.select {
+.select-btn {
     border-radius: .5rem;
     transition: background-color .2s linear;
     position: relative;
-    padding: .8rem;
+    padding: .5rem;
 
     &.-open {
         .options {
@@ -122,7 +122,7 @@ const sortedOptions = computed(() => {
 
 .selected-icon {
     position: relative;
-    width: 3.5rem;
+    width: 2.5rem;
     aspect-ratio: 1;
     object-fit: contain;
     z-index: 1;
@@ -144,7 +144,7 @@ const sortedOptions = computed(() => {
 
 .options {
     gap: 1.1rem;
-    padding: .8rem;
+    padding: .5rem;
     position: absolute;
     top: 50%;
     left: 0;
@@ -158,8 +158,8 @@ const sortedOptions = computed(() => {
 
 .option {
     transition: transform .2s $cubic-ease-in;
-    width: 3.5rem;
-    height: 3.5rem;
+    width: 2.5rem;
+    height: 2.5rem;
     cursor: pointer;
 
     &.-selected {
@@ -195,12 +195,12 @@ const sortedOptions = computed(() => {
 }
 
 @media (hover: hover) {
-    .select:hover {
+    .select-btn:hover {
         background-color: $color-dark-grey;
     }
 
     .option:not(.-selected):hover > .icon {
-        transform: scale(1.2);
+        transform: scale(1.1);
     }
 }
 </style>

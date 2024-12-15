@@ -1,6 +1,5 @@
-<script setup lang="ts">
+<script setup>
 import {refDebounced} from "@vueuse/shared";
-import type {ApiResponse} from "~/types/APIReponse";
 
 const searchTerm = ref('');
 
@@ -22,7 +21,7 @@ const url = computed(() => {
     return `api/movies/search?query=${debouncedSearchTerm.value}&page=${page.value}`;
 });
 
-const {data} = await useFetch<ApiResponse>(url)
+const {data} = await useFetch(url)
 
 </script>
 
