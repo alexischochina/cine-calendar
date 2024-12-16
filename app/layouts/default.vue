@@ -3,6 +3,8 @@ const handleMovieAdded = (() => {
     const event = new CustomEvent('movie-added');
     window.dispatchEvent(event);
 })
+
+const yearStore = useYearStore();
 </script>
 
 <template>

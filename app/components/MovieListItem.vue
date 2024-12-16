@@ -64,11 +64,6 @@ const getMovieById = async (id) => {
     }
 }
 
-const getDayFrom = ((fullDate) => {
-    const date = new Date(fullDate)
-    return date.getDate();
-})
-
 onMounted(() => {
     getMovieById(props.movieId);
 });

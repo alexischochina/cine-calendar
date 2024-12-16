@@ -7,9 +7,7 @@ const selectedMedia = ref('cinema');
 const client = useSupabaseClient();
 const page = ref(1);
 const movieId = ref(0);
-const frenchDate = ref('')
 const emits = defineEmits(['movie-added']);
-const formattedDate = ref('')
 
 const debouncedSearchTerm = refDebounced(movieTitle, 700);
 
