@@ -34,6 +34,11 @@ export default defineNuxtConfig({
     supabase: {
         redirect: false,
         types: false,
+        cookieOptions: {
+            maxAge: 60 * 60 * 24 * 365,
+            sameSite: 'lax',
+            secure: true,
+        },
     },
     runtimeConfig: {
         apiKey: '',
