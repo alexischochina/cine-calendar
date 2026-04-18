@@ -8,7 +8,7 @@ html:focus-within {
 }
 
 #full-wrapper {
-    overflow: hidden;
+    overflow-x: clip;
 }
 
 body {
