@@ -1,5 +1,6 @@
 <script setup>
 definePageMeta({ layout: false });
+useHead({ title: 'Connexion' });
 
 const client = useSupabaseClient();
 const router = useRouter();

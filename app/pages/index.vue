@@ -3,6 +3,7 @@
 definePageMeta({
     middleware: ['auth'],
 })
+useHead({ title: 'Mon calendrier' })
 
 const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted } = useMovieCalendar()
 const { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovie } = useMovieScroll()
