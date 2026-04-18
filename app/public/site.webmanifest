@@ -1,0 +1,8 @@
+{
+  "name": "Ciné Calendar",
+  "short_name": "CinéCal",
+  "icons": [],
+  "theme_color": "#ec008b",
+  "background_color": "#27262A",
+  "display": "standalone"
+}

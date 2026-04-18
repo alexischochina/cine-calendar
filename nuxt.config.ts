@@ -3,6 +3,10 @@ import {defineNuxtConfig} from "nuxt/config";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
     srcDir: 'app/',
+    dir: {
+        public: 'app/public',
+        server: 'server',
+    },
     css: ['@/assets/styles/main.scss'],
     vite: {
         plugins: [
@@ -15,7 +19,8 @@ export default defineNuxtConfig({
         css: {
             preprocessorOptions: {
                 scss: {
-                    additionalData: '@import "~/assets/styles/_variables.scss";@import "@/assets/styles/_typography-mixins.scss";@import "@/assets/styles/_functions.scss";@import "@/assets/styles/_transitions.scss";'
+                    additionalData: '@import "~/assets/styles/_variables.scss";@import "@/assets/styles/_typography-mixins.scss";@import "@/assets/styles/_functions.scss";@import "@/assets/styles/_transitions.scss";',
+                    silenceDeprecations: ['import']
                 }
             }
         },
@@ -27,9 +32,8 @@ export default defineNuxtConfig({
     },
     modules: ["@nuxt/image", 'nuxt-swiper', '@nuxtjs/supabase', '@pinia/nuxt'],
     supabase: {
-        url: process.env.SUPABASE_URL,
-        key: process.env.SUPABASE_KEY,
         redirect: false,
+        types: false,
     },
     runtimeConfig: {
         apiKey: '',

@@ -1,4 +1,6 @@
 <script setup>
+import { onClickOutside } from '@vueuse/core';
+
 const props = defineProps({
     type: {
         type: String,
@@ -20,7 +22,8 @@ const isOpen = ref(false);
 const option = ref([]);
 const emits = defineEmits(['option-selected']);
 const selectedIcon = ref([]);
-const onFront = ref(false)
+const onFront = ref(false);
+const container = ref(null);
 
 if (props.type === 'media') {
     options.value = ['cinema', 'vod', 'primeVideo', 'disney+', 'netflix'];
@@ -28,30 +31,32 @@ if (props.type === 'media') {
     options.value = ['unseen', 'seen', 'downloadAvailable'];
 }
 
-const handleOpen = (() => {
+const handleOpen = () => {
     isOpen.value = true;
     onFront.value = true;
     setTimeout(() => {
-        option.value.forEach((op, index) => {
-            op.classList.add('-show')
-        })
+        option.value.forEach((op) => op.classList.add('-show'))
     }, 400)
-})
+}
 
-const handleClose = (() => {
-    option.value.forEach((op, index) => {
-        op.classList.remove('-show')
-    })
+const handleClose = () => {
+    option.value.forEach((op) => op.classList.remove('-show'))
     isOpen.value = false;
     setTimeout(() => {
         onFront.value = false;
     }, 400)
-})
+}
 
-const handleOnClick = ((option) => {
+const handleToggle = () => {
+    isOpen.value ? handleClose() : handleOpen();
+}
+
+const handleOnClick = (option) => {
     handleClose();
     emits('option-selected', option)
-})
+}
+
+onClickOutside(container, handleClose)
 
 const sortedOptions = computed(() => {
     if (!options.value.includes(props.selected)) {
@@ -71,9 +76,9 @@ const sortedOptions = computed(() => {
 
 <template>
     <ClientOnly>
-        <div class="select-btn flex -align-center -justify-center"
+        <div ref="container" class="select-btn flex -align-center -justify-center"
              :class="[{ [`-${props.type}`]: true, '-open': isOpen, [`-${props.openDirection}`]: true }]"
-             @mouseenter="handleOpen" @mouseleave="handleClose">
+             @click.stop="handleToggle">
             <NuxtImg v-if="props.type === 'media'" class="selected-icon"
                      :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]"
                      :src="`/images/${props.selected}.png`" ref="selectedIcon"/>

@@ -8,6 +8,7 @@ const client = useSupabaseClient()
 const sortedMovies = ref({});
 const movies = ref([])
 const moviesWithDates = ref([]);
+const moviesWithoutDate = ref([]);
 const containerRef = ref(null)
 //const slides = ref(Array.from({length: 10}))
 //const swiper = useSwiper(containerRef)
@@ -18,34 +19,34 @@ async function getMovies() {
         .select('*');
 
     if (!error) {
-        movies.value = data;
-
-        for (const movie of movies.value) {
-            const releaseDate = await getReleaseDateFromId(movie.movie_id);
-            movie['release_date'] = releaseDate
-        }
-
-        sortMovies(movies.value)
+        const withDates = await Promise.all(
+            data.map(async (movie) => ({
+                ...movie,
+                release_date: await getReleaseDateFromId(movie.movie_id),
+            }))
+        );
+        movies.value = withDates;
+        sortMovies(withDates);
     }
 }
 
 const getReleaseDateFromId = async (id) => {
     try {
-        const {data: dates} = await useFetch(`/api/movies/${id}/release_dates`);
+        const dates = await $fetch(`/api/movies/${id}/release_dates`);
         const frenchDates = ref(null)
         const frenchDate = ref('');
-        dates.value.results.forEach((lang) => {
+        dates.results.forEach((lang) => {
             if (lang.iso_3166_1 === 'FR') {
                 frenchDates.value = lang.release_dates;
             }
         })
-        frenchDates.value.forEach((date) => {
+        frenchDates.value?.forEach((date) => {
             if (date.note === '' || /CNC/i.test(date.note) || date.note === 'Netflix' || date.note === 'Amazon' || date.note === 'Disney+') {
                 frenchDate.value = date.release_date
             }
         })
 
-        return formateDate(frenchDate.value);
+        return frenchDate.value ? formateDate(frenchDate.value) : null;
 
         // TODO
         /*if (frenchRelease && frenchRelease.release_dates.length > 0) {
@@ -68,43 +69,143 @@ const formateDate = ((fullDate) => {
     return `${year}, ${month.toString().padStart(2, '0')}, ${day.toString().padStart(2, '0')}`;
 })
 
-const sortMovies = ((movies) => {
+const sortMovies = (movies) => {
     const sorted = {};
 
-    movies.forEach((movie) => {
+    moviesWithoutDate.value = movies.filter(m => !m.release_date || isNaN(new Date(m.release_date)));
+
+    const byDate = [...movies]
+        .filter(m => m.release_date && !isNaN(new Date(m.release_date)))
+        .sort((a, b) => new Date(a.release_date) - new Date(b.release_date));
+
+    byDate.forEach((movie) => {
         const date = new Date(movie.release_date);
         const year = date.getFullYear();
-        const month = new Intl.DateTimeFormat('fr-FR', {month: 'short'}).format(date);
+        const month = new Intl.DateTimeFormat('fr-FR', {month: 'short'}).format(date).replace('.', '');
         const day = date.getDate();
 
-        if (!sorted[year]) {
-            sorted[year] = {};
-        }
-        if (!sorted[year][month]) {
-            sorted[year][month] = {};
-        }
-        if (!sorted[year][month][day]) {
-            sorted[year][month][day] = [];
-        }
+        if (!sorted[year]) sorted[year] = {};
+        if (!sorted[year][month]) sorted[year][month] = {};
+        if (!sorted[year][month][day]) sorted[year][month][day] = [];
 
         sorted[year][month][day].push(movie);
     });
 
     sortedMovies.value = sorted;
-})
+}
 
 
-onMounted(() => {
+const scrollToClosestDate = () => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const attempt = () => {
+        const dayEls = [...document.querySelectorAll('[data-date]')];
+        if (!dayEls.length) {
+            setTimeout(attempt, 100);
+            return;
+        }
+
+        let target = null;
+        let closestDiff = Infinity;
+
+        for (const el of dayEls) {
+            const date = new Date(el.dataset.date);
+            date.setHours(0, 0, 0, 0);
+            const diff = today - date;
+            if (diff >= 0 && diff < closestDiff) {
+                closestDiff = diff;
+                target = el;
+            }
+        }
+
+        if (target) {
+            setTimeout(() => {
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        }
+    };
+
+    attempt();
+}
+
+onMounted(async () => {
     window.addEventListener('movie-added', handleMovieAdded)
-    getMovies()
+    window.addEventListener('movie-exists', handleMovieExists)
+    window.addEventListener('scroll-to-today', scrollToClosestDate)
+    window.addEventListener('search-movie', handleSearchMovie)
+    await getMovies()
+    scrollToClosestDate()
 })
 
 onBeforeUnmount(() => {
     window.removeEventListener('movie-added', handleMovieAdded)
+    window.removeEventListener('movie-exists', handleMovieExists)
+    window.removeEventListener('scroll-to-today', scrollToClosestDate)
+    window.removeEventListener('search-movie', handleSearchMovie)
 })
 
-const handleMovieAdded = () => {
-    getMovies();
+const scrollToMovie = (movieId) => {
+    const attempt = () => {
+        const el = document.querySelector(`.-id-${movieId}`);
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+            setTimeout(attempt, 100);
+        }
+    };
+    attempt();
+}
+
+const handleMovieAdded = async (event) => {
+    const newEntry = event.detail?.newEntry;
+    if (!newEntry) return;
+    const release_date = await getReleaseDateFromId(newEntry.movie_id);
+    movies.value = [...movies.value, { ...newEntry, release_date }];
+    sortMovies(movies.value);
+    await nextTick();
+    scrollToMovie(newEntry.movie_id);
+}
+
+const handleMovieExists = (event) => {
+    const { movieId } = event.detail;
+    if (movieId) scrollToMovie(movieId);
+}
+
+const handleMovieDeleted = (id) => {
+    movies.value = movies.value.filter(m => m.id !== id);
+    sortMovies(movies.value);
+}
+
+
+const handleSearchMovie = (event) => {
+    const term = event.detail?.term?.toLowerCase();
+    if (!term) return;
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const links = [...document.querySelectorAll('.movie-link')];
+    const matches = links
+        .filter(el => el.textContent.trim().toLowerCase().includes(term))
+        .map(el => {
+            const dayEl = el.closest('[data-date]');
+            return { el, date: dayEl ? new Date(dayEl.dataset.date) : null };
+        })
+        .filter(m => m.date);
+
+    if (!matches.length) return;
+
+    matches.sort((a, b) => {
+        const aFuture = a.date >= today;
+        const bFuture = b.date >= today;
+        if (aFuture && !bFuture) return -1;
+        if (!aFuture && bFuture) return 1;
+        if (aFuture && bFuture) return a.date - b.date;
+        return b.date - a.date;
+    });
+
+    matches[0].el.closest('[data-date]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 </script>
 
@@ -115,17 +216,33 @@ const handleMovieAdded = () => {
             <div class="month-container" v-for="(days, month) in months" :key="month">
                 <div class="month-title title-2">{{ month }}</div>
                 <div class="days-container">
-                    <div class="day" v-for="(movies, day) in days" :key="day">
+                    <div class="day" v-for="(movies, day) in days" :key="day" :data-date="movies[0].release_date">
                         <MovieListItem v-for="(movie, index) in movies"
                                        :release-day="index === 0 ? day : ''"
                                        :movie-id="movie.movie_id"
                                        :media="movie.media"
                                        :state="movie.state"
                                        :id="movie.id"
+                                       :style="new Date(movie.release_date) > new Date() ? { opacity: 0.5 } : {}"
+                                       @movie-deleted="handleMovieDeleted"
                         />
                     </div>
                 </div>
             </div>
+        </div>
+
+        <div class="no-date-section" v-if="moviesWithoutDate.length">
+            <div class="title-4">Sans date</div>
+            <MovieListItem v-for="movie in moviesWithoutDate"
+                           :key="movie.id"
+                           :release-day="''"
+                           :movie-id="movie.movie_id"
+                           :media="movie.media"
+                           :state="movie.state"
+                           :id="movie.id"
+                           :style="{ opacity: 0.5 }"
+                           @movie-deleted="handleMovieDeleted"
+            />
         </div>
     </div>
     <!--    <ClientOnly>
@@ -156,7 +273,6 @@ const handleMovieAdded = () => {
 
 .month-title {
     padding-top: 2rem;
-    text-align: center;
     text-transform: capitalize;
 }
 
@@ -169,5 +285,11 @@ swiper-slide {
 
 .day:not(:last-child) {
     border-bottom: solid 1px $color-white;
+}
+
+.no-date-section {
+    margin-top: 4rem;
+    border-top: 1px solid $color-white;
+    padding-top: 2rem;
 }
 </style>
