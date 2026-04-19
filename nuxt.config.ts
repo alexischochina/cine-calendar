@@ -44,9 +44,12 @@ export default defineNuxtConfig({
         apiKey: '',
         apiBaseUrl: '',
         apiImgUrl: '',
+        public: {
+            siteUrl: '',
+        },
     },
     routeRules: {
-        '/': {prerender: true},
+        '/': {ssr: true},
     },
     compatibilityDate: '2024-11-01',
     devtools: {enabled: true}
