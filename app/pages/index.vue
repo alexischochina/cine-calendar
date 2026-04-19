@@ -27,6 +27,7 @@ const expandYear = (year) => {
     if (!isYearExpanded(y)) expandedYears.value = [...expandedYears.value, y];
 };
 
+
 const onMovieAdded = async (event) => {
     await handleMovieAdded(event);
     await nextTick();
@@ -66,6 +67,7 @@ onBeforeUnmount(() => {
         <div class="year-container" v-for="(months, year) in sortedMovies" :key="year" :data-year="year">
             <div class="year-header flex -align-center" @click="toggleYear(year)">
                 <div class="title-4">{{ year }}</div>
+                <YearStats :movies="movies" :year="year" class="year-stats-wrapper" />
                 <span class="year-chevron" :class="{ '-expanded': isYearExpanded(year) }" />
             </div>
             <Transition name="year-content">
@@ -122,6 +124,11 @@ onBeforeUnmount(() => {
     &:first-child {
         border-top: none;
     }
+}
+
+.year-stats-wrapper {
+    margin-left: auto;
+    margin-right: 1.25rem;
 }
 
 .year-chevron {
