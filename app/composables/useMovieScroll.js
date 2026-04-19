@@ -1,4 +1,13 @@
 export function useMovieScroll() {
+    const dispatchExpandYear = (el) => {
+        const yearContainer = el?.closest('[data-year]');
+        if (yearContainer) {
+            window.dispatchEvent(new CustomEvent('expand-year', {
+                detail: { year: Number(yearContainer.dataset.year) }
+            }));
+        }
+    };
+
     const scrollToClosestDate = () => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
@@ -20,7 +29,10 @@ export function useMovieScroll() {
                 }
             }
 
-            if (target) setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+            if (target) {
+                dispatchExpandYear(target);
+                setTimeout(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+            }
         };
 
         attempt();
@@ -29,7 +41,10 @@ export function useMovieScroll() {
     const scrollToMovie = (movieId) => {
         const attempt = () => {
             const el = document.querySelector(`.-id-${movieId}`);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (el) {
+                dispatchExpandYear(el);
+                setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+            }
             else setTimeout(attempt, 100);
         };
         attempt();
@@ -38,7 +53,10 @@ export function useMovieScroll() {
     const handleScrollToYear = (event) => {
         const year = event.detail?.year;
         if (!year) return;
-        document.querySelector(`[data-year="${year}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        window.dispatchEvent(new CustomEvent('expand-year', { detail: { year: Number(year) } }));
+        setTimeout(() => {
+            document.querySelector(`[data-year="${year}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 150);
     }
 
     const handleSearchMovie = (event) => {
@@ -67,7 +85,11 @@ export function useMovieScroll() {
             return b.date - a.date;
         });
 
-        matches[0].el.closest('[data-date]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        const targetDayEl = matches[0].el.closest('[data-date]');
+        if (targetDayEl) {
+            dispatchExpandYear(targetDayEl);
+            setTimeout(() => targetDayEl.scrollIntoView({ behavior: 'smooth', block: 'center' }), 150);
+        }
     }
 
     return { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovie }

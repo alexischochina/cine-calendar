@@ -45,6 +45,7 @@ const scrollToToday = () => {
                 </button>
             </div>
         </template>
+        <div class="separator" />
         <NavYearPicker ref="yearPickerRef" />
         <button class="input-btn" type="button" @click="scrollToToday">
             <Svg name="calendar"/>
@@ -52,6 +53,7 @@ const scrollToToday = () => {
         <button class="input-btn" type="button" @click="openSearch" v-if="!searchMode">
             <Svg name="search"/>
         </button>
+        <NavFilterPanel />
     </div>
 </template>
 
@@ -84,6 +86,13 @@ const scrollToToday = () => {
     padding: .6rem 1rem;
     height: 3.5rem;
     color: $color-white;
+}
+
+.separator {
+    width: 1px;
+    height: 2.5rem;
+    background-color: $color-dark-grey;
+    flex-shrink: 0;
 }
 
 .input-btn {

@@ -1,5 +1,6 @@
 export function useMovieCalendar() {
     const client = useSupabaseClient()
+    const store = useMoviesStore()
     const movies = ref([])
     const sortedMovies = ref({})
     const moviesWithoutDate = ref([])
@@ -43,9 +44,15 @@ export function useMovieCalendar() {
     const sortMovies = (list) => {
         const sorted = {};
 
-        moviesWithoutDate.value = list.filter(m => !m.release_date || isNaN(new Date(m.release_date)));
+        const filtered = list.filter(m => {
+            const stateMatch = !store.filters.state || m.state === store.filters.state;
+            const mediaMatch = !store.filters.media || m.media === store.filters.media;
+            return stateMatch && mediaMatch;
+        });
 
-        const byDate = [...list]
+        moviesWithoutDate.value = filtered.filter(m => !m.release_date || isNaN(new Date(m.release_date)));
+
+        const byDate = [...filtered]
             .filter(m => m.release_date && !isNaN(new Date(m.release_date)))
             .sort((a, b) => new Date(a.release_date) - new Date(b.release_date));
 
@@ -94,6 +101,8 @@ export function useMovieCalendar() {
         movies.value = movies.value.filter(m => m.id !== id);
         sortMovies(movies.value);
     }
+
+    watch(() => store.filters, () => sortMovies(movies.value), { deep: true });
 
     return {
         movies,
