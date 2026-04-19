@@ -61,7 +61,7 @@ const scrollToToday = () => {
     z-index: 999;
     position: fixed;
     --search-bar-height: 5.5rem;
-    bottom: 5rem;
+    bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
     background-color: $color-grey;

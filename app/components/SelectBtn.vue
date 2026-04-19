@@ -19,7 +19,7 @@ const props = defineProps({
 })
 const options = ref([]);
 const isOpen = ref(false);
-const option = ref([]);
+const optionEls = ref([]);
 const emits = defineEmits(['option-selected']);
 const selectedIcon = ref([]);
 const onFront = ref(false);
@@ -35,16 +35,16 @@ const handleOpen = () => {
     isOpen.value = true;
     onFront.value = true;
     setTimeout(() => {
-        option.value.forEach((op) => op.classList.add('-show'))
-    }, 400)
+        optionEls.value.forEach((op) => op.classList.add('-show'))
+    }, 150)
 }
 
 const handleClose = () => {
-    option.value.forEach((op) => op.classList.remove('-show'))
+    optionEls.value.forEach((op) => op.classList.remove('-show'))
     isOpen.value = false;
     setTimeout(() => {
         onFront.value = false;
-    }, 400)
+    }, 150)
 }
 
 const handleToggle = () => {
@@ -87,7 +87,7 @@ const sortedOptions = computed(() => {
             <div class="options flex -direction-column">
                 <button class="option" :class="{'-selected' : option === props.selected}"
                         v-for="option in sortedOptions"
-                        :key="option" ref="option" @click="handleOnClick(option)">
+                        :key="option" ref="optionEls" @click.stop="handleOnClick(option)">
                     <NuxtImg v-if="props.type === 'media'" class="icon" :src="`/images/${option}.png`"/>
                     <Svg v-if="props.type === 'state'" :name="option" class="icon" :class="`-${option}`"/>
                 </button>
@@ -157,12 +157,12 @@ const sortedOptions = computed(() => {
     background-color: $color-dark-grey;
     border-radius: .5rem;
     overflow: hidden;
-    transition: transform .2s $cubic-ease-out .2s;
+    transition: transform .1s $cubic-ease-out;
     z-index: 5;
 }
 
 .option {
-    transition: transform .2s $cubic-ease-in;
+    transition: transform .1s $cubic-ease-in;
     width: 2.5rem;
     height: 2.5rem;
     cursor: pointer;
