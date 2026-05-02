@@ -5,7 +5,7 @@ definePageMeta({
 })
 useHead({ title: 'Mon calendrier' })
 
-const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted } = useMovieCalendar()
+const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted, handleReleaseDateUpdated } = useMovieCalendar()
 const { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovie } = useMovieScroll()
 
 const currentYear = new Date().getFullYear();
@@ -82,8 +82,10 @@ onBeforeUnmount(() => {
                                                :media="movie.media"
                                                :state="movie.state"
                                                :id="movie.id"
+                                               :manual-release-date="movie.manual_release_date"
                                                :style="new Date(movie.release_date) > new Date() ? { opacity: 0.5 } : {}"
                                                @movie-deleted="handleMovieDeleted"
+                                               @release-date-updated="handleReleaseDateUpdated"
                                 />
                             </div>
                         </div>
@@ -101,8 +103,10 @@ onBeforeUnmount(() => {
                            :media="movie.media"
                            :state="movie.state"
                            :id="movie.id"
+                           :manual-release-date="movie.manual_release_date"
                            :style="{ opacity: 0.5 }"
                            @movie-deleted="handleMovieDeleted"
+                           @release-date-updated="handleReleaseDateUpdated"
             />
         </div>
     </div>

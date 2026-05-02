@@ -1,5 +1,5 @@
 <script setup>
-const emits = defineEmits(['movie-deleted']);
+const emits = defineEmits(['movie-deleted', 'release-date-updated']);
 
 const props = defineProps({
     releaseDay: {
@@ -25,6 +25,10 @@ const props = defineProps({
         type: Number,
         required: true,
     },
+    manualReleaseDate: {
+        type: String,
+        default: null,
+    },
 })
 const selectedMedia = ref(props.media);
 const selectedState = ref(props.state);
@@ -32,6 +36,7 @@ const client = useSupabaseClient();
 const config = useRuntimeConfig();
 const movieTitle = ref('');
 const moviePosterUrl = ref('');
+const datePopoverOpen = ref(false);
 
 const onMediaSelected = (option) => {
     selectedMedia.value = option;
@@ -77,7 +82,7 @@ onMounted(() => {
 
 <template>
     <div class="movie-list-item flex -align-center -justify-space-between"
-         :class="`-${selectedMedia} -id-${props.movieId}`">
+         :class="[`-${selectedMedia}`, `-id-${props.movieId}`, { '-popover-open': datePopoverOpen }]">
         <div class="movie-infos flex -align-center">
             <div class="title-4">{{ props.releaseDay }}</div>
             <NuxtImg v-if="moviePosterUrl" :src="`https://image.tmdb.org/t/p/w500${moviePosterUrl}`" class="poster"/>
@@ -85,6 +90,10 @@ onMounted(() => {
             <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title-5 movie-link">{{ movieTitle }}</a>
         </div>
         <div class="stream-infos flex -align-center">
+            <DateEditBtn :id="props.id" :manual-release-date="manualReleaseDate"
+                         @release-date-updated="emits('release-date-updated', $event)"
+                         @open="datePopoverOpen = true"
+                         @close="datePopoverOpen = false"/>
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>
             <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected"/>
             <button class="delete-btn" @click="deleteMovie">
@@ -99,6 +108,10 @@ onMounted(() => {
     padding: 1rem 3rem;
     width: 100%;
     overflow: hidden;
+
+    &.-popover-open {
+        overflow: visible;
+    }
 }
 
 .movie-infos {

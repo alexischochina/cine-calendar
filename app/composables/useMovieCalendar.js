@@ -79,7 +79,9 @@ export function useMovieCalendar() {
             const withDates = await Promise.all(
                 data.map(async (movie) => ({
                     ...movie,
-                    release_date: await getReleaseDateFromId(movie.movie_id),
+                    release_date: movie.manual_release_date
+                        ? formateDate(movie.manual_release_date)
+                        : await getReleaseDateFromId(movie.movie_id),
                 }))
             );
             movies.value = withDates;
@@ -90,7 +92,9 @@ export function useMovieCalendar() {
     const handleMovieAdded = async (event) => {
         const newEntry = event.detail?.newEntry;
         if (!newEntry) return;
-        const release_date = await getReleaseDateFromId(newEntry.movie_id);
+        const release_date = newEntry.manual_release_date
+            ? formateDate(newEntry.manual_release_date)
+            : await getReleaseDateFromId(newEntry.movie_id);
         movies.value = [...movies.value, { ...newEntry, release_date }];
         sortMovies(movies.value);
     }
@@ -99,6 +103,18 @@ export function useMovieCalendar() {
 
     const handleMovieDeleted = (id) => {
         movies.value = movies.value.filter(m => m.id !== id);
+        sortMovies(movies.value);
+    }
+
+    const handleReleaseDateUpdated = async ({ id, manual_release_date }) => {
+        const movie = movies.value.find(m => m.id === id);
+        if (!movie) return;
+        const release_date = manual_release_date
+            ? formateDate(manual_release_date)
+            : await getReleaseDateFromId(movie.movie_id);
+        movies.value = movies.value.map(m =>
+            m.id === id ? { ...m, manual_release_date, release_date } : m
+        );
         sortMovies(movies.value);
     }
 
@@ -114,5 +130,6 @@ export function useMovieCalendar() {
         handleMovieAdded,
         handleMovieExists,
         handleMovieDeleted,
+        handleReleaseDateUpdated,
     }
 }
