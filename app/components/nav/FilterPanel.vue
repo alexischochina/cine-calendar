@@ -193,4 +193,15 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
         opacity: .6;
     }
 }
+
+@media #{$mobile} {
+    .filter-panel {
+        right: -1rem;
+    }
+
+    .filter-options {
+        flex-wrap: wrap;
+        gap: .5rem;
+    }
+}
 </style>

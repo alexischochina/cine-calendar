@@ -162,4 +162,27 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
         background-color: $color-dark-grey;
     }
 }
+
+@media #{$mobile} {
+    .add-form {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .form-content {
+        width: 100%;
+    }
+
+    .text-input {
+        flex: 1;
+        width: auto;
+        min-width: 0;
+    }
+
+    .suggestions-container {
+        left: 0;
+        right: 0;
+        width: auto;
+    }
+}
 </style>

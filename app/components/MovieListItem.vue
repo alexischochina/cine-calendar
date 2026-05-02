@@ -98,16 +98,20 @@ onMounted(() => {
 .movie-list-item {
     padding: 1rem 3rem;
     width: 100%;
+    overflow: hidden;
 }
 
 .movie-infos {
     gap: 3rem;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .poster {
     border-radius: .5rem;
     width: 5rem;
     aspect-ratio: 2/3;
+    flex-shrink: 0;
 }
 
 .poster-placeholder {
@@ -116,6 +120,7 @@ onMounted(() => {
 
 .stream-infos {
     gap: 3rem;
+    flex-shrink: 0;
 }
 
 .delete-btn {
@@ -140,19 +145,65 @@ onMounted(() => {
     }
 }
 
+// Largeur fixe pour aligner les jours 1 et 2 chiffres
 .title-4 {
-    min-width: 5rem;
+    width: 3rem;
+    text-align: right;
+    flex-shrink: 0;
 }
 
 .movie-link {
+    display: block;
     text-decoration: none;
     color: inherit;
     transition: color .2s linear;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 
     @media (hover: hover) {
         &:hover {
             color: #ec008b;
         }
+    }
+}
+
+@media #{$tablet} {
+    .movie-list-item {
+        padding: 1rem 2rem;
+    }
+
+    .movie-infos {
+        gap: 1.5rem;
+        flex: 1;
+    }
+
+    .stream-infos {
+        gap: 1.5rem;
+    }
+}
+
+@media #{$mobile} {
+    .movie-list-item {
+        padding: .75rem 1rem;
+    }
+
+    .movie-infos {
+        gap: .75rem;
+        flex: 1;
+    }
+
+    .poster {
+        width: 4rem;
+    }
+
+    .stream-infos {
+        gap: .25rem;
+    }
+
+    .title-4 {
+        width: 2.5rem;
     }
 }
 </style>

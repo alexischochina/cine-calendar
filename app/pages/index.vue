@@ -190,4 +190,35 @@ onBeforeUnmount(() => {
         border-color: $color-white;
     }
 }
+
+@media #{$tablet} {
+    .month-container {
+        grid-template-columns: 10rem auto;
+    }
+}
+
+@media #{$mobile} {
+    .home-wrapper {
+        padding-top: 6rem;
+        padding-bottom: 9rem;
+    }
+
+    .year-header {
+        padding: 1rem 0;
+    }
+
+    .month-container {
+        grid-template-columns: 1fr;
+    }
+
+    .month-title {
+        padding: .75rem 0;
+        border-bottom: 1px solid rgba($color-white, .15);
+
+        &.-sticky {
+            position: relative;
+            top: auto;
+        }
+    }
+}
 </style>

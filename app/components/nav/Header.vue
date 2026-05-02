@@ -119,4 +119,25 @@ const scrollToToday = () => {
         background-color: $color-dark-grey;
     }
 }
+
+@media #{$mobile} {
+    .nav-header {
+        left: 1rem;
+        right: 1rem;
+        bottom: 1rem;
+        transform: none;
+        gap: .35rem;
+    }
+
+    .form-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .text-input {
+        flex: 1;
+        width: auto;
+        min-width: 0;
+    }
+}
 </style>
