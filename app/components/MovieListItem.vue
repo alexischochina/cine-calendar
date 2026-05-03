@@ -54,11 +54,6 @@ const updateMedia = async (newMedia) => {
         .eq('id', props.id)
 }
 
-const deleteMovie = async () => {
-    const { error } = await client.from('calendar').delete().eq('id', props.id);
-    if (!error) emits('movie-deleted', props.id);
-}
-
 const updateState = async (newState) => {
     const {data, error} = await client
         .from('calendar')
@@ -89,13 +84,11 @@ onMounted(() => {
             <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title-5 movie-link">{{ movieTitle }}</a>
         </div>
         <div class="stream-infos flex -align-center">
-            <DateEditBtn :id="props.id" :manual-release-date="manualReleaseDate"
-                         @release-date-updated="emits('release-date-updated', $event)"/>
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>
             <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected"/>
-            <button class="delete-btn" @click="deleteMovie">
-                <Svg name="close"/>
-            </button>
+            <MovieActionsBtn :id="props.id" :manual-release-date="manualReleaseDate"
+                             @movie-deleted="emits('movie-deleted', $event)"
+                             @release-date-updated="emits('release-date-updated', $event)"/>
         </div>
     </div>
 </template>
@@ -131,28 +124,6 @@ onMounted(() => {
 .stream-infos {
     gap: 3rem;
     flex-shrink: 0;
-}
-
-.delete-btn {
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: .5rem;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    transition: background-color .2s linear;
-    flex-shrink: 0;
-
-    > svg {
-        width: 1.4rem;
-        height: auto;
-    }
-
-    @media (hover: hover) {
-        &:hover {
-            background-color: $color-dark-grey;
-        }
-    }
 }
 
 // Largeur fixe pour aligner les jours 1 et 2 chiffres
