@@ -7,6 +7,7 @@ const stateFilters = [
     { value: 'unseen', label: 'Non vu' },
     { value: 'seen', label: 'Vu' },
     { value: 'downloadAvailable', label: 'Téléchargeable' },
+    { value: 'inTheaters', label: 'En salle' },
 ];
 const mediaFilters = [
     { value: 'cinema', label: 'Cinéma' },
@@ -164,6 +165,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
 
         &.-seen { color: $color-yellow; }
         &.-downloadAvailable { color: $color-orange; }
+        &.-inTheaters { color: #ec008b; }
     }
 
     .option-label {

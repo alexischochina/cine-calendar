@@ -19,7 +19,7 @@ const props = defineProps({
     state: {
         type: String,
         default: 'unseen',
-        validator: value => ['unseen', 'seen', 'downloadAvailable'].includes(value)
+        validator: value => ['unseen', 'seen', 'downloadAvailable', 'inTheaters'].includes(value)
     },
     id: {
         type: Number,
@@ -36,7 +36,6 @@ const client = useSupabaseClient();
 const config = useRuntimeConfig();
 const movieTitle = ref('');
 const moviePosterUrl = ref('');
-const datePopoverOpen = ref(false);
 
 const onMediaSelected = (option) => {
     selectedMedia.value = option;
@@ -82,7 +81,7 @@ onMounted(() => {
 
 <template>
     <div class="movie-list-item flex -align-center -justify-space-between"
-         :class="[`-${selectedMedia}`, `-id-${props.movieId}`, { '-popover-open': datePopoverOpen }]">
+         :class="[`-${selectedMedia}`, `-state-${selectedState}`, `-id-${props.movieId}`]">
         <div class="movie-infos flex -align-center">
             <div class="title-4">{{ props.releaseDay }}</div>
             <NuxtImg v-if="moviePosterUrl" :src="`https://image.tmdb.org/t/p/w500${moviePosterUrl}`" class="poster"/>
@@ -91,9 +90,7 @@ onMounted(() => {
         </div>
         <div class="stream-infos flex -align-center">
             <DateEditBtn :id="props.id" :manual-release-date="manualReleaseDate"
-                         @release-date-updated="emits('release-date-updated', $event)"
-                         @open="datePopoverOpen = true"
-                         @close="datePopoverOpen = false"/>
+                         @release-date-updated="emits('release-date-updated', $event)"/>
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>
             <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected"/>
             <button class="delete-btn" @click="deleteMovie">
@@ -107,10 +104,10 @@ onMounted(() => {
 .movie-list-item {
     padding: 1rem 3rem;
     width: 100%;
-    overflow: hidden;
 
-    &.-popover-open {
-        overflow: visible;
+    &.-state-inTheaters {
+        background-color: rgba(#ec008b, .12);
+        box-shadow: inset 3px 0 0 #ec008b;
     }
 }
 

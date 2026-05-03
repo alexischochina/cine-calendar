@@ -9,7 +9,7 @@ const props = defineProps({
     selected: {
         type: String,
         default: 'unknown',
-        validator: value => ['cinema', 'unknown', 'netflix', 'primeVideo', 'disney+', 'vod', 'unseen', 'seen', 'downloadAvailable'].includes(value)
+        validator: value => ['cinema', 'unknown', 'netflix', 'primeVideo', 'disney+', 'vod', 'unseen', 'seen', 'downloadAvailable', 'inTheaters'].includes(value)
     },
     openDirection: {
         type: String,
@@ -28,7 +28,7 @@ const container = ref(null);
 if (props.type === 'media') {
     options.value = ['cinema', 'vod', 'primeVideo', 'disney+', 'netflix'];
 } else if (props.type === 'state') {
-    options.value = ['unseen', 'seen', 'downloadAvailable'];
+    options.value = ['unseen', 'seen', 'downloadAvailable', 'inTheaters'];
 }
 
 const handleOpen = () => {
@@ -68,10 +68,12 @@ const sortedOptions = computed(() => {
         const middleIndex = Math.floor(newOptions.length / 2);
         newOptions.splice(middleIndex, 0, props.selected);
     } else if (props.openDirection === 'bottom') {
-        newOptions.splice(options.value.length, 0, props.selected);
+        newOptions.splice(newOptions.length, 0, props.selected);
     }
     return newOptions;
 });
+
+const selectedIndex = computed(() => sortedOptions.value.indexOf(props.selected));
 </script>
 
 <template>
@@ -84,7 +86,7 @@ const sortedOptions = computed(() => {
                      :src="`/images/${props.selected}.png`" ref="selectedIcon"/>
             <Svg v-if="props.type === 'state'" :name="props.selected" class="selected-icon"
                  :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]" ref="selectedIcon"/>
-            <div class="options flex -direction-column">
+            <div class="options flex -direction-column" :style="{ '--selected-index': selectedIndex }">
                 <button class="option" :class="{'-selected' : option === props.selected}"
                         v-for="option in sortedOptions"
                         :key="option" ref="optionEls" @click.stop="handleOnClick(option)">
@@ -103,25 +105,8 @@ const sortedOptions = computed(() => {
     position: relative;
     padding: .5rem;
 
-    &.-open {
-        .options {
-            transform: translateY(-50%) scaleY(1);
-        }
-
-        &.-bottom {
-            .options {
-                transform: translateY(0) scaleY(1);
-            }
-        }
-    }
-
-    &.-bottom {
-        .options {
-            transform: translateY(0) scaleY(0);
-            top: auto;
-            bottom: 0;
-            transform-origin: bottom;
-        }
+    &.-open .options {
+        transform: translateY(calc(var(--selected-pos) * -1)) scaleY(1);
     }
 }
 
@@ -148,15 +133,16 @@ const sortedOptions = computed(() => {
 }
 
 .options {
+    --selected-pos: calc(.5rem + var(--selected-index, 0) * 3.6rem + 1.25rem);
     gap: 1.1rem;
     padding: .5rem;
     position: absolute;
     top: 50%;
     left: 0;
-    transform: translateY(-50%) scaleY(0);
+    transform: translateY(calc(var(--selected-pos) * -1)) scaleY(0);
+    transform-origin: 50% var(--selected-pos);
     background-color: $color-dark-grey;
     border-radius: .5rem;
-    overflow: hidden;
     transition: transform .1s $cubic-ease-out;
     z-index: 5;
 }
@@ -179,7 +165,9 @@ const sortedOptions = computed(() => {
 }
 
 .icon {
+    display: block;
     width: 100%;
+    height: 100%;
     aspect-ratio: 1;
     object-fit: contain;
     transition: transform .2s $cubic-ease-out, opacity .2s linear;
@@ -197,6 +185,10 @@ const sortedOptions = computed(() => {
 
 .-downloadAvailable {
     color: $color-orange;
+}
+
+.-inTheaters {
+    color: #ec008b;
 }
 
 @media (hover: hover) {
