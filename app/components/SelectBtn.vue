@@ -104,9 +104,14 @@ const selectedIndex = computed(() => sortedOptions.value.indexOf(props.selected)
     transition: background-color .2s linear;
     position: relative;
     padding: .5rem;
+    z-index: 1;
 
-    &.-open .options {
-        transform: translateY(calc(var(--selected-pos) * -1)) scaleY(1);
+    &.-open {
+        z-index: 20;
+
+        .options {
+            transform: translateY(calc(var(--selected-pos) * -1)) scaleY(1);
+        }
     }
 }
 

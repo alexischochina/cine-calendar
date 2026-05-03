@@ -163,7 +163,7 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
     }
 }
 
-@media #{$mobile} {
+@media (max-width: 767px) {
     .add-form {
         flex: 1;
         min-width: 0;

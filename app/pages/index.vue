@@ -73,7 +73,10 @@ onBeforeUnmount(() => {
             <Transition name="year-content">
                 <div v-show="isYearExpanded(year)" class="year-body">
                     <div class="month-container" v-for="(days, month) in months" :key="month">
-                        <div class="month-title title-2" :class="{ '-sticky': Object.keys(days).length > 1 }">{{ month }}</div>
+                        <div class="month-title" :class="{ '-sticky': Object.keys(days).length > 1 }">
+                            <span class="month-name title-2">{{ month }}</span>
+                            <span class="month-year-badge">{{ year }}</span>
+                        </div>
                         <div class="days-container">
                             <div class="day" v-for="(movies, day) in days" :key="day" :data-date="movies[0].release_date">
                                 <MovieListItem v-for="(movie, index) in movies" :key="movie.id"
@@ -159,13 +162,20 @@ onBeforeUnmount(() => {
 
 .month-title {
     padding: 2rem 0;
-    text-transform: capitalize;
 
     &.-sticky {
         position: sticky;
         top: 2rem;
         align-self: start;
     }
+}
+
+.month-name {
+    text-transform: capitalize;
+}
+
+.month-year-badge {
+    display: none;
 }
 
 .day:not(:last-child) {
@@ -195,13 +205,13 @@ onBeforeUnmount(() => {
     }
 }
 
-@media #{$tablet} {
+@media (max-width: 1024px) {
     .month-container {
         grid-template-columns: 10rem auto;
     }
 }
 
-@media #{$mobile} {
+@media (max-width: 767px) {
     .home-wrapper {
         padding-top: 6rem;
         padding-bottom: 9rem;
@@ -213,15 +223,54 @@ onBeforeUnmount(() => {
 
     .month-container {
         grid-template-columns: 1fr;
+        border-top: none;
     }
 
     .month-title {
-        padding: .75rem 0;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: baseline;
+        gap: .75rem;
+        background-color: $color-xdark-grey;
+        padding: 1rem var(--wrapper-padding);
+        margin-left: calc(-1 * var(--wrapper-padding));
+        margin-right: calc(-1 * var(--wrapper-padding));
         border-bottom: 1px solid rgba($color-white, .15);
 
         &.-sticky {
-            position: relative;
-            top: auto;
+            position: sticky;
+            top: 0;
+            align-self: auto;
+        }
+    }
+
+    .month-year-badge {
+        display: inline;
+        font-family: $font-futura;
+        font-size: 1.3rem;
+        letter-spacing: .04em;
+        opacity: .4;
+        text-transform: uppercase;
+    }
+
+    .days-container {
+        margin-left: calc(-1 * var(--wrapper-padding));
+        margin-right: calc(-1 * var(--wrapper-padding));
+    }
+
+    .day:not(:last-child) {
+        border-bottom: solid 1px rgba($color-white, .12);
+    }
+
+    .no-date-section {
+        margin-left: calc(-1 * var(--wrapper-padding));
+        margin-right: calc(-1 * var(--wrapper-padding));
+        padding-top: 1.5rem;
+
+        > .title-4 {
+            padding: 0 var(--wrapper-padding) .75rem;
         }
     }
 }

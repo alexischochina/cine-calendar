@@ -67,6 +67,7 @@ $space-block: 5rem;
     @media #{$mobile} {
         --space-text: #{$space-text * .5};
         --space-block: #{$space-block * .5};
+        --wrapper-padding: 1.5rem;
     }
 }
 

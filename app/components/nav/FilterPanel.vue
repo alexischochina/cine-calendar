@@ -196,14 +196,40 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
     }
 }
 
-@media #{$mobile} {
+@media (max-width: 767px) {
     .filter-panel {
-        right: -1rem;
+        position: fixed;
+        bottom: 7rem;
+        left: 1.25rem;
+        right: 1.25rem;
+        width: auto;
+        transform-origin: bottom center;
+        padding: 1.25rem 1.25rem 1rem;
+        border-radius: 1.5rem;
+        background: rgba($color-grey, 0.92);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border: 1px solid rgba($color-white, 0.07);
+        box-shadow:
+            inset 0 1px 0 rgba($color-white, 0.06),
+            0 8px 24px rgba(0, 0, 0, 0.5),
+            0 24px 48px rgba(0, 0, 0, 0.3);
+    }
+
+    .filter-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: .6rem;
+    }
+
+    .filter-row-label {
+        width: auto;
     }
 
     .filter-options {
         flex-wrap: wrap;
-        gap: .5rem;
+        gap: .35rem;
+        width: 100%;
     }
 }
 </style>

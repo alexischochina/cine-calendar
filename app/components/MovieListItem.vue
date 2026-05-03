@@ -106,6 +106,7 @@ onMounted(() => {
 
 .movie-infos {
     gap: 3rem;
+    flex: 1;
     min-width: 0;
     overflow: hidden;
 }
@@ -113,7 +114,7 @@ onMounted(() => {
 .poster {
     border-radius: .5rem;
     width: 5rem;
-    aspect-ratio: 2/3;
+    aspect-ratio: 2 / 3;
     flex-shrink: 0;
 }
 
@@ -126,7 +127,6 @@ onMounted(() => {
     flex-shrink: 0;
 }
 
-// Largeur fixe pour aligner les jours 1 et 2 chiffres
 .title-4 {
     width: 3rem;
     text-align: right;
@@ -150,7 +150,7 @@ onMounted(() => {
     }
 }
 
-@media #{$tablet} {
+@media (max-width: 1024px) {
     .movie-list-item {
         padding: 1rem 2rem;
     }
@@ -165,26 +165,32 @@ onMounted(() => {
     }
 }
 
-@media #{$mobile} {
+@media (max-width: 767px) {
     .movie-list-item {
-        padding: .75rem 1rem;
-    }
-
-    .movie-infos {
-        gap: .75rem;
-        flex: 1;
+        padding: .6rem var(--wrapper-padding);
     }
 
     .poster {
-        width: 4rem;
+        display: none;
     }
 
-    .stream-infos {
-        gap: .25rem;
+    .movie-infos {
+        gap: 1.5rem;
     }
 
     .title-4 {
         width: 2.5rem;
+    }
+
+    .movie-link {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+
+    .stream-infos {
+        gap: .5rem;
     }
 }
 </style>
