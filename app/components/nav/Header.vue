@@ -100,10 +100,25 @@ const scrollToToday = () => {
     bottom: 2rem;
     left: 50%;
     transform: translateX(-50%);
-    background-color: $color-grey;
-    border-radius: 1rem;
     padding: 1rem;
     gap: .5rem;
+    border-radius: 1.5rem;
+    background: rgba($color-grey, 0.88);
+    border: 1px solid rgba($color-white, 0.07);
+    box-shadow:
+        inset 0 1px 0 rgba($color-white, 0.06),
+        0 8px 24px rgba(0, 0, 0, 0.5),
+        0 24px 48px rgba(0, 0, 0, 0.3);
+
+    &::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        z-index: -1;
+    }
 }
 
 .add-form-wrapper {
@@ -175,25 +190,8 @@ const scrollToToday = () => {
         transform: translateX(-50%);
         padding: .75rem 1rem;
         border-radius: 2rem;
-        /* backdrop-filter on ::before to avoid stacking context breaking position:fixed children */
-        background: rgba($color-grey, 0.88);
-        border: 1px solid rgba($color-white, 0.07);
-        box-shadow:
-            inset 0 1px 0 rgba($color-white, 0.06),
-            0 8px 24px rgba(0, 0, 0, 0.5),
-            0 24px 48px rgba(0, 0, 0, 0.3);
         width: fit-content;
         transition: width .38s $cubic-ease-out, border-radius .3s $cubic-ease-out;
-
-        &::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            border-radius: inherit;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            z-index: -1;
-        }
     }
 
     .nav-header.-add-mode,
