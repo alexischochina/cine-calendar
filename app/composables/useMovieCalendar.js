@@ -73,6 +73,25 @@ export function useMovieCalendar() {
         window.dispatchEvent(new CustomEvent('years-updated', { detail: { years: Object.keys(sorted).map(Number) } }));
     }
 
+    const applyAutoInTheaters = async (movieList) => {
+        const d = new Date();
+        const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+        const toUpdate = movieList.filter(m =>
+            m.media === 'cinema' &&
+            m.state === 'unseen' &&
+            m.release_date &&
+            m.release_date <= todayStr
+        );
+
+        if (!toUpdate.length) return movieList;
+
+        const ids = toUpdate.map(m => m.id);
+        await client.from('calendar').update({ state: 'inTheaters' }).in('id', ids);
+
+        return movieList.map(m => ids.includes(m.id) ? { ...m, state: 'inTheaters' } : m);
+    }
+
     const getMovies = async () => {
         const { data, error } = await client.from('calendar').select('*');
         if (!error) {
@@ -84,8 +103,9 @@ export function useMovieCalendar() {
                         : await getReleaseDateFromId(movie.movie_id),
                 }))
             );
-            movies.value = withDates;
-            sortMovies(withDates);
+            const updated = await applyAutoInTheaters(withDates);
+            movies.value = updated;
+            sortMovies(updated);
         }
     }
 
@@ -95,7 +115,9 @@ export function useMovieCalendar() {
         const release_date = newEntry.manual_release_date
             ? formateDate(newEntry.manual_release_date)
             : await getReleaseDateFromId(newEntry.movie_id);
-        movies.value = [...movies.value, { ...newEntry, release_date }];
+        const newMovie = { ...newEntry, release_date };
+        const [resolved] = await applyAutoInTheaters([newMovie]);
+        movies.value = [...movies.value, resolved];
         sortMovies(movies.value);
     }
 
