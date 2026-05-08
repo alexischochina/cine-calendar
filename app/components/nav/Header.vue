@@ -125,9 +125,6 @@ const scrollToToday = () => {
     gap: .5rem;
 }
 
-.close-add-btn { display: none; }
-.mobile-add-btn { display: none; }
-
 .utilities { gap: .5rem; }
 
 .form-content {
@@ -170,6 +167,9 @@ const scrollToToday = () => {
         &.-close { width: 1.7rem; }
     }
 }
+
+.close-add-btn,
+.mobile-add-btn { display: none; }
 
 @media (hover: hover) {
     .input-btn:hover { background-color: $color-dark-grey; }
