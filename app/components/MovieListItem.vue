@@ -89,8 +89,8 @@ const updateState = async (newState) => {
     width: 100%;
 
     &.-state-inTheaters {
-        background-color: rgba(#ec008b, .12);
-        box-shadow: inset 3px 0 0 #ec008b;
+        background-color: rgba($color-primary, .12);
+        box-shadow: inset 3px 0 0 $color-primary;
     }
 }
 
@@ -135,7 +135,7 @@ const updateState = async (newState) => {
 
     @media (hover: hover) {
         &:hover {
-            color: #ec008b;
+            color: $color-primary;
         }
     }
 }

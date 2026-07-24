@@ -193,7 +193,7 @@ const selectedIndex = computed(() => sortedOptions.value.indexOf(props.selected)
 }
 
 .-inTheaters {
-    color: #ec008b;
+    color: $color-primary;
 }
 
 @media (hover: hover) {

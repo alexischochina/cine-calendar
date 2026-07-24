@@ -51,7 +51,7 @@ const deleteMovie = async () => {
         }
 
         &.-danger:hover {
-            color: #ec008b;
+            color: $color-primary;
         }
     }
 }

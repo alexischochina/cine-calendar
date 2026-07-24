@@ -78,7 +78,7 @@ async function signIn() {
     letter-spacing: 0.05em;
 
     span {
-        color: #ec008b;
+        color: $color-primary;
     }
 }
 
@@ -116,7 +116,7 @@ async function signIn() {
 
         &:focus {
             outline: none;
-            border-color: #ec008b;
+            border-color: $color-primary;
         }
     }
 }
@@ -131,7 +131,7 @@ async function signIn() {
 
 .submit-btn {
     margin-top: .4rem;
-    background-color: #ec008b;
+    background-color: $color-primary;
     color: $color-white;
     font-family: $font-futura;
     font-size: 1.4rem;

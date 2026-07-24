@@ -95,7 +95,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
     }
 
     &.-active {
-        color: #ec008b;
+        color: $color-primary;
     }
 
     .active-dot {
@@ -105,7 +105,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
         width: .6rem;
         height: .6rem;
         border-radius: 50%;
-        background-color: #ec008b;
+        background-color: $color-primary;
     }
 }
 
@@ -165,7 +165,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
 
         &.-seen { color: $color-yellow; }
         &.-downloadAvailable { color: $color-orange; }
-        &.-inTheaters { color: #ec008b; }
+        &.-inTheaters { color: $color-primary; }
     }
 
     .option-label {

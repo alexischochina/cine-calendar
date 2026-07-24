@@ -85,7 +85,7 @@ onClickOutside(container, close);
     }
 
     &.-active {
-        color: #ec008b;
+        color: $color-primary;
     }
 
     @media (hover: hover) {
@@ -95,7 +95,7 @@ onClickOutside(container, close);
         }
 
         &.-active:hover {
-            color: #ec008b;
+            color: $color-primary;
         }
     }
 }
