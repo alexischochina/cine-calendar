@@ -32,3 +32,10 @@ export const resolveFrenchReleaseDate = (releaseDates) => {
 
     return frenchDate ? formatDate(frenchDate) : null;
 };
+
+// Réalisateur(s) à partir de la réponse TMDB `credits` (append_to_response=credits).
+// Joint les noms si plusieurs Director ; null si aucun.
+export const extractDirector = (credits) => {
+    const directors = credits?.crew?.filter(c => c.job === 'Director').map(c => c.name) ?? [];
+    return directors.length ? directors.join(', ') : null;
+};
