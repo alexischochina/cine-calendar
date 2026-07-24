@@ -54,7 +54,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
                         <button v-for="f in mediaFilters" :key="f.value"
                                 class="filter-option" :class="{ '-active': moviesStore.filters.media === f.value }"
                                 type="button" @click="toggleMediaFilter(f.value)">
-                            <NuxtImg :src="`/images/${f.value}.png`" class="option-icon" :alt="f.label" />
+                            <MediaBadge :media="f.value" mini class="option-icon" />
                             <span class="option-label">{{ f.label }}</span>
                         </button>
                     </div>
@@ -114,13 +114,14 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
     position: absolute;
     bottom: calc(100% + 0.75rem);
     right: 0;
-    background-color: $color-grey;
-    border-radius: 1rem;
+    background-color: $color-surface-2;
+    border: 1px solid $color-border-5;
+    border-radius: 1.4rem;
     padding: 1rem 1.25rem;
     display: flex;
     flex-direction: column;
     gap: .75rem;
-    box-shadow: 0 -4px 24px rgba(0, 0, 0, .4);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
     transform-origin: bottom right;
 }
 
@@ -155,7 +156,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
 
     &.-active {
         opacity: 1;
-        background-color: $color-dark-grey;
+        background-color: $color-hover-strong;
     }
 
     .option-icon {
@@ -165,14 +166,14 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
         flex-shrink: 0;
 
         &.-seen { color: $color-yellow; }
-        &.-downloadAvailable { color: $color-orange; }
+        &.-downloadAvailable { color: $color-text-muted; }
         &.-inTheaters { color: $color-primary; }
     }
 
     .option-label {
         font-size: 1rem;
         white-space: nowrap;
-        color: $color-white;
+        color: $color-text-body;
     }
 }
 
@@ -207,14 +208,9 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
         transform-origin: bottom center;
         padding: 1.25rem 1.25rem 1rem;
         border-radius: 1.5rem;
-        background: rgba($color-grey, 0.92);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border: 1px solid rgba($color-white, 0.07);
-        box-shadow:
-            inset 0 1px 0 rgba($color-white, 0.06),
-            0 8px 24px rgba(0, 0, 0, 0.5),
-            0 24px 48px rgba(0, 0, 0, 0.3);
+        background: $color-surface-2;
+        border: 1px solid $color-border-5;
+        box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
     }
 
     .filter-row {

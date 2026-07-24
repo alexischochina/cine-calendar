@@ -43,7 +43,7 @@ const addMovie = async () => {
         }
         // Si TMDB est indisponible, on insère quand même (métadonnées nulles) :
         // le filet de sécurité de getMovies les résoudra au prochain chargement.
-        let meta = { title: null, poster_path: null, release_date: null };
+        let meta = { title: null, poster_path: null, release_date: null, director: null };
         try {
             meta = await $fetch(`/api/movies/${movieId.value}/full`);
         } catch (e) {
@@ -58,6 +58,7 @@ const addMovie = async () => {
                 title: meta.title,
                 poster_path: meta.poster_path,
                 release_date: meta.release_date,
+                director: meta.director,
             })
             .select()
             .single()
@@ -70,6 +71,7 @@ const addMovie = async () => {
             title: meta.title,
             poster_path: meta.poster_path,
             release_date: meta.release_date,
+            director: meta.director,
         };
         resetForm();
         emit('movie-added', newEntry)
@@ -121,68 +123,72 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
 
 .text-input {
     border: none;
-    background-color: $color-dark-grey;
-    border-radius: .5rem;
+    background-color: transparent;
     width: var(--search-bar-width);
-    padding: .6rem 1rem;
-    height: 3.5rem;
-    color: $color-white;
+    padding: .4rem 0;
+    height: 3rem;
+    color: $color-text-body;
+    font: $normal 1.4rem/1 $font-body;
 }
 
 .suggestions-container {
-    background-color: $color-grey;
-    width: calc(var(--search-bar-width) + 2rem);
+    background-color: $color-surface-2;
+    border: 1px solid $color-border-5;
+    width: calc(var(--search-bar-width) + 3rem);
     height: auto;
     position: absolute;
     bottom: 0;
     left: 0;
     z-index: 900;
-    border-radius: 1rem;
-    padding: 0 1rem var(--search-bar-height);
+    border-radius: 1.4rem;
+    overflow: hidden;
+    padding: 0 0 var(--search-bar-height);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
 }
 
 .suggestion {
     width: 100%;
-    padding: 1rem;
-    border-bottom: solid 1px $color-dark-grey;
+    padding: 1.1rem 1.4rem;
+    border-bottom: solid 1px $color-border-2;
     text-align: left;
-    transition: background-color .3s linear;
-
-    &:first-child {
-        margin-top: 1rem;
-    }
+    transition: background-color .2s linear;
 }
 
 .movie-title {
-    font-weight: $regular;
+    color: $color-text;
+    font: $semi-bold 1.4rem/1 $font-body;
 }
 
 .release-date {
-    margin-left: .5rem;
+    margin-left: .6rem;
+    color: $color-text-weaker;
+    font-family: $font-mono;
 }
 
 .input-btn {
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: .5rem;
+    width: 3rem;
+    height: 3rem;
+    border-radius: .8rem;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background-color .2s linear;
+    color: $color-text-muted;
+    transition: background-color .2s linear, color .2s linear;
 
     > svg {
-        width: 2rem;
+        width: 1.9rem;
         height: auto;
     }
 }
 
 @media (hover: hover) {
     .input-btn:hover {
-        background-color: $color-dark-grey;
+        background-color: $color-hover;
+        color: $color-text-dim;
     }
 
     .suggestion:hover {
-        background-color: $color-dark-grey;
+        background-color: $color-hover-strong;
     }
 }
 

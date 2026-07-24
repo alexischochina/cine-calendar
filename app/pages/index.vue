@@ -6,97 +6,148 @@ definePageMeta({
 useHead({ title: 'Mon calendrier' })
 
 const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted, handleReleaseDateUpdated } = useMovieCalendar()
-const { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovie } = useMovieScroll(movies)
+const { closestMovie, searchMovie, scrollToMovie, scrollToTop } = useMovieScroll(movies)
 
 const currentYear = new Date().getFullYear();
-const expandedYears = ref([currentYear]);
+const scrollEl = ref(null);
+// Année (ou "Sans date" = null) affichée. Comme la maquette : on ne rend qu'une année à la fois.
+const selectedYear = ref(currentYear);
+const mobileYearMenu = ref(false);
 
-// Stats par année, calculées en une seule passe sur la liste (au lieu d'une passe par année).
-const yearStats = computed(() => {
-    const acc = {};
-    for (const m of movies.value) {
-        if (!m.release_date) continue;
-        const d = new Date(m.release_date);
-        if (isNaN(d)) continue;
-        const y = d.getFullYear();
-        if (!acc[y]) acc[y] = { total: 0, seen: 0, cinema: 0 };
-        acc[y].total++;
-        if (m.state === 'seen') acc[y].seen++;
-        if (m.media === 'cinema' && m.state === 'seen') acc[y].cinema++;
+const yearOfMovie = (m) => {
+    if (!m?.release_date) return null;
+    const d = new Date(m.release_date);
+    return isNaN(d) ? null : d.getFullYear();
+};
+
+// Mois de l'année sélectionnée (null = section « Sans date »).
+const monthsOfYear = computed(() =>
+    selectedYear.value === null ? null : (sortedMovies.value[selectedYear.value] || {})
+);
+const hasContent = computed(() =>
+    selectedYear.value === null
+        ? moviesWithoutDate.value.length > 0
+        : Object.keys(monthsOfYear.value).length > 0
+);
+
+// Films actuellement en salle (rail droit + bande mobile), triés par date.
+const cinemaNow = computed(() =>
+    movies.value
+        .filter(m => m.state === 'inTheaters')
+        .sort((a, b) => new Date(a.release_date) - new Date(b.release_date))
+);
+
+// Années disponibles + compteurs (rail gauche / menu mobile).
+const yearList = computed(() => {
+    const out = [];
+    for (const [year, months] of Object.entries(sortedMovies.value)) {
+        let count = 0;
+        for (const days of Object.values(months))
+            for (const list of Object.values(days)) count += list.length;
+        out.push({ year: Number(year), label: year, count });
     }
-    return acc;
+    out.sort((a, b) => a.year - b.year);
+    if (moviesWithoutDate.value.length)
+        out.push({ year: null, label: 'Sans date', count: moviesWithoutDate.value.length });
+    return out;
 });
 
-const isYearExpanded = (year) => expandedYears.value.includes(Number(year));
+const selectedYearLabel = computed(() => selectedYear.value === null ? 'Sans date' : String(selectedYear.value));
 
-const toggleYear = (year) => {
-    const y = Number(year);
-    if (isYearExpanded(y)) {
-        expandedYears.value = expandedYears.value.filter(yr => yr !== y);
-    } else {
-        expandedYears.value = [...expandedYears.value, y];
-    }
+const monthCount = (days) => {
+    const n = Object.values(days).reduce((acc, list) => acc + list.length, 0);
+    return `${n} film${n > 1 ? 's' : ''}`;
 };
 
-const expandYear = (year) => {
-    const y = Number(year);
-    if (!isYearExpanded(y)) expandedYears.value = [...expandedYears.value, y];
+const selectYear = (year) => {
+    selectedYear.value = year;
+    mobileYearMenu.value = false;
+    nextTick(() => scrollToTop());
 };
 
+// Va sur un film : bascule sur son année puis scrolle jusqu'à lui.
+const goToMovie = (movieId) => {
+    const movie = movies.value.find(m => m.movie_id === Number(movieId));
+    if (!movie) return;
+    selectedYear.value = yearOfMovie(movie);
+    nextTick(() => scrollToMovie(movieId));
+};
+
+const onScrollToToday = () => {
+    const target = closestMovie();
+    if (!target) { selectedYear.value = currentYear; return; }
+    goToMovie(target.movie_id);
+};
+
+const onSearch = (event) => {
+    const best = searchMovie(event.detail?.term);
+    if (best) goToMovie(best.movie_id);
+};
 
 const onMovieAdded = async (event) => {
     await handleMovieAdded(event);
-    await nextTick();
-    scrollToMovie(event.detail?.newEntry?.movie_id);
+    goToMovie(event.detail?.newEntry?.movie_id);
 }
 
 const onMovieExists = (event) => {
     const movieId = handleMovieExists(event);
-    if (movieId) scrollToMovie(movieId);
+    if (movieId) goToMovie(movieId);
 }
-
-const onExpandYear = (e) => { if (e.detail?.year) expandYear(e.detail.year); };
 
 onMounted(async () => {
     window.addEventListener('movie-added', onMovieAdded)
     window.addEventListener('movie-exists', onMovieExists)
-    window.addEventListener('scroll-to-today', scrollToClosestDate)
-    window.addEventListener('search-movie', handleSearchMovie)
-    window.addEventListener('scroll-to-year', handleScrollToYear)
-    window.addEventListener('expand-year', onExpandYear)
+    window.addEventListener('scroll-to-today', onScrollToToday)
+    window.addEventListener('search-movie', onSearch)
     await getMovies()
-    scrollToClosestDate()
+    onScrollToToday()
 })
 
 onBeforeUnmount(() => {
     window.removeEventListener('movie-added', onMovieAdded)
     window.removeEventListener('movie-exists', onMovieExists)
-    window.removeEventListener('scroll-to-today', scrollToClosestDate)
-    window.removeEventListener('search-movie', handleSearchMovie)
-    window.removeEventListener('scroll-to-year', handleScrollToYear)
-    window.removeEventListener('expand-year', onExpandYear)
+    window.removeEventListener('scroll-to-today', onScrollToToday)
+    window.removeEventListener('search-movie', onSearch)
 })
 </script>
 
 <template>
-    <div class="home-wrapper wrapper -large -padded">
-        <div class="year-container" v-for="(months, year) in sortedMovies" :key="year" :data-year="year">
-            <div class="year-header flex -align-center" @click="toggleYear(year)">
-                <div class="title-4">{{ year }}</div>
-                <YearStats :stat="yearStats[Number(year)]" class="year-stats-wrapper" />
-                <span class="year-chevron" :class="{ '-expanded': isYearExpanded(year) }" />
+    <div class="timeline-shell">
+        <NavSideNav class="shell-rail -left" :years="yearList" :active-year="selectedYear" @select-year="selectYear" />
+
+        <!-- En-tête mobile : titre + pastille année + segmented Timeline|Stats -->
+        <div class="shell-mobilehead">
+            <div class="top">
+                <div class="brand">Ma cinémathèque</div>
+                <button class="year-pill" type="button" aria-label="Choisir l'année" aria-haspopup="true"
+                        :aria-expanded="mobileYearMenu" @click="mobileYearMenu = !mobileYearMenu">
+                    {{ selectedYearLabel }}<Svg name="chevron" class="chev" aria-hidden="true" />
+                </button>
             </div>
-            <Transition name="year-content">
-                <div v-if="isYearExpanded(year)" class="year-body">
-                    <div class="month-container" v-for="(days, month) in months" :key="month">
-                        <div class="month-title" :class="{ '-sticky': Object.keys(days).length > 1 }">
-                            <span class="month-name title-2">{{ month }}</span>
-                            <span class="month-year-badge">{{ year }}</span>
-                        </div>
-                        <div class="days-container">
-                            <div class="day" v-for="(movies, day) in days" :key="day" :data-date="movies[0].release_date">
-                                <MovieListItem v-for="(movie, index) in movies" :key="movie.id"
-                                               :release-day="index === 0 ? day : ''"
+            <div class="tabs">
+                <button class="tab -active" type="button"><Svg name="list" class="ico" />Timeline</button>
+                <button class="tab -disabled" type="button" disabled aria-disabled="true" title="Bientôt disponible">
+                    <Svg name="chart" class="ico" />Stats
+                </button>
+            </div>
+        </div>
+
+        <div class="shell-main">
+            <CinemaNowPanel class="shell-band" variant="band" :movies="cinemaNow" @select-movie="goToMovie" />
+
+            <div class="timeline scr" ref="scrollEl">
+                <template v-if="hasContent">
+                    <!-- Année datée : groupes de mois -->
+                    <template v-if="selectedYear !== null">
+                        <div class="month-group" v-for="(days, month) in monthsOfYear" :key="month">
+                            <div class="month-head">
+                                <span class="name">{{ month }}</span>
+                                <span class="rule" />
+                                <span class="count">{{ monthCount(days) }}</span>
+                            </div>
+                            <template v-for="(dayMovies, day) in days" :key="day">
+                                <MovieListItem v-for="(movie, index) in dayMovies" :key="movie.id"
+                                               :release-day="index === 0 ? String(day) : ''"
                                                :movie-id="movie.movie_id"
                                                :media="movie.media"
                                                :state="movie.state"
@@ -104,194 +155,237 @@ onBeforeUnmount(() => {
                                                :title="movie.title"
                                                :poster-path="movie.poster_path"
                                                :manual-release-date="movie.manual_release_date"
-                                               :style="new Date(movie.release_date) > new Date() ? { opacity: 0.5 } : {}"
+                                               :director="movie.director"
                                                @movie-deleted="handleMovieDeleted"
-                                               @release-date-updated="handleReleaseDateUpdated"
-                                />
-                            </div>
+                                               @release-date-updated="handleReleaseDateUpdated" />
+                            </template>
                         </div>
+                    </template>
+
+                    <!-- Sans date -->
+                    <div class="month-group" v-else>
+                        <MovieListItem v-for="movie in moviesWithoutDate" :key="movie.id"
+                                       :release-day="''"
+                                       :movie-id="movie.movie_id"
+                                       :media="movie.media"
+                                       :state="movie.state"
+                                       :id="movie.id"
+                                       :title="movie.title"
+                                       :poster-path="movie.poster_path"
+                                       :manual-release-date="movie.manual_release_date"
+                                       :director="movie.director"
+                                       @movie-deleted="handleMovieDeleted"
+                                       @release-date-updated="handleReleaseDateUpdated" />
                     </div>
-                </div>
-            </Transition>
+                </template>
+
+                <div v-else class="empty">Aucun film ne correspond.</div>
+            </div>
         </div>
 
-        <div class="no-date-section" v-if="moviesWithoutDate.length">
-            <div class="title-4">Sans date</div>
-            <MovieListItem v-for="movie in moviesWithoutDate"
-                           :key="movie.id"
-                           :release-day="''"
-                           :movie-id="movie.movie_id"
-                           :media="movie.media"
-                           :state="movie.state"
-                           :id="movie.id"
-                           :title="movie.title"
-                           :poster-path="movie.poster_path"
-                           :manual-release-date="movie.manual_release_date"
-                           :style="{ opacity: 0.5 }"
-                           @movie-deleted="handleMovieDeleted"
-                           @release-date-updated="handleReleaseDateUpdated"
-            />
+        <CinemaNowPanel class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToMovie" />
+
+        <!-- Menu année (mobile) -->
+        <div v-if="mobileYearMenu" class="year-overlay" @click="mobileYearMenu = false">
+            <div class="year-sheet" role="dialog" aria-label="Choisir l'année" @click.stop>
+                <button v-for="y in yearList" :key="y.label" class="year" :class="{ '-active': y.year === selectedYear }"
+                        type="button" @click="selectYear(y.year)">
+                    <span>{{ y.label }}</span>
+                    <span class="count">{{ y.count }}</span>
+                </button>
+            </div>
         </div>
     </div>
 </template>
 
-<style lang="scss">
-.home-wrapper {
-    padding: 13rem 0;
-    min-height: 100vh;
-}
+<style lang="scss" scoped>
+.timeline-shell {
+    display: flex;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
 
-.year-header {
-    gap: 1rem;
-    padding: 1.5rem 0;
-    border-top: 1px solid rgba($color-white, .2);
-    cursor: pointer;
-    user-select: none;
-
-    &:first-child {
-        border-top: none;
-    }
-}
-
-.year-stats-wrapper {
-    margin-left: auto;
-    margin-right: 1.25rem;
-}
-
-.year-chevron {
-    display: block;
-    width: .9rem;
-    height: .9rem;
-    border-right: 2px solid rgba($color-white, .5);
-    border-bottom: 2px solid rgba($color-white, .5);
-    transform: rotate(45deg) translateY(-2px);
-    transition: transform .2s $cubic-ease-out, border-color .2s ease;
-    flex-shrink: 0;
-
-    &.-expanded {
-        transform: rotate(-135deg) translateY(-2px);
-        border-color: $color-white;
-    }
-}
-
-.month-container {
-    display: grid;
-    grid-template-columns: 15rem auto;
-    border-top: 1px solid $color-white;
-}
-
-.month-title {
-    padding: 2rem 0;
-
-    &.-sticky {
-        position: sticky;
-        top: 2rem;
-        align-self: start;
-    }
-}
-
-.month-name {
-    text-transform: capitalize;
-}
-
-.month-year-badge {
-    display: none;
-}
-
-.day:not(:last-child) {
-    border-bottom: solid 1px $color-white;
-}
-
-.no-date-section {
-    margin-top: 4rem;
-    border-top: 1px solid $color-white;
-    padding-top: 2rem;
-}
-
-// Year expand/collapse transition
-.year-content-enter-active,
-.year-content-leave-active {
-    transition: opacity .2s ease;
-}
-
-.year-content-enter-from,
-.year-content-leave-to {
-    opacity: 0;
-}
-
-@media (hover: hover) {
-    .year-header:hover .year-chevron {
-        border-color: $color-white;
-    }
-}
-
-@media (max-width: 1024px) {
-    .month-container {
-        grid-template-columns: 10rem auto;
-    }
-}
-
-@media (max-width: 767px) {
-    .home-wrapper {
-        padding-top: 6rem;
-        padding-bottom: 9rem;
-    }
-
-    .year-header {
-        padding: 1rem 0;
-    }
-
-    .month-container {
-        grid-template-columns: 1fr;
-        border-top: none;
-    }
-
-    .month-title {
-        position: sticky;
-        top: 0;
-        z-index: 10;
+    .shell-main {
+        flex: 1;
+        min-width: 0;
         display: flex;
-        align-items: baseline;
-        gap: .75rem;
-        background-color: $color-xdark-grey;
-        padding: 1rem var(--wrapper-padding);
-        margin-left: calc(-1 * var(--wrapper-padding));
-        margin-right: calc(-1 * var(--wrapper-padding));
-        border-bottom: 1px solid rgba($color-white, .15);
+        flex-direction: column;
+    }
 
-        &.-sticky {
-            position: sticky;
-            top: 0;
-            align-self: auto;
+    .timeline {
+        flex: 1;
+        min-width: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: .8rem 0 11rem;
+    }
+
+    .empty {
+        padding: 8rem 3rem;
+        text-align: center;
+        color: $color-text-weak;
+        font: $normal 1.4rem/1 $font-body;
+    }
+}
+
+.month-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    align-items: baseline;
+    gap: 1rem;
+    padding: 1.6rem 2.4rem 1rem;
+    background: rgba($color-bg, .92);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+
+    > .name {
+        color: $color-text;
+        font: 800 1.7rem/1 $font-title;
+        text-transform: capitalize;
+    }
+
+    > .rule {
+        flex: 1;
+        height: 1px;
+        background: $color-border-2;
+    }
+
+    > .count {
+        font: $normal 1.1rem/1 $font-mono;
+        color: $color-text-weak;
+    }
+}
+
+// Menu année (mobile)
+.year-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0 0 4rem;
+    background: rgba(0, 0, 0, .5);
+
+    .year-sheet {
+        width: 26rem;
+        background: $color-surface-2;
+        border: 1px solid $color-border-4;
+        border-radius: 1.6rem;
+        padding: .8rem;
+        animation: pop .16s ease;
+
+        > .year {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            padding: 1.1rem 1.4rem;
+            border-radius: 1rem;
+            color: $color-text-muted;
+            font: $normal 1.5rem/1 $font-body;
+            cursor: pointer;
+
+            > .count { font: $normal 1.1rem/1 $font-mono; color: $color-text-weak; }
+
+            &.-active {
+                background: rgba($color-primary, .14);
+                color: $color-text;
+                font-weight: $bold;
+
+                > .count { color: $color-primary-light; }
+            }
+        }
+    }
+}
+
+// En-tête mobile (masqué desktop)
+.shell-mobilehead {
+    display: none;
+    flex: none;
+    padding: 2.4rem 1.8rem 1rem;
+
+    > .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.2rem;
+
+        > .brand {
+            color: $color-text;
+            font: 800 2.1rem/1 $font-title;
+            letter-spacing: -.05rem;
+        }
+
+        > .year-pill {
+            display: flex;
+            align-items: center;
+            gap: .6rem;
+            padding: .6rem 1rem;
+            border-radius: 999px;
+            background: $color-surface-3;
+            border: 1px solid $color-border-3;
+            color: $color-text-dim;
+            font: $bold 1.2rem/1 $font-mono;
+            cursor: pointer;
+
+            > .chev { width: 1.3rem; height: 1.3rem; }
         }
     }
 
-    .month-year-badge {
-        display: inline;
-        font-family: $font-futura;
-        font-size: 1.3rem;
-        letter-spacing: .04em;
-        opacity: .4;
-        text-transform: uppercase;
-    }
+    > .tabs {
+        display: flex;
+        gap: .4rem;
+        background: $color-surface-1;
+        border: 1px solid $color-border-2;
+        border-radius: 1.1rem;
+        padding: .4rem;
 
-    .days-container {
-        margin-left: calc(-1 * var(--wrapper-padding));
-        margin-right: calc(-1 * var(--wrapper-padding));
-    }
+        > .tab {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: .6rem;
+            padding: .8rem;
+            border-radius: .8rem;
+            color: $color-text-muted;
+            font: $semi-bold 1.25rem/1 $font-body;
+            cursor: pointer;
 
-    .day:not(:last-child) {
-        border-bottom: solid 1px rgba($color-white, .12);
-    }
+            > .ico { width: 1.5rem; height: 1.5rem; }
 
-    .no-date-section {
-        margin-left: calc(-1 * var(--wrapper-padding));
-        margin-right: calc(-1 * var(--wrapper-padding));
-        padding-top: 1.5rem;
-
-        > .title-4 {
-            padding: 0 var(--wrapper-padding) .75rem;
+            &.-active { background: $color-primary; color: $color-white; }
+            &.-disabled { cursor: default; opacity: .55; }
         }
     }
+}
+
+@keyframes pop {
+    from { transform: scale(.96); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
+}
+
+@media (max-width: 999px) {
+    .timeline-shell {
+        flex-direction: column;
+
+        .shell-rail { display: none; }
+        .timeline { padding: 0 0 11rem; }
+    }
+
+    .shell-mobilehead { display: block; }
+
+    .month-head {
+        padding: 1.4rem 1.8rem .8rem;
+
+        > .name { font-size: 1.5rem; }
+    }
+}
+
+@media (min-width: 1000px) {
+    .timeline-shell .shell-band { display: none; }
 }
 </style>

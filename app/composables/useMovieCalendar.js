@@ -31,7 +31,7 @@ export function useMovieCalendar() {
         byDate.forEach((movie) => {
             const date = new Date(movie.release_date);
             const year = date.getFullYear();
-            const month = new Intl.DateTimeFormat('fr-FR', { month: 'short' }).format(date).replace('.', '');
+            const month = new Intl.DateTimeFormat('fr-FR', { month: 'long' }).format(date);
             const day = date.getDate();
 
             if (!sorted[year]) sorted[year] = {};
@@ -48,12 +48,17 @@ export function useMovieCalendar() {
     const applyAutoInTheaters = async (movieList) => {
         const d = new Date();
         const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const currentYear = d.getFullYear();
+        const yearOf = (ds) => { const x = new Date(ds); return isNaN(x) ? null : x.getFullYear(); };
 
+        // Sorties cinéma de l'année en cours, déjà sorties, non vues → « en salle maintenant ».
+        // Garde-fou `>= currentYear` : on ne (re)flague jamais un film d'une année précédente.
         const toUpdate = movieList.filter(m =>
             m.media === 'cinema' &&
             m.state === 'unseen' &&
             m.release_date &&
-            m.release_date <= todayStr
+            m.release_date <= todayStr &&
+            yearOf(m.release_date) >= currentYear
         );
 
         if (!toUpdate.length) return movieList;
@@ -80,11 +85,12 @@ export function useMovieCalendar() {
                 try {
                     const meta = await $fetch(`/api/movies/${row.movie_id}/full`);
                     await client.from('calendar')
-                        .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date })
+                        .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director })
                         .eq('id', row.id);
                     row.title = meta.title;
                     row.poster_path = meta.poster_path;
                     row.release_date = meta.release_date;
+                    row.director = meta.director;
                 } catch (e) {
                     console.error('Filet de sécurité: résolution échouée pour', row.movie_id, e);
                 }
@@ -130,6 +136,7 @@ export function useMovieCalendar() {
                 if (fresh !== (movie._tmdbReleaseDate || null)) patch.release_date = fresh;
                 if (meta.title && meta.title !== movie.title) patch.title = meta.title;
                 if (meta.poster_path !== movie.poster_path) patch.poster_path = meta.poster_path;
+                if (meta.director !== movie.director) patch.director = meta.director;
                 if (!Object.keys(patch).length) return;
 
                 await client.from('calendar').update(patch).eq('id', movie.id);

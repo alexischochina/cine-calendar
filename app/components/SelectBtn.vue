@@ -90,9 +90,8 @@ const optionId = (value) => `sb-${props.type}-${value}`;
              :aria-activedescendant="optionId(props.selected)" @click.stop="handleToggle"
              @keydown.enter.prevent="handleToggle" @keydown.space.prevent="handleToggle"
              @keydown.escape="handleClose">
-            <NuxtImg v-if="props.type === 'media'" class="selected-icon"
-                     :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]"
-                     :src="`/images/${props.selected}.png`" :alt="labelFor(props.selected)" ref="selectedIcon"/>
+            <MediaBadge v-if="props.type === 'media'" :media="props.selected" class="selected-icon"
+                        :class="{ '-on-front': onFront }" ref="selectedIcon"/>
             <Svg v-if="props.type === 'state'" :name="props.selected" class="selected-icon"
                  :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]" ref="selectedIcon"/>
             <div class="options flex -direction-column" :style="{ '--selected-index': selectedIndex }">
@@ -100,7 +99,7 @@ const optionId = (value) => `sb-${props.type}-${value}`;
                         v-for="option in sortedOptions" role="option" :id="optionId(option)"
                         :aria-selected="option === props.selected" :aria-label="labelFor(option)"
                         :key="option" ref="optionEls" @click.stop="handleOnClick(option)">
-                    <NuxtImg v-if="props.type === 'media'" class="icon" :src="`/images/${option}.png`" :alt="labelFor(option)"/>
+                    <MediaBadge v-if="props.type === 'media'" :media="option" class="icon"/>
                     <Svg v-if="props.type === 'state'" :name="option" class="icon" :class="`-${option}`"/>
                 </button>
             </div>
@@ -110,11 +109,16 @@ const optionId = (value) => `sb-${props.type}-${value}`;
 
 <style lang="scss" scoped>
 .select-btn {
-    border-radius: .5rem;
-    transition: background-color .2s linear;
     position: relative;
-    padding: .5rem;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    cursor: pointer;
     z-index: 1;
+    transition: background-color .15s linear;
+
+    &.-media { width: 2.4rem; height: 2.4rem; }
+    &.-state { width: 2.6rem; height: 2.6rem; color: $color-text-weak; }
 
     &.-open {
         z-index: 20;
@@ -127,24 +131,29 @@ const optionId = (value) => `sb-${props.type}-${value}`;
 
 .selected-icon {
     position: relative;
-    width: 2.5rem;
-    aspect-ratio: 1;
-    object-fit: contain;
     z-index: 1;
     pointer-events: none;
     transition: color .2s linear;
 
-    &.-seen {
-        color: $color-yellow;
+    &.-on-front { z-index: 10; }
+}
+
+// Couleurs des icônes d'état (sélection + options). Le vert « vu au ciné » vient
+// du parent `.-cinema` (classe posée sur `.movie-list-item`).
+.-state {
+    .selected-icon, .icon {
+        &.-unseen { color: $color-text-weak; }
+        &.-seen { color: $color-yellow; }
+        &.-downloadAvailable { color: $color-text-muted; }
+        &.-inTheaters { color: $color-primary; }
     }
 
-    .-cinema &.-seen {
-        color: $color-green;
-    }
+    .selected-icon { width: 1.9rem; height: 1.9rem; }
+}
 
-    &.-on-front {
-        z-index: 10;
-    }
+.-cinema {
+    .-state .selected-icon.-seen,
+    .-state .icon.-seen { color: $color-green; }
 }
 
 .options {
@@ -153,16 +162,20 @@ const optionId = (value) => `sb-${props.type}-${value}`;
     padding: .5rem;
     position: absolute;
     top: 50%;
-    left: 0;
+    left: 50%;
+    margin-left: -1.75rem;
     transform: translateY(calc(var(--selected-pos) * -1)) scaleY(0);
     transform-origin: 50% var(--selected-pos);
-    background-color: $color-dark-grey;
-    border-radius: .5rem;
+    background-color: $color-surface-2;
+    border: 1px solid $color-border-5;
+    border-radius: .8rem;
     transition: transform .1s $cubic-ease-out;
     z-index: 5;
 }
 
 .option {
+    display: grid;
+    place-items: center;
     transition: transform .1s $cubic-ease-in;
     width: 2.5rem;
     height: 2.5rem;
@@ -180,36 +193,15 @@ const optionId = (value) => `sb-${props.type}-${value}`;
 }
 
 .icon {
-    display: block;
-    width: 100%;
-    height: 100%;
-    aspect-ratio: 1;
-    object-fit: contain;
     transition: transform .2s $cubic-ease-out, opacity .2s linear;
     opacity: 0;
     transform: scale(.5);
-
-    &.-seen {
-        color: $color-yellow;
-    }
-
-    .-cinema &.-seen {
-        color: $color-green;
-    }
 }
 
-.-downloadAvailable {
-    color: $color-orange;
-}
-
-.-inTheaters {
-    color: $color-primary;
-}
+.-state .icon { width: 1.9rem; height: 1.9rem; }
 
 @media (hover: hover) {
-    .select-btn:hover {
-        background-color: $color-dark-grey;
-    }
+    .select-btn.-state:hover { background-color: $color-hover; }
 
     .option:not(.-selected):hover > .icon {
         transform: scale(1.1);

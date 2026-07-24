@@ -34,6 +34,10 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    director: {
+        type: String,
+        default: null,
+    },
 })
 const selectedMedia = ref(props.media);
 const selectedState = ref(props.state);
@@ -50,162 +54,154 @@ const onStateSelected = (option) => {
 }
 
 const updateMedia = async (newMedia) => {
-    const {data, error} = await client
-        .from('calendar')
-        .update({media: newMedia})
-        .eq('id', props.id)
+    await client.from('calendar').update({ media: newMedia }).eq('id', props.id)
 }
 
 const updateState = async (newState) => {
-    const {data, error} = await client
-        .from('calendar')
-        .update({state: newState})
-        .eq('id', props.id)
+    await client.from('calendar').update({ state: newState }).eq('id', props.id)
 }
+
+// Sous-titre de droite : réalisateur si connu, sinon libellé état/média (cf. plan « sub »).
+const MEDIA_LABELS = { cinema: 'Cinéma', netflix: 'Netflix', primeVideo: 'Prime Video', 'disney+': 'Disney+', streaming: 'Streaming', vod: 'Streaming', unknown: 'Streaming' };
+const sub = computed(() => {
+    const dir = props.director;
+    if (selectedState.value === 'seen') return dir || MEDIA_LABELS[selectedMedia.value] || 'Streaming';
+    if (selectedState.value === 'inTheaters') return 'En salle maintenant';
+    if (selectedState.value === 'downloadAvailable') return dir || 'Dispo en téléchargement';
+    return dir || 'Envie de voir';
+});
 </script>
 
 <template>
-    <div class="movie-list-item flex -align-center -justify-space-between"
+    <div class="movie-list-item"
          :class="[`-${selectedMedia}`, `-state-${selectedState}`, `-id-${props.movieId}`]">
-        <div class="movie-infos flex -align-center">
-            <div class="title-4">{{ props.releaseDay }}</div>
-            <NuxtImg v-if="props.posterPath" :src="`https://image.tmdb.org/t/p/w500${props.posterPath}`" :alt="props.title ? `Affiche du film ${props.title}` : ''" class="poster" loading="lazy"/>
-            <div v-else class="poster poster-placeholder"/>
-            <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title-5 movie-link">{{ props.title }}</a>
+        <div class="day">{{ props.releaseDay }}</div>
+        <NuxtImg v-if="props.posterPath" :src="`https://image.tmdb.org/t/p/w342${props.posterPath}`"
+                 :alt="props.title ? `Affiche du film ${props.title}` : ''" class="poster" loading="lazy" />
+        <div v-else class="poster -placeholder" />
+        <div class="info">
+            <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title">{{ props.title }}</a>
+            <div class="sub">{{ sub }}</div>
         </div>
-        <div class="stream-infos flex -align-center">
-            <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>
-            <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected"/>
-            <MovieActionsBtn :id="props.id" :manual-release-date="manualReleaseDate"
-                             @movie-deleted="emits('movie-deleted', $event)"
-                             @release-date-updated="emits('release-date-updated', $event)"/>
-        </div>
+        <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" />
+        <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected" />
+        <MovieActionsBtn :id="props.id" :manual-release-date="manualReleaseDate"
+                         @movie-deleted="emits('movie-deleted', $event)"
+                         @release-date-updated="emits('release-date-updated', $event)" />
     </div>
 </template>
 
 <style lang="scss" scoped>
 .movie-list-item {
-    position: relative;
-    padding: 1rem 3rem;
-    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 1.4rem;
+    padding: 1.1rem 2.2rem 1.1rem 1.9rem;
+    // Bord gauche 3px + fond teinté, pilotés par l'état. Défaut = gris « à venir ».
+    --accent: #{$color-status-grey};
+    border-left: 3px solid var(--accent);
+    background: transparent;
 
-    // Single source of truth: only these states define --accent.
-    // The streaming media list lives here once and nowhere else.
     &.-state-inTheaters {
         --accent: #{$color-primary};
+        background: rgba($color-primary, .16);
     }
 
     &.-cinema.-state-seen {
         --accent: #{$color-green};
+        background: rgba($color-green, .15);
     }
 
     &.-state-seen:is(.-streaming, .-netflix, .-primeVideo, .-disney\+, .-vod) {
         --accent: #{$color-yellow};
+        background: rgba($color-yellow, .14);
     }
 
-    // Tint + crisp full-height left bar, driven entirely by --accent.
-    // With no accent set, both resolve to transparent → no visual change,
-    // so this single block covers every row without duplicating selectors.
-    background-color: color-mix(in srgb, var(--accent, transparent) 20%, transparent);
-
-    &::before {
-        content: '';
-        position: absolute;
-        inset: 0 auto 0 0;
-        width: 3px;
-        background-color: var(--accent, transparent);
-        pointer-events: none; // decorative bar must not intercept clicks
-        z-index: 1;
+    > .day {
+        width: 3rem;
+        text-align: center;
+        flex: none;
+        color: $color-text-body;
+        font: $bold 1.6rem/1 $font-mono;
     }
-}
 
-.movie-infos {
-    gap: 3rem;
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-}
+    > .poster {
+        width: 3.8rem;
+        height: 5.7rem;
+        border-radius: 6px;
+        flex: none;
+        object-fit: cover;
 
-.poster {
-    border-radius: .5rem;
-    width: 5rem;
-    aspect-ratio: 2 / 3;
-    flex-shrink: 0;
-}
+        &.-placeholder { background: $color-surface-1; }
+    }
 
-.poster-placeholder {
-    background-color: $color-dark-grey;
-}
+    // .info disparaît de la mise en page desktop : title + sub deviennent frères directs.
+    > .info { display: contents; }
 
-.stream-infos {
-    gap: 3rem;
-    flex-shrink: 0;
-}
+    .title {
+        flex: 1;
+        min-width: 0;
+        color: $color-text;
+        font: $semi-bold 1.5rem/1.2 $font-body;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transition: color .2s linear;
 
-.title-4 {
-    width: 3rem;
-    text-align: right;
-    flex-shrink: 0;
-}
-
-.movie-link {
-    display: block;
-    text-decoration: none;
-    color: inherit;
-    transition: color .2s linear;
-    min-width: 0;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-
-    @media (hover: hover) {
-        &:hover {
-            color: $color-primary;
+        @media (hover: hover) {
+            &:hover { color: $color-primary-light; }
         }
     }
+
+    .sub {
+        width: 12rem;
+        flex: none;
+        color: $color-text-muted;
+        font: $normal 1.25rem/1.2 $font-body;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    // Teintes de texte par état.
+    &.-state-inTheaters .sub { color: $color-primary-light; }
+    &.-state-unseen, &.-state-downloadAvailable {
+        .sub { color: $color-text-weak; }
+        > .day { color: $color-text-faint; }
+        .title { color: $color-text-dim; }
+        > .poster { opacity: .78; }
+    }
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 999px) {
     .movie-list-item {
-        padding: 1rem 2rem;
-    }
+        gap: 1.1rem;
+        padding: .9rem 1.4rem .9rem 1.2rem;
 
-    .movie-infos {
-        gap: 1.5rem;
-        flex: 1;
-    }
+        > .day {
+            width: 2.4rem;
+            font-size: 1.5rem;
+        }
 
-    .stream-infos {
-        gap: 1.5rem;
-    }
-}
+        > .poster {
+            width: 3.6rem;
+            height: 5.4rem;
+        }
 
-@media (max-width: 767px) {
-    .movie-list-item {
-        padding: .6rem var(--wrapper-padding);
-    }
+        // Sur mobile, title + sub s'empilent dans une colonne flex.
+        > .info {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            min-width: 0;
+        }
 
-    .poster {
-        display: none;
-    }
+        .title { font-size: 1.35rem; }
 
-    .movie-infos {
-        gap: 1.5rem;
-    }
-
-    .title-4 {
-        width: 2.5rem;
-    }
-
-    .movie-link {
-        white-space: normal;
-        display: -webkit-box;
-        -webkit-line-clamp: 2;
-        -webkit-box-orient: vertical;
-    }
-
-    .stream-infos {
-        gap: .5rem;
+        .sub {
+            width: auto;
+            font-size: 1.1rem;
+        }
     }
 }
 </style>
