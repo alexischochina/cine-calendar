@@ -54,7 +54,7 @@ const scrollToToday = () => {
             <NavMovieAddForm ref="addFormRef"
                              @movie-added="onMovieAdded"
                              @movie-exists="emits('movie-exists', $event)" />
-            <button class="input-btn close-add-btn" type="button" @click="closeAdd">
+            <button class="input-btn close-add-btn" type="button" @click="closeAdd" aria-label="Fermer l'ajout">
                 <Svg name="close"/>
             </button>
         </div>
@@ -62,16 +62,16 @@ const scrollToToday = () => {
         <!-- Search mode -->
         <div class="form-content flex -align-center" v-if="searchMode">
             <input ref="searchInput" type="text" class="text-input input-body"
-                   placeholder="Rechercher dans ma liste..."
+                   placeholder="Rechercher dans ma liste..." aria-label="Rechercher dans ma liste"
                    v-model="searchTerm" autocomplete="off" @keydown.escape="closeSearch">
-            <button class="input-btn" type="button" @click="closeSearch">
+            <button class="input-btn" type="button" @click="closeSearch" aria-label="Fermer la recherche">
                 <Svg name="close"/>
             </button>
         </div>
 
         <!-- Mobile add button (compact state) -->
         <button class="input-btn mobile-add-btn" type="button" @click="openAdd"
-                v-if="!searchMode && !addMode">
+                v-if="!searchMode && !addMode" aria-label="Ajouter un film">
             <Svg name="add"/>
         </button>
 
@@ -79,10 +79,10 @@ const scrollToToday = () => {
         <div class="utilities flex -align-center">
             <div class="separator" />
             <NavYearPicker ref="yearPickerRef" />
-            <button class="input-btn" type="button" @click="scrollToToday">
+            <button class="input-btn" type="button" @click="scrollToToday" aria-label="Aller à aujourd'hui">
                 <Svg name="calendar"/>
             </button>
-            <button class="input-btn" type="button" @click="openSearch" v-if="!searchMode">
+            <button class="input-btn" type="button" @click="openSearch" v-if="!searchMode" aria-label="Rechercher">
                 <Svg name="search"/>
             </button>
             <NavFilterPanel />

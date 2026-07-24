@@ -46,7 +46,8 @@ onClickOutside(container, close);
 
 <template>
     <div class="actions-btn-wrapper" ref="container">
-        <button class="actions-btn" :class="{ '-active': !!manualReleaseDate }" @click.stop="toggle" title="Actions">
+        <button class="actions-btn" :class="{ '-active': !!manualReleaseDate }" @click.stop="toggle"
+                aria-label="Actions du film" :aria-expanded="isOpen">
             <Svg name="more"/>
         </button>
         <div v-if="isOpen" class="popover" @click.stop>

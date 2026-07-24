@@ -54,7 +54,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
                         <button v-for="f in mediaFilters" :key="f.value"
                                 class="filter-option" :class="{ '-active': moviesStore.filters.media === f.value }"
                                 type="button" @click="toggleMediaFilter(f.value)">
-                            <NuxtImg :src="`/images/${f.value}.png`" class="option-icon" />
+                            <NuxtImg :src="`/images/${f.value}.png`" class="option-icon" :alt="f.label" />
                             <span class="option-label">{{ f.label }}</span>
                         </button>
                     </div>
@@ -62,8 +62,9 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
             </div>
         </Transition>
         <button class="input-btn filter-toggle" :class="{ '-active': hasActiveFilters }"
-                type="button" @click="isOpen = !isOpen">
-            <svg class="funnel-icon" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                type="button" :aria-label="hasActiveFilters ? 'Filtres (actifs)' : 'Filtres'"
+                :aria-expanded="isOpen" @click="isOpen = !isOpen">
+            <svg class="funnel-icon" viewBox="0 0 18 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <line x1="0" y1="1" x2="18" y2="1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 <line x1="3" y1="7" x2="15" y2="7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                 <line x1="6" y1="13" x2="12" y2="13" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>

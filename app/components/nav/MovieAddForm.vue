@@ -94,11 +94,11 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
     <form class="add-form" @submit.prevent>
         <div class="form-content flex -align-center">
             <input ref="movieInput" type="text" name="movie" id="movie" class="text-input input-body"
-                   placeholder="Titre du film" v-model="movieTitle" autocomplete="off"
+                   placeholder="Titre du film" aria-label="Titre du film à ajouter" v-model="movieTitle" autocomplete="off"
                    @input="movieSelected = false"
                    @keydown.enter.prevent="movieSelected && addMovie()">
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" open-direction="bottom"/>
-            <button class="input-btn" type="button" @click="addMovie">
+            <button class="input-btn" type="button" @click="addMovie" aria-label="Ajouter le film">
                 <Svg name="add"/>
             </button>
         </div>

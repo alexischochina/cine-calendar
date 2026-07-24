@@ -17,12 +17,12 @@ const stats = computed(() => props.stat ?? { total: 0, seen: 0, cinema: 0 });
             <span class="stat-value">{{ stats.total }}</span>
             <span class="stat-label">films</span>
         </div>
-        <div class="stat">
-            <Svg name="seen" class="stat-icon -seen" />
+        <div class="stat" title="Films vus">
+            <Svg name="seen" class="stat-icon -seen" aria-hidden="true" />
             <span class="stat-value">{{ stats.seen }}</span>
         </div>
-        <div class="stat" v-if="stats.cinema">
-            <NuxtImg src="/images/cinema.png" class="stat-icon" />
+        <div class="stat" v-if="stats.cinema" title="Vus au cinéma">
+            <NuxtImg src="/images/cinema.png" class="stat-icon" alt="" />
             <span class="stat-value">{{ stats.cinema }}</span>
         </div>
     </div>

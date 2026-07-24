@@ -74,23 +74,33 @@ const sortedOptions = computed(() => {
 });
 
 const selectedIndex = computed(() => sortedOptions.value.indexOf(props.selected));
+
+const MEDIA_LABELS = { cinema: 'Cinéma', vod: 'VOD', primeVideo: 'Prime Video', 'disney+': 'Disney+', netflix: 'Netflix' };
+const STATE_LABELS = { unseen: 'Non vu', seen: 'Vu', downloadAvailable: 'Téléchargeable', inTheaters: 'En salle', unknown: 'Inconnu' };
+const labelFor = (value) => (props.type === 'media' ? MEDIA_LABELS : STATE_LABELS)[value] ?? value;
+const groupLabel = computed(() => props.type === 'media' ? 'Type de média' : 'État de visionnage');
+const optionId = (value) => `sb-${props.type}-${value}`;
 </script>
 
 <template>
     <ClientOnly>
         <div ref="container" class="select-btn flex -align-center -justify-center"
              :class="[{ [`-${props.type}`]: true, '-open': isOpen, [`-${props.openDirection}`]: true }]"
-             @click.stop="handleToggle">
+             role="listbox" tabindex="0" :aria-label="`${groupLabel} : ${labelFor(props.selected)}`"
+             :aria-activedescendant="optionId(props.selected)" @click.stop="handleToggle"
+             @keydown.enter.prevent="handleToggle" @keydown.space.prevent="handleToggle"
+             @keydown.escape="handleClose">
             <NuxtImg v-if="props.type === 'media'" class="selected-icon"
                      :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]"
-                     :src="`/images/${props.selected}.png`" ref="selectedIcon"/>
+                     :src="`/images/${props.selected}.png`" :alt="labelFor(props.selected)" ref="selectedIcon"/>
             <Svg v-if="props.type === 'state'" :name="props.selected" class="selected-icon"
                  :class="[{ [`-${props.selected}`]: true, '-on-front': onFront }]" ref="selectedIcon"/>
             <div class="options flex -direction-column" :style="{ '--selected-index': selectedIndex }">
                 <button class="option" :class="{'-selected' : option === props.selected}"
-                        v-for="option in sortedOptions"
+                        v-for="option in sortedOptions" role="option" :id="optionId(option)"
+                        :aria-selected="option === props.selected" :aria-label="labelFor(option)"
                         :key="option" ref="optionEls" @click.stop="handleOnClick(option)">
-                    <NuxtImg v-if="props.type === 'media'" class="icon" :src="`/images/${option}.png`"/>
+                    <NuxtImg v-if="props.type === 'media'" class="icon" :src="`/images/${option}.png`" :alt="labelFor(option)"/>
                     <Svg v-if="props.type === 'state'" :name="option" class="icon" :class="`-${option}`"/>
                 </button>
             </div>
