@@ -12,8 +12,17 @@ html:focus-within {
 }
 
 body {
-    background-color: $color-xdark-grey;
-    color: $color-white;
+    background-color: $color-bg;
+    color: $color-text-body;
+}
+
+// Scrollbar fine (maquette Timeline)
+.scr {
+    &::-webkit-scrollbar { width: 8px; height: 8px; }
+    &::-webkit-scrollbar-thumb { background: $color-border-4; border-radius: 8px; }
+    &::-webkit-scrollbar-track { background: transparent; }
+    scrollbar-width: thin;
+    scrollbar-color: $color-border-4 transparent;
 }
 
 @media #{$nomobile} {

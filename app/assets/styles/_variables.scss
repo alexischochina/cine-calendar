@@ -1,17 +1,59 @@
-// Color
+// Color — palette Timeline (Claude Design, cf. _ressources/Timeline.html)
 $color-black: #000000;
-$color-xdark-grey: #27262A;
-$color-dark-grey: #333333;
-$color-grey: #444444;
-$color-orange: #FF9429;
-$color-yellow: #E4E400;
-$color-green: #22CA00;
 $color-white: #FFFFFF;
-$color-primary: #ec008b;
+
+// Fond & texte
+$color-bg: #0C0D11;            // fond page
+$color-text: #F4F2EE;          // texte titres
+$color-text-body: #E8E9ED;     // texte corps
+
+// Accent & statuts — noms historiques conservés, valeurs réaffectées à la maquette
+$color-primary: #FF3D77;       // accent rose (ex-#ec008b), aussi « En salle »
+$color-primary-light: #FF6D97; // rose clair (liens, libellés)
+$color-primary-lighter: #FF9BB8; // rose clair (hover)
+$color-green: #2FBF71;         // vu au ciné
+$color-yellow: #F0A935;        // vu en streaming (ambre)
+$color-status-grey: #3A3F4A;   // à venir / téléchargeable (bord seul)
+
+// Surfaces
+$color-surface-1: #14161C;
+$color-surface-2: #181A22;
+$color-surface-3: #191B23;
+$color-surface-4: #0F1116;
+
+// Bordures / filets
+$color-border-1: #191B23;
+$color-border-2: #20232C;
+$color-border-3: #23262F;
+$color-border-4: #262932;
+$color-border-5: #2A2D36;
+
+// Nuances de texte atténué
+$color-text-muted: #8A8F9C;
+$color-text-dim: #C9CCD4;
+$color-text-faint: #9AA0AD;    // jour d'une ligne atténuée
+$color-text-weak: #565B66;
+$color-text-weaker: #6B7280;
+
+// Surfaces de survol / états
+$color-hover: #1C1F27;         // survol des contrôles
+$color-hover-strong: #22252F;  // survol accentué / option active
+$color-danger-bg: #2A1416;     // fond d'icône destructive
+
+// Greys historiques (composants hors périmètre — /login, /search, /movies) —
+// réalignés sur les surfaces sombres de la maquette pour rester cohérents.
+$color-xdark-grey: #14161C;
+$color-dark-grey: #22252F;
+$color-grey: #191B23;
 
 //Font Family
 $font-futura: 'f', sans-serif;
 $font-do-hyeon: 'd', sans-serif;
+
+// Font Family — Timeline (Google Fonts)
+$font-title: 'Bricolage Grotesque', sans-serif; // titres (800)
+$font-body: 'Schibsted Grotesk', sans-serif;    // corps
+$font-mono: 'Space Mono', monospace;            // n° de jour, compteurs
 
 // Fonts
 $light: 200;
