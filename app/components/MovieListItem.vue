@@ -85,12 +85,37 @@ const updateState = async (newState) => {
 
 <style lang="scss" scoped>
 .movie-list-item {
+    position: relative;
     padding: 1rem 3rem;
     width: 100%;
 
+    // Single source of truth: only these states define --accent.
+    // The streaming media list lives here once and nowhere else.
     &.-state-inTheaters {
-        background-color: rgba($color-primary, .12);
-        box-shadow: inset 3px 0 0 $color-primary;
+        --accent: #{$color-primary};
+    }
+
+    &.-cinema.-state-seen {
+        --accent: #{$color-green};
+    }
+
+    &.-state-seen:is(.-streaming, .-netflix, .-primeVideo, .-disney\+, .-vod) {
+        --accent: #{$color-yellow};
+    }
+
+    // Tint + crisp full-height left bar, driven entirely by --accent.
+    // With no accent set, both resolve to transparent → no visual change,
+    // so this single block covers every row without duplicating selectors.
+    background-color: color-mix(in srgb, var(--accent, transparent) 20%, transparent);
+
+    &::before {
+        content: '';
+        position: absolute;
+        inset: 0 auto 0 0;
+        width: 3px;
+        background-color: var(--accent, transparent);
+        pointer-events: none; // decorative bar must not intercept clicks
+        z-index: 1;
     }
 }
 
