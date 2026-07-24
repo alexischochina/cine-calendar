@@ -1,0 +1,212 @@
+name: Claude Auto-Resolve Assigned Issues
+
+on:
+    issues:
+        types: [assigned]
+
+jobs:
+    resolve-issue:
+        # Ne se déclenche QUE si le ticket est assigné à l'utilisateur cible
+        if: github.event.assignee.login == 'davelauper'
+        runs-on: ubuntu-latest
+        permissions:
+            contents: write
+            issues: write
+            pull-requests: write
+            id-token: write
+
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Run Claude Code
+              uses: anthropics/claude-code-action@v1
+              with:
+                  anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+                  prompt: |
+                      Un ticket vient de t'être assigné. Voici les informations :
+                      
+                      **Titre** : ${{ github.event.issue.title }}
+                      **Numéro** : #${{ github.event.issue.number }}
+                      **Description** :
+                      ${{ github.event.issue.body }}
+                      
+                      Ta mission : traiter ce ticket de bout-en-bout sans attendre d'approbation utilisateur. Suis les étapes ci-dessous dans l'ordre. **N'invoque AUCUN skill** — tout est inliné ici.
+
+                      Règles transverses :
+                      - Langue **française** par défaut pour les commits, le body de PR et le commentaire de l'issue (seul le préfixe Conventional Commits reste en anglais : `feat`, `fix`, `chore`, etc.).
+                      - **Ne bypass JAMAIS les hooks Git** (`--no-verify`, `--no-gpg-sign`, etc.).
+                      - Ne touche qu'aux fichiers nécessaires au ticket ; ignore tout fichier non lié présent dans le working-tree.
+                      - Si une étape échoue après le début de l'implémentation, ne supprime pas le plan, push ce qui a été fait, et commente l'issue pour signaler l'échec.
+
+                      ## Étape 1 — Charger le contexte du ticket
+
+                      1. Le titre, le numéro (#${{ github.event.issue.number }}) et la description sont déjà fournis ci-dessus.
+                      2. Récupère les métadonnées complètes : `gh issue view ${{ github.event.issue.number }} --json title,body,labels,assignees,url`.
+                      3. **Garde-fou labels** : si le ticket porte un label `epic`, `complex`, `needs-discussion`, `breaking`, `spike` ou `RFC` → arrête-toi immédiatement et poste :
+                         `gh issue comment ${{ github.event.issue.number }} --body "🚧 Ce ticket porte un label de complexité — traitement automatisé interrompu, prise en charge manuelle nécessaire."`
+
+                      ## Étape 2 — Plan d'implémentation (interne)
+
+                      1. Génère un slug kebab-case à partir du titre (ex. `corriger-typo-footer`).
+                      2. Crée une branche dédiée : `git checkout -b feature/<slug>`.
+                      3. Crée le fichier plan à `_ressources/plans/<YYMMDDHHmm>-<slug>.md` (timestamp local zero-padded) avec :
+                         - **Objectif** : 1–2 phrases reformulant le besoin.
+                         - **Étapes atomiques** sous forme de cases `- [ ]` (une action concrète par case).
+                         - **Fichiers attendus** : liste prévisionnelle.
+                         - **Call-sites / risques** à vérifier après implémentation.
+                      4. **Garde-fou complexité** : compte les `- [ ]` et scanne le contenu. Si **> 5 étapes atomiques** OU mention de « migration », « breaking », « refacto », « cross-repo », « architecture », « schema change » :
+                         - Commit le plan seul : `git add _ressources/plans/... && git commit -m "chore: add plan for #${{ github.event.issue.number }}"`, puis `git push -u origin feature/<slug>`.
+                         - Poste : `gh issue comment ${{ github.event.issue.number }} --body "🚧 Ticket trop complexe pour TMA (<N> étapes détectées). Plan conservé sur la branche \`feature/<slug>\`. Reprise manuelle nécessaire."`
+                         - **Arrête-toi ici.**
+
+                      ## Étape 3 — Implémenter
+
+                      Pour chaque case `- [ ]` du plan, dans l'ordre :
+                      1. Lis les fichiers concernés avant toute modification.
+                      2. Applique les changements.
+                      3. Coche la case (`- [x]`) dans le plan.
+                      4. Tiens un journal interne `{ zone, raison (tirée du plan, pas a posteriori), fichiers[] }` pour l'Étape 8.
+
+                      Ne sors jamais du scope du plan sans le mettre à jour explicitement.
+
+                      ## Étape 4 — Vérifier l'absence de régression
+
+                      Dans cet ordre :
+
+                      1. **Tests / lint / typecheck** — détecte le runner depuis les fichiers du repo :
+                         - `package.json` → `npm test`, `npm run lint`, `npm run typecheck` selon les scripts disponibles.
+                         - `composer.json` → `composer test` ou `vendor/bin/phpunit`.
+                         - `pytest.ini` / `pyproject.toml` → `pytest`.
+                         - `Makefile` cible `test` → `make test`.
+                         - Si **aucun** runner détecté : le signaler explicitement.
+                      2. **Effets de bord** — pour chaque symbole modifié (fonction, classe, hook WP, action, filter, route, composant) : `grep -rn "<symbole>"` dans le repo, lis jusqu'à 5 call-sites pour vérifier que signature/comportement restent cohérents.
+                      3. **Build / typecheck** si applicable (`npm run build`, `tsc --noEmit`, `composer dump-autoload`, etc.).
+                      4. Synthétise un mini-rapport (à recopier dans le commentaire de l'Étape 8) :
+                         ```
+                         ✅ Tests : <résultat>
+                         ✅ Lint / typecheck : <résultat>
+                         ✅ Call-sites vérifiés : <N symboles, M fichiers>
+                         ⚠️ Risques résiduels : <ou "aucun">
+                         ```
+
+                      Si une vérification échoue : poste un commentaire détaillant l'échec sur l'issue, `git push -u origin feature/<slug>` pour permettre la reprise, et arrête-toi.
+
+                      ## Étape 5 — Committer en atomique
+
+                      1. Supprime le plan : `rm _ressources/plans/<file>.md` (il a rempli son rôle de feuille de route éphémère).
+                      2. `git status --short` puis `git diff HEAD` pour passer en revue les changements.
+                      3. Regroupe en **commits atomiques par unité logique**. Format Conventional Commits : `type(scope): description (#${{ github.event.issue.number }})`. Description en français.
+                      4. Ne stage QUE les fichiers liés au ticket. Pour chaque groupe : `git add <fichiers> && git commit -m "<message>"`.
+                      5. Vérifie `git status` propre à la fin.
+
+                      ## Étape 6 — Ouvrir la PR
+
+                      1. `git push -u origin feature/<slug>`.
+                      2. Détecte la branche de base (`main` → `develop` → première remote disponible).
+                      3. Construis le body en français selon ce template :
+                         ```
+                         ## Summary
+                         <2–4 phrases sur le quoi et le pourquoi>
+
+                         ## Changes
+                         - <zone> : <description>
+
+                         ## Testing
+                         <commandes exécutées + résultats — recopier le mini-rapport de l'Étape 4>
+
+                         ## Related
+                         Refs #${{ github.event.issue.number }}
+                         ```
+                         > ⚠️ Utilise `Refs` et **non `Closes`** : le ticket doit rester ouvert pour passer en review (voir Étape 7).
+                      4. Ouvre la PR :
+                         ```bash
+                         gh pr create --base <base> --title "type(scope): description (#${{ github.event.issue.number }})" --body "$(cat <<'EOF'
+                         <body rempli>
+                         EOF
+                         )"
+                         ```
+                      5. Capture l'URL retournée par `gh`.
+
+                      ## Étape 7 — Marquer le ticket en review
+
+                      Si l'implémentation et la PR ont réussi, **ne ferme pas le ticket** : ajoute-lui un label `review` pour signaler qu'il est en attente de validation.
+
+                      1. Vérifie si le label `review` existe déjà dans le repo :
+                         ```bash
+                         gh label list --search review --json name -q '.[] | select(.name == "review") | .name'
+                         ```
+                      2. Si la commande ne retourne rien, crée le label en orange :
+                         ```bash
+                         gh label create review --color "FFA500" --description "En attente de review"
+                         ```
+                      3. Ajoute le label au ticket :
+                         ```bash
+                         gh issue edit ${{ github.event.issue.number }} --add-label review
+                         ```
+                      4. **Ne ferme jamais le ticket** (`gh issue close` interdit ici) — il doit rester ouvert tant que la review n'est pas faite.
+
+                      ## Étape 8 — Commenter l'issue avec un rapport détaillé
+
+                      Construis ce commentaire **à partir des données collectées aux étapes précédentes — ne rien inventer a posteriori** :
+
+                      - « Ma compréhension » → reformulation du ticket lu à l'Étape 1.
+                      - « Modifications effectuées » → journal de l'Étape 3 (un bullet par changement logique, pas un bullet par fichier).
+                      - « Vérifications » → mini-rapport de l'Étape 4 recopié tel quel.
+                      - « Commits » → `git log <base>..HEAD --oneline` après l'Étape 5.
+                      - « Pull Request » → URL capturée à l'Étape 6.
+
+                      Structure obligatoire :
+
+                      ```markdown
+                      ## 🤖 TMA traitée automatiquement
+
+                      ### 🎯 Ma compréhension de la demande
+                      <2–4 phrases reformulant le besoin avec tes propres mots, en montrant les contraintes / hypothèses retenues. Si une ambiguïté a été tranchée par défaut, l'expliciter.>
+
+                      ### 🛠️ Modifications effectuées
+                      - **<zone / composant>** : <ce qui a été fait et pourquoi>
+                        - Fichiers touchés : `path/to/file.ext`, `path/to/other.ext`
+
+                      ### 🧪 Vérifications de non-régression
+                      - Tests : <résultat>
+                      - Lint / typecheck : <résultat>
+                      - Call-sites vérifiés : <N symboles, M fichiers — comportement préservé>
+                      - Risques résiduels : <ou "aucun identifié">
+
+                      ### 📦 Commits
+                      - <sha court> <message>
+
+                      ### 🔗 Pull Request
+                      <URL>
+
+                      ---
+                      _Si quelque chose ne correspond pas à ton attente, réponds sur ce ticket ou demande des ajustements directement sur la PR._
+                      ```
+
+                      Poste-le proprement via fichier temporaire (pour gérer retours à la ligne, guillemets, backticks) :
+                      ```bash
+                      COMMENT_FILE=$(mktemp)
+                      cat > "$COMMENT_FILE" <<'EOF'
+                      <le markdown rempli ci-dessus>
+                      EOF
+                      gh issue comment ${{ github.event.issue.number }} --body-file "$COMMENT_FILE"
+                      rm "$COMMENT_FILE"
+                      ```
+
+                      Termine par afficher un récapitulatif final dans les logs de l'action :
+                      ```
+                      🎫 Ticket   : #${{ github.event.issue.number }} — <titre>
+                      📦 Commits  : <N commits>
+                      🔗 PR       : <URL>
+                      ✅ Vérifs   : tests OK, lint OK, call-sites OK
+                      🏷️  Label    : review ajouté (ticket maintenu ouvert)
+                      💬 Issue    : commentaire détaillé posté
+                      🧹 Plan     : supprimé
+                      ```
+
+                  claude_args: |
+                      --allowed-tools "Bash,Edit,Read,Write,Glob,Grep,Bash(gh:*),Bash(git:*)"
+                      --max-turns 50
