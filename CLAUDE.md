@@ -33,11 +33,13 @@ No test suite is configured.
 **Routing:** File-based via `app/pages/`. Auth middleware (`app/middleware/auth.js`) protects the home route. Login/register use Supabase auth.
 
 **Data flow:**
-- User movie calendar entries (movie_id, media type, watch state) are stored in Supabase table `calendar`
-- Movie metadata (title, poster, genres, release dates) comes from TMDB API
-- Server-side routes in `app/server/api/movies/` proxy TMDB requests (search, details, release dates)
-- French release dates are filtered from TMDB's `release_dates` endpoint
-- Pinia store at `app/stores/movies.js` manages the movies list state
+- Calendar entries are stored in Supabase table `calendar`. Columns: `id`, `movie_id`, `media`, `state`, `manual_release_date`, plus the **persisted TMDB metadata** `title`, `release_date` (resolved FR theatrical date, nullable), `poster_path` (relative TMDB path).
+- **Metadata lives in the DB, not fetched on every load.** TMDB is called only (a) when adding a movie (`MovieAddForm` → `/api/movies/:id/full`, persisted on insert) and (b) when re-checking upcoming cinema release dates on load (`useMovieCalendar.recheckUpcomingCinema` — only `media==='cinema'`, no `manual_release_date`, date in the future/null). Normal page load reads Supabase only → no TMDB calls, no `429`.
+- Server routes in `server/api/movies/` (repo root, not under `app/`): `search`, `[id]` (detail, used by `/movies/[id]`), `[id]/release_dates`, and `[id]/full` (single TMDB call with `append_to_response=release_dates`, returns resolved `{ title, poster_path, release_date }`). FR date resolution (type 3 theatrical, else CNC/Netflix/Amazon/Disney+ notes) lives in `server/utils/tmdbDates.js` — **single source of truth**, auto-imported by the route and imported explicitly by the backfill script.
+- Posters are served from the `image.tmdb.org` CDN using the stored `poster_path`; the poster file itself is not downloaded/stored. The Letterboxd link is derived from `movie_id` (no column).
+- `manual_release_date` (user override) always wins over the stored `release_date`. `useMovieCalendar` keeps the raw stored TMDB date under `_tmdbReleaseDate` so clearing an override falls back correctly.
+- One-shot backfill of pre-existing rows: `scripts/backfill-movies.mjs` (throttled to 8 concurrent via `app/utils/promisePool.js`). Migration SQL in `_ressources/sql/`.
+- Pinia store at `app/stores/movies.js` manages filters / movies list state.
 
 **Key pages:**
 - `/` — Calendar home, movies grouped by year → month → day
