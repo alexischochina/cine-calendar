@@ -41,13 +41,36 @@ const addMovie = async () => {
             emit('movie-exists', existingMovieId);
             return;
         }
+        // Si TMDB est indisponible, on insère quand même (métadonnées nulles) :
+        // le filet de sécurité de getMovies les résoudra au prochain chargement.
+        let meta = { title: null, poster_path: null, release_date: null };
+        try {
+            meta = await $fetch(`/api/movies/${movieId.value}/full`);
+        } catch (e) {
+            console.error('Métadonnées TMDB indisponibles à l\'ajout, résolution différée:', e);
+        }
         const { data: inserted, error } = await client
             .from('calendar')
-            .insert({ movie_id: movieId.value, media: selectedMedia.value, state: 'unseen' })
+            .insert({
+                movie_id: movieId.value,
+                media: selectedMedia.value,
+                state: 'unseen',
+                title: meta.title,
+                poster_path: meta.poster_path,
+                release_date: meta.release_date,
+            })
             .select()
             .single()
         if (error) throw error;
-        const newEntry = { movie_id: movieId.value, media: selectedMedia.value, state: 'unseen', id: inserted.id };
+        const newEntry = {
+            movie_id: movieId.value,
+            media: selectedMedia.value,
+            state: 'unseen',
+            id: inserted.id,
+            title: meta.title,
+            poster_path: meta.poster_path,
+            release_date: meta.release_date,
+        };
         resetForm();
         emit('movie-added', newEntry)
     } catch (error) {

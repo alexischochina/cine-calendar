@@ -1,0 +1,3 @@
+[submodule ".fcinq"]
+	path = .fcinq
+	url = git@github.com-fcinq:FCINQ/fcinq-ai-framework.git

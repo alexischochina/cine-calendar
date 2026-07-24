@@ -5,9 +5,6 @@ const props = defineProps({
     releaseDay: {
         type: String,
     },
-    poster: {
-        type: String,
-    },
     movieId: {
         type: Number,
     },
@@ -29,13 +26,18 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    title: {
+        type: String,
+        default: '',
+    },
+    posterPath: {
+        type: String,
+        default: null,
+    },
 })
 const selectedMedia = ref(props.media);
 const selectedState = ref(props.state);
 const client = useSupabaseClient();
-const config = useRuntimeConfig();
-const movieTitle = ref('');
-const moviePosterUrl = ref('');
 
 const onMediaSelected = (option) => {
     selectedMedia.value = option;
@@ -60,18 +62,6 @@ const updateState = async (newState) => {
         .update({state: newState})
         .eq('id', props.id)
 }
-
-const getMovieById = async (id) => {
-    const movieData = await $fetch(`/api/movies/${id}`);
-    if (movieData) {
-        movieTitle.value = movieData.title;
-        moviePosterUrl.value = movieData.poster_path;
-    }
-}
-
-onMounted(() => {
-    getMovieById(props.movieId);
-});
 </script>
 
 <template>
@@ -79,9 +69,9 @@ onMounted(() => {
          :class="[`-${selectedMedia}`, `-state-${selectedState}`, `-id-${props.movieId}`]">
         <div class="movie-infos flex -align-center">
             <div class="title-4">{{ props.releaseDay }}</div>
-            <NuxtImg v-if="moviePosterUrl" :src="`https://image.tmdb.org/t/p/w500${moviePosterUrl}`" class="poster"/>
+            <NuxtImg v-if="props.posterPath" :src="`https://image.tmdb.org/t/p/w500${props.posterPath}`" :alt="props.title ? `Affiche du film ${props.title}` : ''" class="poster" loading="lazy"/>
             <div v-else class="poster poster-placeholder"/>
-            <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title-5 movie-link">{{ movieTitle }}</a>
+            <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title-5 movie-link">{{ props.title }}</a>
         </div>
         <div class="stream-infos flex -align-center">
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected"/>

@@ -6,7 +6,7 @@ definePageMeta({
 useHead({ title: 'Mon calendrier' })
 
 const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted, handleReleaseDateUpdated } = useMovieCalendar()
-const { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovie } = useMovieScroll()
+const { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovie } = useMovieScroll(movies)
 
 const currentYear = new Date().getFullYear();
 const expandedYears = ref([currentYear]);
@@ -71,7 +71,7 @@ onBeforeUnmount(() => {
                 <span class="year-chevron" :class="{ '-expanded': isYearExpanded(year) }" />
             </div>
             <Transition name="year-content">
-                <div v-show="isYearExpanded(year)" class="year-body">
+                <div v-if="isYearExpanded(year)" class="year-body">
                     <div class="month-container" v-for="(days, month) in months" :key="month">
                         <div class="month-title" :class="{ '-sticky': Object.keys(days).length > 1 }">
                             <span class="month-name title-2">{{ month }}</span>
@@ -85,6 +85,8 @@ onBeforeUnmount(() => {
                                                :media="movie.media"
                                                :state="movie.state"
                                                :id="movie.id"
+                                               :title="movie.title"
+                                               :poster-path="movie.poster_path"
                                                :manual-release-date="movie.manual_release_date"
                                                :style="new Date(movie.release_date) > new Date() ? { opacity: 0.5 } : {}"
                                                @movie-deleted="handleMovieDeleted"
@@ -106,6 +108,8 @@ onBeforeUnmount(() => {
                            :media="movie.media"
                            :state="movie.state"
                            :id="movie.id"
+                           :title="movie.title"
+                           :poster-path="movie.poster_path"
                            :manual-release-date="movie.manual_release_date"
                            :style="{ opacity: 0.5 }"
                            @movie-deleted="handleMovieDeleted"
