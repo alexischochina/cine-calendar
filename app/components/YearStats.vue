@@ -1,20 +1,14 @@
 <script setup>
+// `stat` est précalculé une seule fois par le parent (cf. index.vue) pour éviter
+// de re-itérer toute la liste des films pour chaque année affichée.
 const props = defineProps({
-    movies: { type: Array, required: true },
-    year: { type: [Number, String], required: true },
+    stat: {
+        type: Object,
+        default: () => ({ total: 0, seen: 0, cinema: 0 }),
+    },
 });
 
-const stats = computed(() => {
-    const y = Number(props.year);
-    return props.movies.reduce((acc, m) => {
-        if (!m.release_date || isNaN(new Date(m.release_date))) return acc;
-        if (new Date(m.release_date).getFullYear() !== y) return acc;
-        acc.total++;
-        if (m.state === 'seen') acc.seen++;
-        if (m.media === 'cinema' && m.state === 'seen') acc.cinema++;
-        return acc;
-    }, { total: 0, seen: 0, cinema: 0 });
-});
+const stats = computed(() => props.stat ?? { total: 0, seen: 0, cinema: 0 });
 </script>
 
 <template>

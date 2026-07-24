@@ -11,6 +11,22 @@ const { scrollToClosestDate, scrollToMovie, handleScrollToYear, handleSearchMovi
 const currentYear = new Date().getFullYear();
 const expandedYears = ref([currentYear]);
 
+// Stats par année, calculées en une seule passe sur la liste (au lieu d'une passe par année).
+const yearStats = computed(() => {
+    const acc = {};
+    for (const m of movies.value) {
+        if (!m.release_date) continue;
+        const d = new Date(m.release_date);
+        if (isNaN(d)) continue;
+        const y = d.getFullYear();
+        if (!acc[y]) acc[y] = { total: 0, seen: 0, cinema: 0 };
+        acc[y].total++;
+        if (m.state === 'seen') acc[y].seen++;
+        if (m.media === 'cinema' && m.state === 'seen') acc[y].cinema++;
+    }
+    return acc;
+});
+
 const isYearExpanded = (year) => expandedYears.value.includes(Number(year));
 
 const toggleYear = (year) => {
@@ -67,7 +83,7 @@ onBeforeUnmount(() => {
         <div class="year-container" v-for="(months, year) in sortedMovies" :key="year" :data-year="year">
             <div class="year-header flex -align-center" @click="toggleYear(year)">
                 <div class="title-4">{{ year }}</div>
-                <YearStats :movies="movies" :year="year" class="year-stats-wrapper" />
+                <YearStats :stat="yearStats[Number(year)]" class="year-stats-wrapper" />
                 <span class="year-chevron" :class="{ '-expanded': isYearExpanded(year) }" />
             </div>
             <Transition name="year-content">
