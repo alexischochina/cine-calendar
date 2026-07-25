@@ -86,7 +86,8 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background-color .2s linear;
+    color: $color-text-muted;
+    transition: background-color .2s linear, color .2s linear;
     position: relative;
 
     .funnel-icon {
@@ -191,6 +192,7 @@ onClickOutside(wrapperRef, () => { isOpen.value = false; });
 @media (hover: hover) {
     .filter-toggle:hover {
         background-color: $color-dark-grey;
+        color: $color-text-dim;
     }
 
     .filter-option:not(.-active):hover {
