@@ -25,3 +25,37 @@
     font-display: swap;
 }
 
+// Fontes Timeline self-hébergées (sous-ensemble latin, couvre le français).
+// Bricolage & Schibsted sont des fontes variables → une seule ressource par famille.
+@font-face {
+    font-family: 'Bricolage Grotesque';
+    src: url('../fonts/bricolage-grotesque.woff2') format('woff2');
+    font-weight: 400 800;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Schibsted Grotesk';
+    src: url('../fonts/schibsted-grotesk.woff2') format('woff2');
+    font-weight: 400 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Space Mono';
+    src: url('../fonts/space-mono-400.woff2') format('woff2');
+    font-weight: 400;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Space Mono';
+    src: url('../fonts/space-mono-700.woff2') format('woff2');
+    font-weight: 700;
+    font-style: normal;
+    font-display: swap;
+}
+

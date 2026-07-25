@@ -8,7 +8,6 @@ const addMode = ref(false);
 const searchTerm = ref('');
 const searchInput = ref(null);
 const addFormRef = ref(null);
-const yearPickerRef = ref(null);
 
 const debouncedSearchTerm = refDebounced(searchTerm, 300);
 
@@ -41,7 +40,6 @@ const onMovieAdded = (event) => {
 }
 
 const scrollToToday = () => {
-    yearPickerRef.value?.resetToCurrentYear();
     emits('scroll-to-today');
 }
 </script>
@@ -78,7 +76,6 @@ const scrollToToday = () => {
         <!-- Separator + utilities: single instance, always in DOM -->
         <div class="utilities flex -align-center">
             <div class="separator" />
-            <NavYearPicker ref="yearPickerRef" />
             <button class="input-btn" type="button" @click="scrollToToday" aria-label="Aller à aujourd'hui">
                 <Svg name="calendar"/>
             </button>
@@ -93,78 +90,65 @@ const scrollToToday = () => {
 
 <style lang="scss" scoped>
 .nav-header {
-    --search-bar-width: 30rem;
+    --search-bar-width: 34rem;
     --search-bar-height: 5.5rem;
     z-index: 999;
     position: fixed;
     bottom: 2rem;
-    left: 50%;
+    // Centré sur la colonne timeline (offset des rails 22rem / 26.4rem).
+    left: calc(50% - 2.2rem);
     transform: translateX(-50%);
-    padding: 1rem;
-    gap: .5rem;
-    border-radius: 1.5rem;
-    background: rgba($color-grey, 0.88);
-    border: 1px solid rgba($color-white, 0.07);
-    box-shadow:
-        inset 0 1px 0 rgba($color-white, 0.06),
-        0 8px 24px rgba(0, 0, 0, 0.5),
-        0 24px 48px rgba(0, 0, 0, 0.3);
-
-    &::before {
-        content: '';
-        position: absolute;
-        inset: 0;
-        border-radius: inherit;
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        z-index: -1;
-    }
+    padding: .7rem .8rem .7rem 1.6rem;
+    gap: 1rem;
+    border-radius: 999px;
+    background: $color-surface-3;
+    border: 1px solid $color-border-4;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, .55);
 }
 
 .add-form-wrapper {
-    gap: .5rem;
+    gap: .8rem;
 }
 
-.utilities { gap: .5rem; }
+.utilities { gap: .4rem; }
 
 .form-content {
-    gap: .5rem;
+    gap: .8rem;
     position: relative;
     z-index: 950;
 }
 
 .text-input {
     border: none;
-    background-color: $color-dark-grey;
-    border-radius: .5rem;
+    background-color: transparent;
     width: var(--search-bar-width);
-    padding: .6rem 1rem;
-    height: 3.5rem;
-    color: $color-white;
+    padding: .4rem 0;
+    height: 3rem;
+    color: $color-text-body;
+    font: $normal 1.4rem/1 $font-body;
 }
 
 .separator {
     width: 1px;
-    height: 2rem;
-    background: linear-gradient(to bottom, transparent, rgba($color-white, 0.14), transparent);
+    height: 2.2rem;
+    background: $color-border-5;
     flex-shrink: 0;
-    margin: 0 .25rem;
+    margin: 0 .2rem;
 }
 
 .input-btn {
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: .5rem;
+    width: 3rem;
+    height: 3rem;
+    border-radius: .8rem;
     display: flex;
     justify-content: center;
     align-items: center;
-    transition: background-color .2s linear;
+    color: $color-text-muted;
+    transition: background-color .2s linear, color .2s linear;
 
     > svg {
-        width: 2rem;
+        width: 1.9rem;
         height: auto;
-
-        &.-close { width: 1.7rem; }
     }
 }
 
@@ -172,32 +156,30 @@ const scrollToToday = () => {
 .mobile-add-btn { display: none; }
 
 @media (hover: hover) {
-    .input-btn:hover { background-color: $color-dark-grey; }
+    .input-btn:hover { background-color: $color-hover; color: $color-text-dim; }
 }
 
 @media (hover: none) {
     .input-btn:active {
-        background-color: $color-dark-grey;
+        background-color: $color-hover;
         transform: scale(.9);
     }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 999px) {
     .nav-header {
         left: 50%;
         right: auto;
-        bottom: 1.25rem;
+        bottom: 1.6rem;
         transform: translateX(-50%);
-        padding: .75rem 1rem;
-        border-radius: 2rem;
+        padding: .6rem .8rem .6rem 1.4rem;
         width: fit-content;
         transition: width .38s $cubic-ease-out, border-radius .3s $cubic-ease-out;
     }
 
     .nav-header.-add-mode,
     .nav-header.-search-mode {
-        width: calc(100% - 2.5rem);
-        border-radius: 1.5rem;
+        width: calc(100% - 3.2rem);
     }
 
     /* Default: hide add form, show mobile add btn */

@@ -18,7 +18,7 @@
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { promisePool } from '../app/utils/promisePool.js';
-import { resolveFrenchReleaseDate } from '../server/utils/tmdbDates.js';
+import { resolveFrenchReleaseDate, extractDirector } from '../server/utils/tmdbDates.js';
 
 // --- chargement .env minimal (pas de dépendance dotenv) ---
 const loadEnv = () => {
@@ -46,7 +46,7 @@ if (!SUPABASE_URL || !SUPABASE_KEY || !API_BASE_URL || !API_KEY) {
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const fetchMeta = async (movieId) => {
-    const url = `${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=fr-FR&region=FR&append_to_response=release_dates`;
+    const url = `${API_BASE_URL}/movie/${movieId}?api_key=${API_KEY}&language=fr-FR&region=FR&append_to_response=release_dates,credits`;
     const res = await fetch(url);
     if (!res.ok) throw new Error(`TMDB ${res.status} pour ${movieId}`);
     const movie = await res.json();
@@ -54,14 +54,16 @@ const fetchMeta = async (movieId) => {
         title: movie.title,
         poster_path: movie.poster_path,
         release_date: resolveFrenchReleaseDate(movie.release_dates),
+        director: extractDirector(movie.credits),
     };
 };
 
 const run = async () => {
+    // Lignes sans métadonnées (title null) OU déjà backfillées mais sans réalisateur (director null).
     const { data: rows, error } = await supabase
         .from('calendar')
         .select('id, movie_id, title')
-        .is('title', null);
+        .or('title.is.null,director.is.null');
 
     if (error) {
         console.error('Lecture Supabase échouée :', error.message);
@@ -76,11 +78,11 @@ const run = async () => {
         try {
             const meta = await fetchMeta(row.movie_id);
             if (DRY_RUN) {
-                console.log(`  [dry] ${row.movie_id} → ${meta.title} | ${meta.release_date ?? 'sans date'}`);
+                console.log(`  [dry] ${row.movie_id} → ${meta.title} | ${meta.release_date ?? 'sans date'} | ${meta.director ?? 'réal. inconnu'}`);
             } else {
                 const { error: upErr } = await supabase
                     .from('calendar')
-                    .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date })
+                    .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director })
                     .eq('id', row.id);
                 if (upErr) throw new Error(upErr.message);
             }

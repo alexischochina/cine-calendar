@@ -18,40 +18,48 @@ const deleteMovie = async () => {
 
 <template>
     <button class="menu-item -danger" @click="deleteMovie">
-        <Svg name="close"/>
-        <span>Supprimer</span>
+        <span class="ico-box"><Svg name="trash"/></span>
+        <span class="label">Supprimer</span>
     </button>
 </template>
 
 <style lang="scss" scoped>
 .menu-item {
     background-color: transparent;
-    color: $color-white;
     border: none;
-    border-radius: .25rem;
-    padding: .75rem 1rem;
-    font-family: inherit;
-    font-size: 1.4rem;
+    border-radius: .9rem;
+    padding: .9rem 1.1rem;
+    font: $semi-bold 1.3rem/1 $font-body;
     text-align: left;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: .75rem;
-    transition: background-color .2s linear, color .2s linear;
+    gap: 1.1rem;
+    transition: background-color .2s linear;
 
-    > :deep(svg) {
-        width: 1.4rem;
-        height: 1.4rem;
+    > .ico-box {
+        display: grid;
+        place-items: center;
+        width: 2.4rem;
+        height: 2.4rem;
+        border-radius: 7px;
         flex-shrink: 0;
+
+        > :deep(svg) { width: 1.5rem; height: 1.5rem; }
+    }
+
+    &.-danger {
+        color: $color-primary-light;
+
+        > .ico-box {
+            background: $color-danger-bg;
+            color: $color-primary-light;
+        }
     }
 
     @media (hover: hover) {
         &:hover {
-            background-color: rgba($color-white, .08);
-        }
-
-        &.-danger:hover {
-            color: $color-primary;
+            background-color: $color-hover-strong;
         }
     }
 }

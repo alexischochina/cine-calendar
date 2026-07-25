@@ -53,8 +53,8 @@ onClickOutside(container, close);
         <div v-if="isOpen" class="popover" @click.stop>
             <template v-if="view === 'menu'">
                 <button class="menu-item" @click="view = 'date'">
-                    <Svg name="calendar"/>
-                    <span>Modifier la date</span>
+                    <span class="ico-box"><Svg name="calendar"/></span>
+                    <span class="label">Modifier la date</span>
                 </button>
                 <DeleteMovieAction :id="id" @movie-deleted="onDeleted"/>
             </template>
@@ -71,17 +71,17 @@ onClickOutside(container, close);
 }
 
 .actions-btn {
-    width: 3.5rem;
-    height: 3.5rem;
-    border-radius: .5rem;
+    width: 2.6rem;
+    height: 2.6rem;
+    border-radius: 7px;
     display: flex;
     justify-content: center;
     align-items: center;
     transition: background-color .2s linear, color .2s linear;
-    color: rgba($color-white, .6);
+    color: $color-text-weak;
 
     > svg {
-        width: 1.6rem;
+        width: 1.8rem;
         height: auto;
     }
 
@@ -91,8 +91,8 @@ onClickOutside(container, close);
 
     @media (hover: hover) {
         &:hover {
-            background-color: $color-dark-grey;
-            color: $color-white;
+            background-color: $color-hover;
+            color: $color-text-dim;
         }
 
         &.-active:hover {
@@ -103,44 +103,58 @@ onClickOutside(container, close);
 
 .popover {
     position: absolute;
-    top: calc(100% + .5rem);
+    top: calc(100% + .6rem);
     right: 0;
-    background-color: $color-dark-grey;
-    border-radius: .5rem;
-    padding: .5rem;
+    background-color: $color-surface-2;
+    border: 1px solid $color-border-5;
+    border-radius: 1.3rem;
+    padding: .6rem;
     display: flex;
     flex-direction: column;
-    gap: .25rem;
+    gap: .2rem;
     z-index: 20;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, .4);
-    min-width: 18rem;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
+    min-width: 19rem;
+    transform-origin: top right;
+    animation: pop .14s ease;
 }
 
 .menu-item {
     background-color: transparent;
-    color: $color-white;
+    color: $color-text-body;
     border: none;
-    border-radius: .25rem;
-    padding: .75rem 1rem;
-    font-family: inherit;
-    font-size: 1.4rem;
+    border-radius: .9rem;
+    padding: .9rem 1.1rem;
+    font: $semi-bold 1.3rem/1 $font-body;
     text-align: left;
     cursor: pointer;
     display: flex;
     align-items: center;
-    gap: .75rem;
+    gap: 1.1rem;
     transition: background-color .2s linear;
 
-    > :deep(svg) {
-        width: 1.4rem;
-        height: 1.4rem;
+    > .ico-box {
+        display: grid;
+        place-items: center;
+        width: 2.4rem;
+        height: 2.4rem;
+        border-radius: 7px;
+        background: $color-surface-4;
+        color: $color-text-dim;
         flex-shrink: 0;
+
+        > :deep(svg) { width: 1.5rem; height: 1.5rem; }
     }
 
     @media (hover: hover) {
         &:hover {
-            background-color: rgba($color-white, .08);
+            background-color: $color-hover-strong;
         }
     }
+}
+
+@keyframes pop {
+    from { transform: scale(.96); opacity: 0; }
+    to { transform: scale(1); opacity: 1; }
 }
 </style>
