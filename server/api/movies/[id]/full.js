@@ -16,6 +16,8 @@ export default defineCachedEventHandler(async (event) => {
         poster_path: movie.poster_path,
         release_date: resolveFrenchReleaseDate(movie.release_dates),
         director: extractDirector(movie.credits),
+        genres: extractGenres(movie),
+        countries: extractCountries(movie),
     };
 }, {
     maxAge: 60 * 60 * 6,

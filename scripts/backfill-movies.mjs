@@ -18,7 +18,7 @@
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { promisePool } from '../app/utils/promisePool.js';
-import { resolveFrenchReleaseDate, extractDirector } from '../server/utils/tmdbDates.js';
+import { resolveFrenchReleaseDate, extractDirector, extractGenres, extractCountries } from '../server/utils/tmdbDates.js';
 
 // --- chargement .env minimal (pas de dépendance dotenv) ---
 const loadEnv = () => {
@@ -55,15 +55,17 @@ const fetchMeta = async (movieId) => {
         poster_path: movie.poster_path,
         release_date: resolveFrenchReleaseDate(movie.release_dates),
         director: extractDirector(movie.credits),
+        genres: extractGenres(movie),
+        countries: extractCountries(movie),
     };
 };
 
 const run = async () => {
-    // Lignes sans métadonnées (title null) OU déjà backfillées mais sans réalisateur (director null).
+    // Lignes sans métadonnées (title null) OU déjà backfillées mais sans réalisateur / genres / pays.
     const { data: rows, error } = await supabase
         .from('calendar')
         .select('id, movie_id, title')
-        .or('title.is.null,director.is.null');
+        .or('title.is.null,director.is.null,genres.is.null,countries.is.null');
 
     if (error) {
         console.error('Lecture Supabase échouée :', error.message);
@@ -78,11 +80,11 @@ const run = async () => {
         try {
             const meta = await fetchMeta(row.movie_id);
             if (DRY_RUN) {
-                console.log(`  [dry] ${row.movie_id} → ${meta.title} | ${meta.release_date ?? 'sans date'} | ${meta.director ?? 'réal. inconnu'}`);
+                console.log(`  [dry] ${row.movie_id} → ${meta.title} | ${meta.release_date ?? 'sans date'} | ${meta.director ?? 'réal. inconnu'} | genres: ${meta.genres.join(', ') || '—'} | pays: ${meta.countries.join(', ') || '—'}`);
             } else {
                 const { error: upErr } = await supabase
                     .from('calendar')
-                    .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director })
+                    .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director, genres: meta.genres, countries: meta.countries })
                     .eq('id', row.id);
                 if (upErr) throw new Error(upErr.message);
             }

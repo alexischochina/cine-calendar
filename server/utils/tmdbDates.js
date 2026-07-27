@@ -39,3 +39,13 @@ export const extractDirector = (credits) => {
     const directors = credits?.crew?.filter(c => c.job === 'Director').map(c => c.name) ?? [];
     return directors.length ? directors.join(', ') : null;
 };
+
+// Noms FR des genres (déjà localisés par language=fr-FR) ; [] si aucun.
+export const extractGenres = (movie) => {
+    return movie?.genres?.map(g => g.name) ?? [];
+};
+
+// Codes ISO 3166-1 des pays de production ; [] si aucun.
+export const extractCountries = (movie) => {
+    return movie?.production_countries?.map(c => c.iso_3166_1) ?? [];
+};
