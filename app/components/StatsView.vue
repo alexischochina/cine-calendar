@@ -20,7 +20,7 @@ const props = defineProps({
 const {
     total, seen, toWatch, seenRatio,
     cinema, streaming, cinemaRatio,
-    topGenres, topCountries, monthly,
+    topGenres, topCountries, countryMap, maxSeen, monthly,
 } = useYearStats(() => props.movies, () => props.year);
 
 const yearLabel = computed(() => props.year === null ? 'Sans date' : String(props.year));
@@ -77,6 +77,11 @@ watch(() => props.year, () => { openStat.value = null; });
 
             <!-- 6. Graphe bâtons mensuel -->
             <StatsMonthlyChart :monthly="monthly" />
+
+            <!-- 7. Carte du monde — pleine largeur, client-only (carto hors SSR/prerender) -->
+            <ClientOnly>
+                <StatsWorldMap class="worldmap" :country-map="countryMap" :max-seen="maxSeen" />
+            </ClientOnly>
         </div>
     </div>
 </template>
@@ -120,6 +125,9 @@ watch(() => props.year, () => { openStat.value = null; });
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     gap: 1.4rem;
+
+    // Carte du monde : pleine largeur, en dernière position.
+    > .worldmap { grid-column: 1 / -1; }
 }
 
 // Carte total (hero) — les autres cartes portent leur propre chrome dans leur composant.

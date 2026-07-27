@@ -94,6 +94,42 @@ export function useYearStats(movies, year) {
             .map(({ key, count, movies }) => ({ label: countryName(key), count, movies }))
     );
 
+    // Agrégat par pays pour la carte du monde : TOUS les films de l'année ayant un pays
+    // (vus + à voir), un film multi-pays comptant dans chaque pays de `countries`.
+    // `seen` = state==='seen', `todo` = le reste. `numericId` relie au `feature.id` de l'atlas.
+    // Distinct de `topCountries` (vus seuls, top 10) — la carte veut la vue complète.
+    const countryMap = computed(() => {
+        const map = {}; // iso2 -> agrégat
+        for (const m of yearMovies.value) {
+            for (const iso of m.countries || []) {
+                if (!map[iso]) {
+                    map[iso] = {
+                        iso,
+                        name: countryName(iso),
+                        numericId: iso2ToNumeric(iso),
+                        seen: 0,
+                        todo: 0,
+                        total: 0,
+                        movies: [],
+                    };
+                }
+                const bucket = map[iso];
+                bucket.total++;
+                if (m.state === 'seen') bucket.seen++;
+                else bucket.todo++;
+                bucket.movies.push(m);
+            }
+        }
+        for (const bucket of Object.values(map)) bucket.movies.sort(byReleaseDate);
+        return map;
+    });
+
+    // Max de films vus par pays — échelle de l'intensité de couleur de la carte. Vaut 0 si aucun
+    // film vu (le garde-fou division-par-0 est côté carte : `Math.max(1, maxSeen)`).
+    const maxSeen = computed(() =>
+        Math.max(0, ...Object.values(countryMap.value).map(b => b.seen))
+    );
+
     // 12 mois : films du mois répartis en vus-au-ciné / vus-en-streaming / pas-vus.
     // `total` = tous les films du mois ; `seen` = cinemaSeen + streamingSeen.
     const monthly = computed(() => {
@@ -125,6 +161,8 @@ export function useYearStats(movies, year) {
         cinemaRatio,
         topGenres,
         topCountries,
+        countryMap,
+        maxSeen,
         monthly,
     };
 }
