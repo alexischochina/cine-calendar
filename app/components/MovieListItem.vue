@@ -63,10 +63,12 @@ const updateState = async (newState) => {
 
 // Sous-titre de droite : réalisateur si connu, sinon libellé état/média (cf. plan « sub »).
 const MEDIA_LABELS = { cinema: 'Cinéma', netflix: 'Netflix', primeVideo: 'Prime Video', 'disney+': 'Disney+', streaming: 'Streaming', vod: 'Streaming', unknown: 'Streaming' };
+// En salle : on garde le nom du réal dans le sous-titre, le badge « En salle » se cale à droite du titre (cf. template).
+const isInTheaters = computed(() => selectedState.value === 'inTheaters');
 const sub = computed(() => {
     const dir = props.director;
     if (selectedState.value === 'seen') return dir || MEDIA_LABELS[selectedMedia.value] || 'Streaming';
-    if (selectedState.value === 'inTheaters') return 'En salle maintenant';
+    if (selectedState.value === 'inTheaters') return dir || MEDIA_LABELS[selectedMedia.value] || 'Cinéma';
     if (selectedState.value === 'downloadAvailable') return dir || 'Dispo en téléchargement';
     return dir || 'Envie de voir';
 });
@@ -80,7 +82,10 @@ const sub = computed(() => {
                  :alt="props.title ? `Affiche du film ${props.title}` : ''" class="poster" loading="lazy" />
         <div v-else class="poster -placeholder" />
         <div class="info">
-            <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title">{{ props.title }}</a>
+            <div class="title-row">
+                <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title">{{ props.title }}</a>
+                <span v-if="isInTheaters" class="badge">En salle</span>
+            </div>
             <div class="sub">{{ sub }}</div>
         </div>
         <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" />
@@ -135,11 +140,31 @@ const sub = computed(() => {
         &.-placeholder { background: $color-surface-1; }
     }
 
-    // .info disparaît de la mise en page desktop : title + sub deviennent frères directs.
+    // .info disparaît de la mise en page desktop : title-row + sub deviennent frères directs.
     > .info { display: contents; }
 
-    .title {
+    // Titre + badge « En salle » regroupés ; le badge se cale à droite du titre.
+    .title-row {
         flex: 1;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+    }
+
+    .badge {
+        flex: none;
+        padding: .3rem .55rem;
+        border-radius: 4px;
+        background: rgba($color-primary, .22);
+        color: $color-primary-light;
+        font: $bold 1.05rem/1 $font-body;
+        text-transform: uppercase;
+        letter-spacing: .03em;
+        white-space: nowrap;
+    }
+
+    .title {
         min-width: 0;
         color: $color-text;
         font: $semi-bold 1.5rem/1.2 $font-body;
@@ -188,7 +213,7 @@ const sub = computed(() => {
             height: 5.4rem;
         }
 
-        // Sur mobile, title + sub s'empilent dans une colonne flex.
+        // Sur mobile on n'affiche que le titre : le sous-titre (réal) et le badge « En salle » sont masqués.
         > .info {
             display: flex;
             flex-direction: column;
@@ -198,10 +223,8 @@ const sub = computed(() => {
 
         .title { font-size: 1.35rem; }
 
-        .sub {
-            width: auto;
-            font-size: 1.1rem;
-        }
+        .sub,
+        .badge { display: none; }
     }
 }
 </style>
