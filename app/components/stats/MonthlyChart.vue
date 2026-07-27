@@ -120,7 +120,7 @@ const monthAria = (m) =>
 .columns {
     display: flex;
     align-items: flex-end;
-    gap: 1.6rem;
+    gap: 2%;
     height: 22rem;
 
     > .col {
@@ -146,6 +146,8 @@ const monthAria = (m) =>
             display: flex;
             flex-direction: column;
             justify-content: flex-end;
+            border-radius: .5rem;
+            overflow: hidden;
 
             > .fill {
                 width: 100%;
