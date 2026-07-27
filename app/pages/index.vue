@@ -9,10 +9,12 @@ const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, ha
 const { closestMovie, searchMovie, scrollToMovie, scrollToTop } = useMovieScroll(movies)
 
 const currentYear = new Date().getFullYear();
-const scrollEl = ref(null);
 // Année (ou "Sans date" = null) affichée. Comme la maquette : on ne rend qu'une année à la fois.
 const selectedYear = ref(currentYear);
 const mobileYearMenu = ref(false);
+// Vue principale : timeline (calendrier) ou stats (statistiques de l'année sélectionnée).
+const viewMode = ref('timeline');
+const selectView = (mode) => { viewMode.value = mode; };
 
 const yearOfMovie = (m) => {
     if (!m?.release_date) return null;
@@ -53,11 +55,6 @@ const yearList = computed(() => {
 });
 
 const selectedYearLabel = computed(() => selectedYear.value === null ? 'Sans date' : String(selectedYear.value));
-
-const monthCount = (days) => {
-    const n = Object.values(days).reduce((acc, list) => acc + list.length, 0);
-    return `${n} film${n > 1 ? 's' : ''}`;
-};
 
 const selectYear = (year) => {
     selectedYear.value = year;
@@ -113,7 +110,8 @@ onBeforeUnmount(() => {
 
 <template>
     <div class="timeline-shell">
-        <NavSideNav class="shell-rail -left" :years="yearList" :active-year="selectedYear" @select-year="selectYear" />
+        <NavSideNav class="shell-rail -left" :years="yearList" :active-year="selectedYear" :view-mode="viewMode"
+                    @select-year="selectYear" @select-view="selectView" />
 
         <!-- En-tête mobile : titre + pastille année + segmented Timeline|Stats -->
         <div class="shell-mobilehead">
@@ -124,66 +122,20 @@ onBeforeUnmount(() => {
                     {{ selectedYearLabel }}<Svg name="chevron" class="chev" aria-hidden="true" />
                 </button>
             </div>
-            <div class="tabs">
-                <button class="tab -active" type="button"><Svg name="list" class="ico" />Timeline</button>
-                <button class="tab -disabled" type="button" disabled aria-disabled="true" title="Bientôt disponible">
-                    <Svg name="chart" class="ico" />Stats
-                </button>
-            </div>
+            <NavViewTabs :view-mode="viewMode" @select-view="selectView" />
         </div>
 
         <div class="shell-main">
-            <CinemaNowPanel class="shell-band" variant="band" :movies="cinemaNow" @select-movie="goToMovie" />
+            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-band" variant="band" :movies="cinemaNow" @select-movie="goToMovie" />
 
-            <div class="timeline scr" ref="scrollEl">
-                <template v-if="hasContent">
-                    <!-- Année datée : groupes de mois -->
-                    <template v-if="selectedYear !== null">
-                        <div class="month-group" v-for="(days, month) in monthsOfYear" :key="month">
-                            <div class="month-head">
-                                <span class="name">{{ month }}</span>
-                                <span class="rule" />
-                                <span class="count">{{ monthCount(days) }}</span>
-                            </div>
-                            <template v-for="(dayMovies, day) in days" :key="day">
-                                <MovieListItem v-for="(movie, index) in dayMovies" :key="movie.id"
-                                               :release-day="index === 0 ? String(day) : ''"
-                                               :movie-id="movie.movie_id"
-                                               :media="movie.media"
-                                               :state="movie.state"
-                                               :id="movie.id"
-                                               :title="movie.title"
-                                               :poster-path="movie.poster_path"
-                                               :manual-release-date="movie.manual_release_date"
-                                               :director="movie.director"
-                                               @movie-deleted="handleMovieDeleted"
-                                               @release-date-updated="handleReleaseDateUpdated" />
-                            </template>
-                        </div>
-                    </template>
+            <StatsView v-if="viewMode === 'stats'" :movies="movies" :year="selectedYear" />
 
-                    <!-- Sans date -->
-                    <div class="month-group" v-else>
-                        <MovieListItem v-for="movie in moviesWithoutDate" :key="movie.id"
-                                       :release-day="''"
-                                       :movie-id="movie.movie_id"
-                                       :media="movie.media"
-                                       :state="movie.state"
-                                       :id="movie.id"
-                                       :title="movie.title"
-                                       :poster-path="movie.poster_path"
-                                       :manual-release-date="movie.manual_release_date"
-                                       :director="movie.director"
-                                       @movie-deleted="handleMovieDeleted"
-                                       @release-date-updated="handleReleaseDateUpdated" />
-                    </div>
-                </template>
-
-                <div v-else class="empty">Aucun film ne correspond.</div>
-            </div>
+            <TimelineList v-else :selected-year="selectedYear" :months-of-year="monthsOfYear"
+                          :movies-without-date="moviesWithoutDate" :has-content="hasContent"
+                          @movie-deleted="handleMovieDeleted" @release-date-updated="handleReleaseDateUpdated" />
         </div>
 
-        <CinemaNowPanel class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToMovie" />
+        <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToMovie" />
 
         <!-- Menu année (mobile) -->
         <div v-if="mobileYearMenu" class="year-overlay" @click="mobileYearMenu = false">
@@ -211,52 +163,6 @@ onBeforeUnmount(() => {
         min-height: 0;
         display: flex;
         flex-direction: column;
-    }
-
-    .timeline {
-        flex: 1;
-        min-width: 0;
-        min-height: 0;
-        overflow-y: auto;
-        overflow-x: hidden;
-        padding: .8rem 0 11rem;
-    }
-
-    .empty {
-        padding: 8rem 3rem;
-        text-align: center;
-        color: $color-text-weak;
-        font: $normal 1.4rem/1 $font-body;
-    }
-}
-
-.month-head {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    display: flex;
-    align-items: baseline;
-    gap: 1rem;
-    padding: 1.6rem 2.4rem 1rem;
-    background: rgba($color-bg, .92);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
-
-    > .name {
-        color: $color-text;
-        font: 800 1.7rem/1 $font-title;
-        text-transform: capitalize;
-    }
-
-    > .rule {
-        flex: 1;
-        height: 1px;
-        background: $color-border-2;
-    }
-
-    > .count {
-        font: $normal 1.1rem/1 $font-mono;
-        color: $color-text-weak;
     }
 }
 
@@ -334,33 +240,6 @@ onBeforeUnmount(() => {
             cursor: pointer;
 
             > .chev { width: 1.3rem; height: 1.3rem; }
-        }
-    }
-
-    > .tabs {
-        display: flex;
-        gap: .4rem;
-        background: $color-surface-1;
-        border: 1px solid $color-border-2;
-        border-radius: 1.1rem;
-        padding: .4rem;
-
-        > .tab {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: .6rem;
-            padding: .8rem;
-            border-radius: .8rem;
-            color: $color-text-muted;
-            font: $semi-bold 1.25rem/1 $font-body;
-            cursor: pointer;
-
-            > .ico { width: 1.5rem; height: 1.5rem; }
-
-            &.-active { background: $color-primary; color: $color-white; }
-            &.-disabled { cursor: default; opacity: .55; }
         }
     }
 }
