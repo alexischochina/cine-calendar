@@ -1,5 +1,5 @@
 <script setup>
-// Rail gauche desktop : titre, toggle Timeline|Stats (Stats = placeholder inactif),
+// Rail gauche desktop : titre, toggle Timeline|Stats (bascule la vue principale),
 // liste des années avec compteur + surlignage de l'année active, légende STATUTS.
 const props = defineProps({
     years: {
@@ -10,9 +10,13 @@ const props = defineProps({
         type: [Number, null],
         default: null,
     },
+    viewMode: {
+        type: String,
+        default: 'timeline',
+    },
 });
 
-const emits = defineEmits(['select-year']);
+const emits = defineEmits(['select-year', 'select-view']);
 
 const isActive = (y) => y.year === props.activeYear;
 </script>
@@ -21,14 +25,7 @@ const isActive = (y) => y.year === props.activeYear;
     <aside class="side-nav scr">
         <div class="brand">Ma cinémathèque</div>
 
-        <div class="tabs">
-            <button class="tab -active" type="button">
-                <Svg name="list" class="ico" />Timeline
-            </button>
-            <button class="tab -disabled" type="button" disabled aria-disabled="true" title="Bientôt disponible">
-                <Svg name="chart" class="ico" />Stats
-            </button>
-        </div>
+        <NavViewTabs :view-mode="viewMode" @select-view="emits('select-view', $event)" />
 
         <nav class="years" aria-label="Aller à une année">
             <button v-for="y in years" :key="y.label" class="year" :class="{ '-active': isActive(y) }"
@@ -66,41 +63,6 @@ const isActive = (y) => y.year === props.activeYear;
     color: $color-text;
     font: 800 2.1rem/1 $font-title;
     letter-spacing: -.05rem;
-}
-
-.tabs {
-    display: flex;
-    gap: .4rem;
-    background: $color-surface-1;
-    border: 1px solid $color-border-2;
-    border-radius: 1.1rem;
-    padding: .4rem;
-
-    > .tab {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: .6rem;
-        padding: .8rem;
-        border-radius: .8rem;
-        color: $color-text-muted;
-        font: $semi-bold 1.25rem/1 $font-body;
-        cursor: pointer;
-        transition: background-color .15s linear, color .15s linear;
-
-        > .ico { width: 1.5rem; height: 1.5rem; }
-
-        &.-active {
-            background: $color-primary;
-            color: $color-white;
-        }
-
-        &.-disabled {
-            cursor: default;
-            opacity: .55;
-        }
-    }
 }
 
 .years {

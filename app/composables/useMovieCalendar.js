@@ -85,12 +85,14 @@ export function useMovieCalendar() {
                 try {
                     const meta = await $fetch(`/api/movies/${row.movie_id}/full`);
                     await client.from('calendar')
-                        .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director })
+                        .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director, genres: meta.genres, countries: meta.countries })
                         .eq('id', row.id);
                     row.title = meta.title;
                     row.poster_path = meta.poster_path;
                     row.release_date = meta.release_date;
                     row.director = meta.director;
+                    row.genres = meta.genres;
+                    row.countries = meta.countries;
                 } catch (e) {
                     console.error('Filet de sécurité: résolution échouée pour', row.movie_id, e);
                 }
@@ -137,6 +139,10 @@ export function useMovieCalendar() {
                 if (meta.title && meta.title !== movie.title) patch.title = meta.title;
                 if (meta.poster_path !== movie.poster_path) patch.poster_path = meta.poster_path;
                 if (meta.director !== movie.director) patch.director = meta.director;
+                // genres/countries stables côté TMDB mais absents des lignes pré-backfill : on les
+                // renseigne si manquants (coût nul, /full les renvoie déjà).
+                if ((!movie.genres || !movie.genres.length) && meta.genres?.length) patch.genres = meta.genres;
+                if ((!movie.countries || !movie.countries.length) && meta.countries?.length) patch.countries = meta.countries;
                 if (!Object.keys(patch).length) return;
 
                 await client.from('calendar').update(patch).eq('id', movie.id);
