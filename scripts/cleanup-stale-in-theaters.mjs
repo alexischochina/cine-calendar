@@ -6,7 +6,7 @@
 //   node scripts/cleanup-stale-in-theaters.mjs --dry-run   # aperçu
 //   node scripts/cleanup-stale-in-theaters.mjs             # écrit
 //
-// Requiert SUPABASE_URL + une clé qui contourne la RLS (SUPABASE_SERVICE_KEY),
+// Requiert SUPABASE_URL + une clé qui contourne la RLS (NUXT_SUPABASE_SECRET_KEY),
 // sinon fallback SUPABASE_KEY (anon — ne verra rien si la RLS l'exige).
 
 import { readFileSync } from 'node:fs';
@@ -24,11 +24,11 @@ const loadEnv = () => {
 loadEnv();
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
+const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 const DRY_RUN = process.argv.includes('--dry-run');
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
-    console.error('Variables manquantes : SUPABASE_URL et SUPABASE_SERVICE_KEY (ou SUPABASE_KEY).');
+    console.error('Variables manquantes : SUPABASE_URL et NUXT_SUPABASE_SECRET_KEY (ou SUPABASE_KEY).');
     process.exit(1);
 }
 

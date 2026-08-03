@@ -11,7 +11,7 @@
 //   node scripts/backfill-movies.mjs --dry-run  # affiche sans écrire
 //
 // Variables .env requises : SUPABASE_URL, NUXT_API_BASE_URL, NUXT_API_KEY,
-// et une clé Supabase avec droit d'update : SUPABASE_SERVICE_KEY (recommandé,
+// et une clé Supabase avec droit d'update : NUXT_SUPABASE_SECRET_KEY (recommandé,
 // contourne la RLS) sinon fallback SUPABASE_KEY (anon — l'update échouera si la RLS
 // exige un user authentifié).
 
@@ -33,13 +33,13 @@ const loadEnv = () => {
 loadEnv();
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
+const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 const API_BASE_URL = process.env.NUXT_API_BASE_URL;
 const API_KEY = process.env.NUXT_API_KEY;
 const DRY_RUN = process.argv.includes('--dry-run');
 
 if (!SUPABASE_URL || !SUPABASE_KEY || !API_BASE_URL || !API_KEY) {
-    console.error('Variables manquantes. Requis : SUPABASE_URL, SUPABASE_KEY (ou SUPABASE_SERVICE_KEY), NUXT_API_BASE_URL, NUXT_API_KEY');
+    console.error('Variables manquantes. Requis : SUPABASE_URL, SUPABASE_KEY (ou NUXT_SUPABASE_SECRET_KEY), NUXT_API_BASE_URL, NUXT_API_KEY');
     process.exit(1);
 }
 
