@@ -18,6 +18,7 @@ export default defineCachedEventHandler(async (event) => {
         director: extractDirector(movie.credits),
         genres: extractGenres(movie),
         countries: extractCountries(movie),
+        vote_average: movie.vote_average ?? null,
     };
 }, {
     maxAge: 60 * 60 * 6,
