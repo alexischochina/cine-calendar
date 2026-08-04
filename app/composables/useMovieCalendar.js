@@ -85,7 +85,7 @@ export function useMovieCalendar() {
                 try {
                     const meta = await $fetch(`/api/movies/${row.movie_id}/full`);
                     await client.from('calendar')
-                        .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director, genres: meta.genres, countries: meta.countries })
+                        .update({ title: meta.title, poster_path: meta.poster_path, release_date: meta.release_date, director: meta.director, genres: meta.genres, countries: meta.countries, tmdb_vote: meta.vote_average })
                         .eq('id', row.id);
                     row.title = meta.title;
                     row.poster_path = meta.poster_path;
@@ -93,6 +93,7 @@ export function useMovieCalendar() {
                     row.director = meta.director;
                     row.genres = meta.genres;
                     row.countries = meta.countries;
+                    row.tmdb_vote = meta.vote_average;
                 } catch (e) {
                     console.error('Filet de sécurité: résolution échouée pour', row.movie_id, e);
                 }
@@ -143,6 +144,7 @@ export function useMovieCalendar() {
                 // renseigne si manquants (coût nul, /full les renvoie déjà).
                 if ((!movie.genres || !movie.genres.length) && meta.genres?.length) patch.genres = meta.genres;
                 if ((!movie.countries || !movie.countries.length) && meta.countries?.length) patch.countries = meta.countries;
+                if ((movie.tmdb_vote == null) && meta.vote_average != null) patch.tmdb_vote = meta.vote_average;
                 if (!Object.keys(patch).length) return;
 
                 await client.from('calendar').update(patch).eq('id', movie.id);
@@ -181,6 +183,144 @@ export function useMovieCalendar() {
         sortMovies(movies.value);
     }
 
+    // Marque / démarque un film « à rattraper ». Patch local sans refetch.
+    // `catchup_at` = horodatage d'ajout (ordre du slider, le dernier ajouté à droite) ; null au retrait.
+    const setCatchup = async (id, value) => {
+        const catchup_at = value ? new Date().toISOString() : null;
+        const { error } = await client.from('calendar').update({ catchup: value, catchup_at }).eq('id', id);
+        if (error) { console.error('Toggle catchup échoué pour', id, error.message); return; }
+        movies.value = movies.value.map(m => m.id === id ? { ...m, catchup: value, catchup_at } : m);
+        // Re-trie pour rafraîchir les références d'objets exposées via sortedMovies (la timeline
+        // lit `catchup` par ce biais) ; le tri lui-même est inchangé (catchup n'affecte pas l'ordre).
+        sortMovies(movies.value);
+    }
+
+    // Rafraîchit les notes Letterboxd des films non vus & sortis de l'année donnée.
+    // Skip les notes fraîches (< 7 j). Throttlé (8), un seul réassign de movies.value.
+    const refreshLetterboxdRatings = async (year) => {
+        const todayStr = today();
+        const staleBefore = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+        // Gate sur l'ancienneté du dernier check (jamais checké OU périmé > 7 j). Un film jamais
+        // noté avec succès n'est pas horodaté (voir plus bas) → il repasse ici à chaque ouverture
+        // jusqu'à obtenir une note ; les films notés sont mis en cache 7 j.
+        const toCheck = movies.value.filter(m =>
+            m.state !== 'seen' &&
+            m.release_date &&
+            m.release_date <= todayStr &&
+            yearOf(m.release_date) === year &&
+            (!m.letterboxd_rating_at || new Date(m.letterboxd_rating_at).getTime() < staleBefore)
+        );
+        if (!toCheck.length) return;
+
+        const nowIso = new Date().toISOString();
+        const patches = new Map();
+        await promisePool(toCheck.map(movie => async () => {
+            try {
+                const { rating } = await $fetch(`/api/movies/${movie.movie_id}/letterboxd`);
+                let patch;
+                if (rating != null) {
+                    patch = { letterboxd_rating: rating, letterboxd_rating_at: nowIso };
+                } else if (movie.letterboxd_rating != null) {
+                    // Scrape transitoirement raté mais note déjà en base : on la garde et on
+                    // repousse le prochain check en rafraîchissant seulement l'horodatage.
+                    patch = { letterboxd_rating_at: nowIso };
+                } else {
+                    // Jamais de note obtenue → on n'horodate pas : nouvelle tentative à la
+                    // prochaine ouverture (au lieu d'un cache « vide » de 7 j).
+                    return;
+                }
+                await client.from('calendar').update(patch).eq('id', movie.id);
+                patches.set(movie.id, patch);
+            } catch (e) {
+                console.error('Refresh note Letterboxd échoué pour', movie.movie_id, e);
+            }
+        }), 8);
+
+        if (!patches.size) return;
+        movies.value = movies.value.map(m => {
+            const patch = patches.get(m.id);
+            return patch ? { ...m, ...patch } : m;
+        });
+    }
+
+    // Ajoute un film « à rattraper » : réutilise la ligne existante si présente (toggle catchup),
+    // sinon insère une nouvelle ligne calendar (comme MovieAddForm) avec catchup=true.
+    // `year` = année de la vue Stats d'où part l'ajout : persistée en `catchup_year`, elle sert de
+    // repli d'année pour les films sans date FR résolue (voir filtre dans Catchup.vue).
+    // Retourne l'entrée à intégrer localement (ou null si simple toggle d'un film déjà là).
+    const addCatchupMovie = async ({ movieId, media = 'cinema', year = null }) => {
+        // `.limit(1)` + repli sur le premier plutôt que `.maybeSingle()` : tolère d'éventuels
+        // doublons de `movie_id` sans lever. Enveloppé pour ne jamais casser l'ajout.
+        let existing = null;
+        try {
+            const { data } = await client
+                .from('calendar')
+                .select('id')
+                .eq('movie_id', movieId)
+                .order('id')
+                .limit(1);
+            existing = data?.[0] ?? null;
+        } catch (e) {
+            console.error('Lecture ligne catchup existante échouée:', e);
+        }
+        const catchup_at = new Date().toISOString();
+        if (existing) {
+            const { error } = await client
+                .from('calendar')
+                .update({ catchup: true, catchup_year: year, catchup_at })
+                .eq('id', existing.id);
+            if (error) { console.error('Toggle catchup (ligne existante) échoué:', error.message); return null; }
+            movies.value = movies.value.map(m => m.id === existing.id ? { ...m, catchup: true, catchup_year: year, catchup_at } : m);
+            sortMovies(movies.value);
+            return null;
+        }
+
+        let meta = { title: null, poster_path: null, release_date: null, director: null, genres: null, countries: null, vote_average: null };
+        try {
+            meta = await $fetch(`/api/movies/${movieId}/full`);
+        } catch (e) {
+            console.error('Métadonnées TMDB indisponibles à l\'ajout catchup, résolution différée:', e);
+        }
+        const { data: inserted, error } = await client
+            .from('calendar')
+            .insert({
+                movie_id: movieId,
+                media,
+                state: 'unseen',
+                catchup: true,
+                catchup_year: year,
+                catchup_at,
+                title: meta.title,
+                poster_path: meta.poster_path,
+                release_date: meta.release_date,
+                director: meta.director,
+                genres: meta.genres,
+                countries: meta.countries,
+                tmdb_vote: meta.vote_average,
+            })
+            .select()
+            .single();
+        if (error) { console.error('Insert film catchup échoué:', error.message); return null; }
+
+        return {
+            id: inserted.id,
+            movie_id: movieId,
+            media,
+            state: 'unseen',
+            catchup: true,
+            catchup_year: year,
+            catchup_at,
+            title: meta.title,
+            poster_path: meta.poster_path,
+            release_date: meta.release_date,
+            director: meta.director,
+            genres: meta.genres,
+            countries: meta.countries,
+            tmdb_vote: meta.vote_average,
+        };
+    }
+
     const handleMovieExists = (event) => event.detail?.movieId
 
     const handleMovieDeleted = (id) => {
@@ -213,5 +353,8 @@ export function useMovieCalendar() {
         handleMovieExists,
         handleMovieDeleted,
         handleReleaseDateUpdated,
+        setCatchup,
+        refreshLetterboxdRatings,
+        addCatchupMovie,
     }
 }

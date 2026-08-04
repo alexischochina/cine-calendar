@@ -9,7 +9,7 @@ defineProps({
     hasContent: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(['movie-deleted', 'release-date-updated']);
+const emit = defineEmits(['movie-deleted', 'release-date-updated', 'toggle-catchup']);
 
 const monthCount = (days) => {
     const n = Object.values(days).reduce((acc, list) => acc + list.length, 0);
@@ -39,8 +39,11 @@ const monthCount = (days) => {
                                        :poster-path="movie.poster_path"
                                        :manual-release-date="movie.manual_release_date"
                                        :director="movie.director"
+                                       :release-date="movie.release_date"
+                                       :catchup="movie.catchup"
                                        @movie-deleted="emit('movie-deleted', $event)"
-                                       @release-date-updated="emit('release-date-updated', $event)" />
+                                       @release-date-updated="emit('release-date-updated', $event)"
+                                       @toggle-catchup="(id, value) => emit('toggle-catchup', id, value)" />
                     </template>
                 </div>
             </template>
@@ -57,8 +60,11 @@ const monthCount = (days) => {
                                :poster-path="movie.poster_path"
                                :manual-release-date="movie.manual_release_date"
                                :director="movie.director"
+                               :release-date="movie.release_date"
+                               :catchup="movie.catchup"
                                @movie-deleted="emit('movie-deleted', $event)"
-                               @release-date-updated="emit('release-date-updated', $event)" />
+                               @release-date-updated="emit('release-date-updated', $event)"
+                               @toggle-catchup="(id, value) => emit('toggle-catchup', id, value)" />
             </div>
         </template>
 

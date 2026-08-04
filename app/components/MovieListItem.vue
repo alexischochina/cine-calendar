@@ -1,5 +1,5 @@
 <script setup>
-const emits = defineEmits(['movie-deleted', 'release-date-updated']);
+const emits = defineEmits(['movie-deleted', 'release-date-updated', 'toggle-catchup']);
 
 const props = defineProps({
     releaseDay: {
@@ -37,6 +37,14 @@ const props = defineProps({
     director: {
         type: String,
         default: null,
+    },
+    releaseDate: {
+        type: String,
+        default: null,
+    },
+    catchup: {
+        type: Boolean,
+        default: false,
     },
 })
 const selectedMedia = ref(props.media);
@@ -91,8 +99,10 @@ const sub = computed(() => {
         <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" />
         <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected" />
         <MovieActionsBtn :id="props.id" :manual-release-date="manualReleaseDate"
+                         :release-date="props.releaseDate" :catchup="props.catchup"
                          @movie-deleted="emits('movie-deleted', $event)"
-                         @release-date-updated="emits('release-date-updated', $event)" />
+                         @release-date-updated="emits('release-date-updated', $event)"
+                         @toggle-catchup="(id, value) => emits('toggle-catchup', id, value)" />
     </div>
 </template>
 

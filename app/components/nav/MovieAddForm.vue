@@ -43,7 +43,7 @@ const addMovie = async () => {
         }
         // Si TMDB est indisponible, on insère quand même (métadonnées nulles) :
         // le filet de sécurité de getMovies les résoudra au prochain chargement.
-        let meta = { title: null, poster_path: null, release_date: null, director: null, genres: null, countries: null };
+        let meta = { title: null, poster_path: null, release_date: null, director: null, genres: null, countries: null, vote_average: null };
         try {
             meta = await $fetch(`/api/movies/${movieId.value}/full`);
         } catch (e) {
@@ -61,6 +61,7 @@ const addMovie = async () => {
                 director: meta.director,
                 genres: meta.genres,
                 countries: meta.countries,
+                tmdb_vote: meta.vote_average,
             })
             .select()
             .single()
@@ -76,6 +77,7 @@ const addMovie = async () => {
             director: meta.director,
             genres: meta.genres,
             countries: meta.countries,
+            tmdb_vote: meta.vote_average,
         };
         resetForm();
         emit('movie-added', newEntry)

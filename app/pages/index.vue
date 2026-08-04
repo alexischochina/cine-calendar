@@ -5,7 +5,7 @@ definePageMeta({
 })
 useHead({ title: 'Mon calendrier' })
 
-const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted, handleReleaseDateUpdated } = useMovieCalendar()
+const { movies, sortedMovies, moviesWithoutDate, getMovies, handleMovieAdded, handleMovieExists, handleMovieDeleted, handleReleaseDateUpdated, setCatchup, refreshLetterboxdRatings, addCatchupMovie } = useMovieCalendar()
 const { closestMovie, searchMovie, scrollToMovie, scrollToTop } = useMovieScroll(movies)
 
 const currentYear = new Date().getFullYear();
@@ -91,6 +91,40 @@ const onMovieExists = (event) => {
     if (movieId) goToMovie(movieId);
 }
 
+const onStatsGoToMovie = (movieId) => {
+    selectView('timeline');
+    nextTick(() => goToMovie(movieId));
+}
+
+// Notice éphémère « ajouté à la liste de <année> » (le film peut viser une autre année).
+const catchupNotice = ref(null);
+let catchupNoticeTimer = null;
+const notifyCatchup = (title, yearLabel) => {
+    catchupNotice.value = { title, yearLabel };
+    if (catchupNoticeTimer) clearTimeout(catchupNoticeTimer);
+    catchupNoticeTimer = setTimeout(() => { catchupNotice.value = null; }, 4500);
+};
+
+// Ajout depuis Stats : on reste sur l'onglet Stats. La liste étant par année, un film qui sort
+// une autre année atterrit dans la liste de SON année → on le signale (sinon il semble ne pas s'ajouter).
+const onAddCatchupMovie = async (payload) => {
+    const entry = await addCatchupMovie(payload);
+    if (entry) await handleMovieAdded({ detail: { newEntry: entry } });
+
+    const movie = movies.value.find(m => m.movie_id === Number(payload.movieId));
+    if (!movie) return;
+    // Année d'atterrissage : année de sortie si datée, sinon année cible catchup_year (film sans date FR).
+    const landingYear = yearOfMovie(movie) ?? movie.catchup_year ?? null;
+    if (landingYear !== selectedYear.value) {
+        notifyCatchup(movie.title || 'Le film', landingYear === null ? 'Sans date' : String(landingYear));
+    }
+}
+
+// Rafraîchit les notes Letterboxd une fois par (ouverture Stats, année) — jamais côté timeline.
+watch([viewMode, selectedYear], ([mode, year]) => {
+    if (mode === 'stats' && year !== null) refreshLetterboxdRatings(year);
+});
+
 onMounted(async () => {
     window.addEventListener('movie-added', onMovieAdded)
     window.addEventListener('movie-exists', onMovieExists)
@@ -105,6 +139,7 @@ onBeforeUnmount(() => {
     window.removeEventListener('movie-exists', onMovieExists)
     window.removeEventListener('scroll-to-today', onScrollToToday)
     window.removeEventListener('search-movie', onSearch)
+    if (catchupNoticeTimer) clearTimeout(catchupNoticeTimer)
 })
 </script>
 
@@ -128,14 +163,24 @@ onBeforeUnmount(() => {
         <div class="shell-main">
             <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-band" variant="band" :movies="cinemaNow" @select-movie="goToMovie" />
 
-            <StatsView v-if="viewMode === 'stats'" :movies="movies" :year="selectedYear" />
+            <StatsView v-if="viewMode === 'stats'" :movies="movies" :year="selectedYear"
+                       @go-to-movie="onStatsGoToMovie" @toggle-catchup="setCatchup" @add-catchup-movie="onAddCatchupMovie" />
 
             <TimelineList v-else :selected-year="selectedYear" :months-of-year="monthsOfYear"
                           :movies-without-date="moviesWithoutDate" :has-content="hasContent"
-                          @movie-deleted="handleMovieDeleted" @release-date-updated="handleReleaseDateUpdated" />
+                          @movie-deleted="handleMovieDeleted" @release-date-updated="handleReleaseDateUpdated"
+                          @toggle-catchup="setCatchup" />
         </div>
 
         <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToMovie" />
+
+        <!-- Notice « ajouté à la liste à rattraper de <année> » -->
+        <Transition name="notice">
+            <div v-if="catchupNotice" class="catchup-notice" role="status">
+                <span class="msg">« {{ catchupNotice.title }} » ajouté à ta liste à rattraper de
+                    <strong>{{ catchupNotice.yearLabel }}</strong></span>
+            </div>
+        </Transition>
 
         <!-- Menu année (mobile) -->
         <div v-if="mobileYearMenu" class="year-overlay" @click="mobileYearMenu = false">
@@ -248,6 +293,35 @@ onBeforeUnmount(() => {
     from { transform: scale(.96); opacity: 0; }
     to { transform: scale(1); opacity: 1; }
 }
+
+// Notice « ajouté à la liste à rattraper de <année> »
+.catchup-notice {
+    position: fixed;
+    left: 50%;
+    bottom: 9rem;
+    transform: translateX(-50%);
+    z-index: 60;
+    max-width: calc(100vw - 4rem);
+    padding: 1.2rem 1.8rem;
+    background: $color-surface-2;
+    border: 1px solid $color-border-4;
+    border-left: 3px solid $color-primary;
+    border-radius: 1.2rem;
+    box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
+
+    > .msg {
+        color: $color-text-dim;
+        font: $normal 1.35rem/1.4 $font-body;
+
+        > strong { color: $color-primary-light; font-weight: $bold; }
+    }
+}
+
+.notice-enter-active,
+.notice-leave-active { transition: opacity .2s ease, transform .2s ease; }
+
+.notice-enter-from,
+.notice-leave-to { opacity: 0; transform: translate(-50%, 1rem); }
 
 @media (max-width: 999px) {
     .timeline-shell {

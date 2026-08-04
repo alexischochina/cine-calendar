@@ -1,7 +1,7 @@
 <script setup>
 import { onClickOutside } from '@vueuse/core';
 
-const emits = defineEmits(['movie-deleted', 'release-date-updated']);
+const emits = defineEmits(['movie-deleted', 'release-date-updated', 'toggle-catchup']);
 
 const props = defineProps({
     id: {
@@ -12,7 +12,18 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    releaseDate: {
+        type: String,
+        default: null,
+    },
+    catchup: {
+        type: Boolean,
+        default: false,
+    },
 });
+
+// « À rattraper » ne concerne que les films déjà sortis (date effective passée).
+const isReleased = computed(() => !!props.releaseDate && props.releaseDate <= today());
 
 const isOpen = ref(false);
 const view = ref('menu');
@@ -41,6 +52,11 @@ const onReleaseDateUpdated = (payload) => {
     emits('release-date-updated', payload);
 }
 
+const onToggleCatchup = () => {
+    emits('toggle-catchup', props.id, !props.catchup);
+    close();
+}
+
 onClickOutside(container, close);
 </script>
 
@@ -55,6 +71,10 @@ onClickOutside(container, close);
                 <button class="menu-item" @click="view = 'date'">
                     <span class="ico-box"><Svg name="calendar"/></span>
                     <span class="label">Modifier la date</span>
+                </button>
+                <button v-if="isReleased" class="menu-item" :class="{ '-active': catchup }" @click="onToggleCatchup">
+                    <span class="ico-box"><Svg name="list"/></span>
+                    <span class="label">{{ catchup ? 'Retirer de la liste à rattraper' : 'Ajouter à la liste à rattraper' }}</span>
                 </button>
                 <DeleteMovieAction :id="id" @movie-deleted="onDeleted"/>
             </template>
@@ -144,6 +164,12 @@ onClickOutside(container, close);
         flex-shrink: 0;
 
         > :deep(svg) { width: 1.5rem; height: 1.5rem; }
+    }
+
+    &.-active {
+        color: $color-primary-light;
+
+        > .ico-box { color: $color-primary-light; }
     }
 
     @media (hover: hover) {
