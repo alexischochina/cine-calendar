@@ -49,7 +49,6 @@ export function useMovieCalendar() {
         const d = new Date();
         const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         const currentYear = d.getFullYear();
-        const yearOf = (ds) => { const x = new Date(ds); return isNaN(x) ? null : x.getFullYear(); };
 
         // Sorties cinéma de l'année en cours, déjà sorties, non vues → « en salle maintenant ».
         // Garde-fou `>= currentYear` : on ne (re)flague jamais un film d'une année précédente.

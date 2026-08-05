@@ -13,7 +13,7 @@ const movieInput = ref(null)
 
 const debouncedMovieTitle = refDebounced(movieTitle, 300);
 
-const url = computed(() => `api/movies/search?query=${encodeURIComponent(debouncedMovieTitle.value)}&page=${page.value}`);
+const url = computed(() => `/api/movies/search?query=${encodeURIComponent(debouncedMovieTitle.value)}&page=${page.value}`);
 
 const {data} = await useFetch(url)
 

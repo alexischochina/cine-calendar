@@ -8,7 +8,7 @@ const page = ref(1);
 
 const debouncedSearchTerm = refDebounced(searchTerm, 700);
 
-const url = computed(() => `api/movies/search?query=${encodeURIComponent(debouncedSearchTerm.value)}&page=${page.value}`);
+const url = computed(() => `/api/movies/search?query=${encodeURIComponent(debouncedSearchTerm.value)}&page=${page.value}`);
 
 const {data} = await useFetch(url)
 </script>
