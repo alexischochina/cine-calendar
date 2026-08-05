@@ -49,7 +49,11 @@ export default defineNuxtConfig({
         },
     },
     routeRules: {
-        '/': {ssr: true},
+        '/': {ssr: true}, // home = redirection dynamique dans index.vue (pas de prerender)
+    },
+    app: {
+        // `mode: 'default'` = crossfade simultané (pas out-in). CSS dans main.scss (.view-*).
+        pageTransition: {name: 'view', mode: 'default'},
     },
     compatibilityDate: '2024-11-01',
     devtools: {enabled: true}

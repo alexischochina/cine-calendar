@@ -80,6 +80,7 @@ const monthCount = (days) => {
     overflow-y: auto;
     overflow-x: hidden;
     padding: .8rem 0 11rem;
+    margin-right: var(--rail-space, 0); // place pour le rail overlay (posé par le layout)
 }
 
 .empty {
@@ -120,7 +121,7 @@ const monthCount = (days) => {
 }
 
 @media (max-width: 999px) {
-    .timeline { padding: 0 0 11rem; }
+    .timeline { padding: 0 0 11rem; margin-right: 0; } // le rail est masqué en mobile (bande à la place)
 
     .month-head {
         padding: 1.4rem 1.8rem .8rem;

@@ -1,9 +1,10 @@
 export function useMovieCalendar() {
     const client = useSupabaseClient()
     const store = useMoviesStore()
-    const movies = ref([])
-    const sortedMovies = ref({})
-    const moviesWithoutDate = ref([])
+    // State singleton (useState) partagé entre layout et pages.
+    const movies = useState('movies', () => [])
+    const sortedMovies = useState('sortedMovies', () => ({}))
+    const moviesWithoutDate = useState('moviesWithoutDate', () => [])
 
     const formatDate = (fullDate) => {
         const date = new Date(fullDate)
@@ -42,7 +43,6 @@ export function useMovieCalendar() {
         });
 
         sortedMovies.value = sorted;
-        window.dispatchEvent(new CustomEvent('years-updated', { detail: { years: Object.keys(sorted).map(Number) } }));
     }
 
     const applyAutoInTheaters = async (movieList) => {
@@ -73,6 +73,7 @@ export function useMovieCalendar() {
     const effectiveDate = (row) =>
         row.manual_release_date ? formatDate(row.manual_release_date) : (row.release_date || null);
 
+    // Appelé au montage du layout (une fois par montage ; un retour depuis une page `bare` rafraîchit).
     const getMovies = async () => {
         const { data, error } = await client.from('calendar').select('*');
         if (error) return;
@@ -340,8 +341,6 @@ export function useMovieCalendar() {
         );
         sortMovies(movies.value);
     }
-
-    watch(() => store.filters, () => sortMovies(movies.value), { deep: true });
 
     return {
         movies,

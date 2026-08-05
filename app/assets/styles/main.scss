@@ -17,3 +17,27 @@
 //@import 'components/_popin';
 //@import 'components/_slider';
 //@import 'components/_sticky-element';
+
+// Transition de page (switch Timeline ↔ Stats) : fondu croisé, vue sortante retirée du flux
+// (position absolute) pour éviter le saut de hauteur.
+.view-enter-active,
+.view-leave-active { transition: opacity .2s ease; }
+
+.view-leave-active { position: absolute; inset: 0; }
+
+.view-enter-from,
+.view-leave-to { opacity: 0; }
+
+// Mouvement réduit : coupe toutes les animations d'orchestration (`!important` pour passer devant
+// les styles scoped des composants).
+@media (prefers-reduced-motion: reduce) {
+    .view-enter-active,
+    .view-leave-active,
+    .rail-enter-active,
+    .rail-leave-active,
+    .notice-enter-active,
+    .notice-leave-active,
+    .view-tabs::before { transition: none !important; }
+
+    .year-sheet { animation: none !important; }
+}

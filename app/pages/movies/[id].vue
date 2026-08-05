@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { Movie } from '~/types/Movie';
 
+definePageMeta({ layout: 'bare' });
+
 const route = useRoute();
 const movieId = computed(() => route.params.id);
 

@@ -1,6 +1,8 @@
 <script setup>
 import {refDebounced} from "@vueuse/shared";
 
+definePageMeta({ layout: 'bare' });
+
 const searchTerm = ref('');
 const page = ref(1);
 

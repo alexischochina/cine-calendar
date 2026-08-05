@@ -23,6 +23,7 @@ body {
     &::-webkit-scrollbar-track { background: transparent; }
     scrollbar-width: thin;
     scrollbar-color: $color-border-4 transparent;
+    scrollbar-gutter: stable; // gouttière réservée → pas de décalage de 8px quand la scrollbar apparaît
 }
 
 @media #{$nomobile} {
