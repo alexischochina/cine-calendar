@@ -9,6 +9,8 @@
 //   node scripts/set-cinema-ugc.mjs --list --ugc      # seulement celles qui acceptent la carte
 //   node scripts/set-cinema-ugc.mjs "MK2 Nation" on   # par fragment de nom…
 //   node scripts/set-cinema-ugc.mjs C0102 off         # …ou par code salle Allociné
+//   node scripts/set-cinema-ugc.mjs --audit           # divergences base ↔ Allociné (sans requête)
+//   node scripts/set-cinema-ugc.mjs --audit --fix     # …et les aligner
 //
 // Le fragment de nom est insensible à la casse et aux accents. S'il matche plusieurs salles, le
 // script les liste et ne touche à rien — à toi de préciser.
@@ -67,7 +69,62 @@ const printTable = (rows) => {
     }
 };
 
+// Compare l'acceptation en base à ce qu'Allociné annonce (`loyaltyCards`, capté dans le payload mis
+// en cache — donc **zéro requête sortante**). Ce n'est pas une source de vérité : Allociné a déjà été
+// pris en défaut dessus. C'est un détecteur de dérive, à trancher à l'œil.
+//
+// Écrit pour un motif précis : la première version du seed affirmait `false` sur tout ce qui n'était
+// pas dans sa liste, alors que le référentiel se peuple au fil des films consultés. Dix salles d'art
+// et essai en ont fait les frais, invisibles derrière le pré-filtre carte sans le moindre signal.
+const audit = async () => {
+    const { data: cache, error } = await supabase.from('showtimes_cache').select('payload');
+    if (error) {
+        console.error('Lecture du cache échouée :', error.message);
+        process.exit(1);
+    }
+
+    const announced = new Map();
+    for (const row of cache ?? []) {
+        for (const theater of row.payload?.theaters ?? []) {
+            // Les entrées de cache antérieures à l'ajout du champ ne disent rien : on les ignore
+            // plutôt que de les lire comme un « false ».
+            if ('ugcCard' in theater) announced.set(theater.code, theater.ugcCard === true);
+        }
+    }
+
+    const rows = await fetchCinemas();
+    const diverging = rows.filter(c => announced.has(c.code) && c.accepts_ugc !== announced.get(c.code));
+
+    console.log(`${announced.size} salle(s) documentées par le cache, ${diverging.length} divergence(s).\n`);
+    if (!diverging.length) {
+        console.log('Base et Allociné sont d\'accord.');
+        return;
+    }
+
+    for (const c of diverging) {
+        console.log(`  ${c.code.padEnd(7)}${String(c.name).padEnd(38)} base=${String(c.accepts_ugc).padEnd(5)} allociné=${announced.get(c.code)}`);
+    }
+
+    if (!flags.has('--fix')) {
+        console.log('\nRelance avec --fix pour aligner la base sur Allociné, ou corrige à la main :');
+        console.log('  node scripts/set-cinema-ugc.mjs "<nom>" on|off');
+        return;
+    }
+
+    const now = new Date().toISOString();
+    for (const c of diverging) {
+        const { error: upErr } = await supabase
+            .from('cinemas')
+            .update({ accepts_ugc: announced.get(c.code), updated_at: now })
+            .eq('code', c.code);
+        if (upErr) console.error(`  ✗ ${c.code} : ${upErr.message}`);
+    }
+    console.log(`\n${diverging.length} salle(s) alignée(s). Reporte le résultat dans _ressources/sql/2608121539-seed-cinemas-ugc.sql.`);
+};
+
 const run = async () => {
+    if (flags.has('--audit')) return audit();
+
     const rows = await fetchCinemas();
 
     if (flags.has('--list') || !positional.length) {
