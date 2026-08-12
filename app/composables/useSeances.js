@@ -167,9 +167,20 @@ export function useSeances() {
     // et du script de géocodage.
     const loadCinemas = async () => {
         if (cinemas.value) return;
-        const { data, error: dbError } = await client
-            .from('cinemas')
-            .select('code, name, arrondissement, accepts_ugc, transit_minutes');
+        const COLUMNS = 'code, name, arrondissement, accepts_ugc, transit_minutes';
+
+        let { data, error: dbError } = await client.from('cinemas').select(`${COLUMNS}, favorite`);
+
+        // Repli si `favorite` n'existe pas encore en base : le code peut être déployé avant que la
+        // migration soit jouée, et sans ce filet **tout** le référentiel devient illisible — donc
+        // plus d'`accepts_ugc`, donc une page vide alors que le pré-filtre carte est actif par
+        // défaut. Une salle sans favori vaut mieux qu'un écran blanc. À retirer une fois la
+        // migration passée partout.
+        if (dbError?.code === '42703') {
+            console.warn('[seances] Colonne `favorite` absente — joue _ressources/sql/2608121820-add-cinema-favorite.sql pour activer les cinémas favoris.');
+            ({ data, error: dbError } = await client.from('cinemas').select(COLUMNS));
+        }
+
         if (dbError) {
             console.error('Référentiel cinemas illisible:', dbError.message);
             cinemas.value = {};
@@ -263,6 +274,27 @@ export function useSeances() {
         await load();
     };
 
+    // Épingle / désépingle une salle. Bascule optimiste : le tri se réordonne immédiatement, et on
+    // revient en arrière si l'écriture échoue — sur un simple clic d'étoile, attendre l'aller-retour
+    // réseau pour voir la carte bouger serait pénible.
+    const toggleFavorite = async (code) => {
+        const current = cinemas.value?.[code];
+        if (!current) return;
+
+        const next = !current.favorite;
+        cinemas.value = { ...cinemas.value, [code]: { ...current, favorite: next } };
+
+        const { error: dbError } = await client
+            .from('cinemas')
+            .update({ favorite: next, updated_at: new Date().toISOString() })
+            .eq('code', code);
+
+        if (dbError) {
+            console.error('Bascule favori échouée pour', code, dbError.message);
+            cinemas.value = { ...cinemas.value, [code]: { ...current } };
+        }
+    };
+
     // --- dérivés ---
 
     // Une entrée = un couple (film, salle) pour le jour sélectionné, avec ses horaires bruts.
@@ -293,6 +325,7 @@ export function useSeances() {
                         // pas, c'est une constante par salle. Rien à calculer ici, et surtout
                         // aucune coordonnée personnelle à exposer au navigateur.
                         transitMinutes: known.transit_minutes ?? null,
+                        favorite: known.favorite === true,
                     },
                     showtimes: theater.showtimes ?? [],
                 });
@@ -326,8 +359,16 @@ export function useSeances() {
 
     const countShowtimes = (list) => list.reduce((n, e) => n + e.showtimes.length, 0);
 
-    // Regroupement « Par film » : l'ordre des films suit le rail, les salles sont rangées par
-    // arrondissement puis par nom.
+    // Ordre entre deux salles : les favorites d'abord, puis l'arrondissement, puis le nom.
+    // Un seul comparateur pour les deux regroupements — c'est la même intention (« mes salles
+    // d'abord »), vue par un bout ou par l'autre, et la dupliquer les ferait diverger.
+    const byFavoriteThenPlace = (a, b) =>
+        (b.favorite ? 1 : 0) - (a.favorite ? 1 : 0)
+        || (a.arrondissement ?? 99) - (b.arrondissement ?? 99)
+        || String(a.name).localeCompare(String(b.name));
+
+    // Regroupement « Par film » : l'ordre des films suit le rail, les salles remontent selon le
+    // même ordre — une salle favorite se trouve donc en haut de chaque film.
     const byFilm = computed(() => {
         const buckets = new Map();
         for (const entry of filtered.value) {
@@ -336,14 +377,12 @@ export function useSeances() {
         }
         return [...buckets.values()].map(bucket => ({
             ...bucket,
-            entries: bucket.entries.sort((a, b) =>
-                (a.cinema.arrondissement ?? 99) - (b.cinema.arrondissement ?? 99)
-                || String(a.cinema.name).localeCompare(String(b.cinema.name))),
+            entries: bucket.entries.sort((a, b) => byFavoriteThenPlace(a.cinema, b.cinema)),
             nbSeances: countShowtimes(bucket.entries),
         }));
     });
 
-    // Regroupement « Par cinéma » : salles par arrondissement croissant.
+    // Regroupement « Par cinéma » : favoris en tête, puis arrondissement croissant.
     const byCinema = computed(() => {
         const buckets = new Map();
         for (const entry of filtered.value) {
@@ -352,9 +391,7 @@ export function useSeances() {
         }
         return [...buckets.values()]
             .map(bucket => ({ ...bucket, nbSeances: countShowtimes(bucket.entries) }))
-            .sort((a, b) =>
-                (a.cinema.arrondissement ?? 99) - (b.cinema.arrondissement ?? 99)
-                || String(a.cinema.name).localeCompare(String(b.cinema.name)));
+            .sort((a, b) => byFavoriteThenPlace(a.cinema, b.cinema));
     });
 
     const nbFilms = computed(() => byFilm.value.length);
@@ -415,6 +452,6 @@ export function useSeances() {
         films, unresolved, byFilm, byCinema, nbFilms, nbSeances, hiddenByCard,
         arrondissements, nextDate, updatedAt,
         // actions
-        load, retry, selectDay,
+        load, retry, selectDay, toggleFavorite,
     };
 }

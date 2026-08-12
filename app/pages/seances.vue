@@ -9,7 +9,7 @@ const {
     days, dayIndex, group, version, arrondissement, ugcOnly, openCard,
     loading, error, stale, films, unresolved, byFilm, byCinema,
     nbFilms, nbSeances, hiddenByCard, arrondissements, nextDate, updatedAt,
-    load, retry, selectDay,
+    load, retry, selectDay, toggleFavorite,
 } = useSeances()
 
 const buckets = computed(() => group.value === 'film' ? byFilm.value : byCinema.value)
@@ -103,7 +103,7 @@ watch(() => films.value.length, (count, before) => {
         <div v-else class="list" :aria-busy="loading">
             <SeancesSeanceGroup v-for="bucket in buckets" :key="bucket.key" :mode="group"
                                 :bucket="bucket" :open="openCard === bucket.key"
-                                @toggle="toggleCard(bucket.key)" />
+                                @toggle="toggleCard(bucket.key)" @toggle-favorite="toggleFavorite" />
         </div>
 
         <!-- 6. Films non rapprochés d'une fiche Allociné : grisés et explicites plutôt que

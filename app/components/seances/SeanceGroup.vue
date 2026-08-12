@@ -3,6 +3,10 @@
 // couples (film, salle) vus par un bout ou par l'autre, seuls l'en-tête et la ligne changent.
 //   - mode 'film'   : en-tête = affiche + titre du film,  lignes = salles + horaires
 //   - mode 'cinema' : en-tête = pictogramme + nom de salle, lignes = films + horaires
+//
+// L'étoile « favori » est disponible dans les deux modes : sur l'en-tête côté cinéma, sur chaque
+// ligne de salle côté film — c'est là qu'on découvre une salle, autant pouvoir l'épingler sans
+// changer de regroupement.
 const props = defineProps({
     mode: {
         type: String,
@@ -19,7 +23,7 @@ const props = defineProps({
     },
 });
 
-const emit = defineEmits(['toggle']);
+const emit = defineEmits(['toggle', 'toggle-favorite']);
 
 const poster = (path) => path ? `https://image.tmdb.org/t/p/w342${path}` : null;
 const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
@@ -49,35 +53,57 @@ const cinemaSubtitle = ({ cinema, nbSeances, entries }) => [
 
 const subtitle = computed(() =>
     props.mode === 'film' ? filmSubtitle(props.bucket) : cinemaSubtitle(props.bucket));
+
+const favoriteLabel = (cinema) => cinema.favorite
+    ? `Retirer ${cinema.name} des cinémas favoris`
+    : `Ajouter ${cinema.name} aux cinémas favoris`;
 </script>
 
 <template>
     <section class="seances-group">
-        <button class="head" type="button" :aria-expanded="open" :aria-controls="panelId"
-                @click="emit('toggle')">
-            <template v-if="mode === 'film'">
-                <NuxtImg v-if="poster(bucket.movie.poster_path)" :src="poster(bucket.movie.poster_path)"
-                         :alt="bucket.movie.title ? `Affiche du film ${bucket.movie.title}` : ''"
-                         class="poster" loading="lazy" />
-                <span v-else class="poster -placeholder" />
-            </template>
-            <span v-else class="ico" aria-hidden="true"><Svg name="ticket" /></span>
+        <!-- En-tête en deux boutons distincts et non un bouton dans un bouton : imbriquer deux
+             contrôles cliquables est du HTML invalide, et le lecteur d'écran n'en annoncerait qu'un. -->
+        <div class="head">
+            <button v-if="mode === 'cinema'" class="fav -head" type="button"
+                    :class="{ '-on': bucket.cinema.favorite }" :aria-pressed="bucket.cinema.favorite"
+                    :aria-label="favoriteLabel(bucket.cinema)"
+                    @click="emit('toggle-favorite', bucket.cinema.code)">
+                <Svg name="star-outline" aria-hidden="true" />
+            </button>
 
-            <span class="infos">
-                <span class="title">{{ title }}</span>
-                <span class="sub">{{ subtitle }}</span>
-            </span>
+            <button class="toggle" type="button" :aria-expanded="open" :aria-controls="panelId"
+                    @click="emit('toggle')">
+                <template v-if="mode === 'film'">
+                    <NuxtImg v-if="poster(bucket.movie.poster_path)" :src="poster(bucket.movie.poster_path)"
+                             :alt="bucket.movie.title ? `Affiche du film ${bucket.movie.title}` : ''"
+                             class="poster" loading="lazy" />
+                    <span v-else class="poster -placeholder" />
+                </template>
+                <span v-else class="ico" aria-hidden="true"><Svg name="ticket" /></span>
 
-            <span class="chevron" :class="{ '-collapsed': !open }" aria-hidden="true"><Svg name="chevron" /></span>
-        </button>
+                <span class="infos">
+                    <span class="title">{{ title }}</span>
+                    <span class="sub">{{ subtitle }}</span>
+                </span>
+
+                <span class="chevron" :class="{ '-collapsed': !open }" aria-hidden="true"><Svg name="chevron" /></span>
+            </button>
+        </div>
 
         <div v-if="open" :id="panelId" class="body">
             <div v-for="entry in bucket.entries" :key="mode === 'film' ? entry.cinema.code : entry.movie.id"
                  class="row" :class="`-${mode}`">
                 <template v-if="mode === 'film'">
                     <span class="place">
-                        <span class="name">{{ entry.cinema.name }}</span>
-                        <span class="meta">{{ placeLabel(entry.cinema) }}</span>
+                        <button class="fav" type="button" :class="{ '-on': entry.cinema.favorite }"
+                                :aria-pressed="entry.cinema.favorite" :aria-label="favoriteLabel(entry.cinema)"
+                                @click="emit('toggle-favorite', entry.cinema.code)">
+                            <Svg name="star-outline" aria-hidden="true" />
+                        </button>
+                        <span class="txt">
+                            <span class="name">{{ entry.cinema.name }}</span>
+                            <span class="meta">{{ placeLabel(entry.cinema) }}</span>
+                        </span>
                     </span>
                 </template>
                 <template v-else>
@@ -100,6 +126,37 @@ const subtitle = computed(() =>
 </template>
 
 <style lang="scss" scoped>
+// Étoile de favori, identique en en-tête et en ligne — une seule définition, deux points d'usage.
+// L'icône est un contour ; l'état actif la **remplit** en plus de la colorer, si bien que le favori
+// se distingue à la forme et pas seulement à la couleur.
+@mixin favStar($size) {
+    display: grid;
+    place-items: center;
+    width: $size + .8rem;
+    height: $size + .8rem;
+    flex: none;
+    border-radius: 50%;
+    // ⚠️ Pas le gris de la maquette (#3f444d) : mesuré à 1,85:1 sur cette surface, il passe sous le
+    // seuil WCAG 1.4.11 (3:1 pour un composant d'interface) et l'étoile devient invisible en basse
+    // vision — on ne peut pas épingler un cinéma qu'on ne voit pas. Ce ton-ci est le plus effacé de
+    // la palette qui tienne le seuil (3,74:1), l'intention « discret » est préservée.
+    color: $color-text-weaker;
+    cursor: pointer;
+    transition: color .18s ease, transform .18s ease;
+
+    > :deep(svg) { width: $size; height: $size; display: block; }
+
+    &.-on {
+        color: $color-yellow;
+
+        > :deep(svg) > path { fill: currentColor; }
+    }
+
+    @media (hover: hover) {
+        &:hover { color: $color-yellow; transform: scale(1.12); }
+    }
+}
+
 .seances-group {
     background: $color-surface-1;
     border: 1px solid $color-border-2;
@@ -109,67 +166,82 @@ const subtitle = computed(() =>
     > .head {
         display: flex;
         align-items: center;
-        gap: 1.4rem;
-        width: 100%;
-        padding: 1.6rem;
-        text-align: left;
-        cursor: pointer;
 
-        > .poster {
-            width: 4.4rem;
-            height: 6.6rem;
-            flex: none;
-            border-radius: .7rem;
-            object-fit: cover;
-
-            &.-placeholder { background: $color-surface-4; }
+        // L'étoile porte son propre retrait à gauche et rien à droite : le padding gauche du
+        // bouton de dépliage fait office d'espacement, et le mode « Par film » (sans étoile)
+        // garde exactement le même retrait, sans padding conditionnel.
+        > .fav.-head {
+            margin-left: 1.6rem;
+            @include favStar(1.7rem);
         }
 
-        > .ico {
-            display: grid;
-            place-items: center;
-            width: 3.8rem;
-            height: 3.8rem;
-            flex: none;
-            border-radius: 1rem;
-            background: $color-border-2;
-            color: $color-primary-light;
-
-            > :deep(svg) { width: 1.9rem; height: 1.9rem; }
-        }
-
-        > .infos {
+        > .toggle {
+            display: flex;
+            align-items: center;
+            gap: 1.4rem;
             flex: 1;
             min-width: 0;
+            padding: 1.6rem;
+            text-align: left;
+            cursor: pointer;
 
-            > .title {
-                display: block;
-                color: $color-text;
-                font: $bold 1.5rem/1.2 $font-body;
-                white-space: nowrap;
-                overflow: hidden;
-                text-overflow: ellipsis;
+            > .poster {
+                width: 4.4rem;
+                height: 6.6rem;
+                flex: none;
+                border-radius: .7rem;
+                object-fit: cover;
+
+                &.-placeholder { background: $color-surface-4; }
             }
 
-            > .sub {
-                display: block;
-                margin-top: .3rem;
-                color: $color-text-muted;
-                font: $normal 1.2rem/1 $font-body;
+            > .ico {
+                display: grid;
+                place-items: center;
+                width: 3.8rem;
+                height: 3.8rem;
+                flex: none;
+                border-radius: 1rem;
+                background: $color-border-2;
+                color: $color-primary-light;
+
+                > :deep(svg) { width: 1.9rem; height: 1.9rem; }
+            }
+
+            > .infos {
+                flex: 1;
+                min-width: 0;
+
+                > .title {
+                    display: block;
+                    color: $color-text;
+                    font: $bold 1.5rem/1.2 $font-body;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                > .sub {
+                    display: block;
+                    margin-top: .3rem;
+                    color: $color-text-muted;
+                    font: $normal 1.2rem/1 $font-body;
+                }
+            }
+
+            > .chevron {
+                display: grid;
+                place-items: center;
+                flex: none;
+                color: $color-text-quiet;
+                transition: transform .18s ease;
+
+                > :deep(svg) { width: 1.6rem; height: 1.6rem; }
+
+                &.-collapsed { transform: rotate(-90deg); }
             }
         }
 
-        > .chevron {
-            display: grid;
-            place-items: center;
-            flex: none;
-            color: $color-text-quiet;
-            transition: transform .18s ease;
-
-            > :deep(svg) { width: 1.6rem; height: 1.6rem; }
-
-            &.-collapsed { transform: rotate(-90deg); }
-        }
     }
 
     > .body {
@@ -186,20 +258,29 @@ const subtitle = computed(() =>
             border-top: 1px solid $color-border-2;
 
             > .place {
+                display: flex;
+                align-items: flex-start;
+                gap: .6rem;
                 width: 23rem;
                 flex: none;
 
-                > .name {
-                    display: block;
-                    color: $color-text-body;
-                    font: $semi-bold 1.3rem/1.2 $font-body;
-                }
+                > .fav { @include favStar(1.4rem); }
 
-                > .meta {
-                    display: block;
-                    margin-top: .2rem;
-                    color: $color-text-quiet;
-                    font: $normal 1.05rem/1 $font-mono;
+                > .txt {
+                    min-width: 0;
+
+                    > .name {
+                        display: block;
+                        color: $color-text-body;
+                        font: $semi-bold 1.3rem/1.2 $font-body;
+                    }
+
+                    > .meta {
+                        display: block;
+                        margin-top: .2rem;
+                        color: $color-text-quiet;
+                        font: $normal 1.05rem/1 $font-mono;
+                    }
                 }
             }
 

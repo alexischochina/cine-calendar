@@ -142,6 +142,25 @@ autres — sinon on retaperait Allociné à chaque affichage.
 Les filtres (jour mis à part), le regroupement et le toggle carte sont **purement dérivés** : en
 changer ne déclenche jamais de requête.
 
+## Cinémas favoris
+
+```
+_ressources/sql/2608121820-add-cinema-favorite.sql   → éditeur SQL Supabase
+```
+
+Une étoile sur chaque salle — dans l'en-tête en mode « Par cinéma », sur chaque ligne de salle en
+mode « Par film », puisque c'est là qu'on découvre une salle. Les favoris remontent en tête du
+regroupement « Par cinéma », et leurs séances en tête de chaque film dans « Par film ». L'ordre
+complet est : **favoris → arrondissement → nom**.
+
+La bascule est optimiste (la carte se réordonne au clic, retour en arrière si l'écriture échoue) et
+la préférence vit en base, pas en `localStorage` : elle doit suivre d'un appareil à l'autre, comme
+`accepts_ugc`.
+
+> Tant que la migration n'est pas jouée, le composable retombe automatiquement sur une lecture sans
+> la colonne et prévient en console. Sans ce filet, le référentiel entier devenait illisible — donc
+> plus d'`accepts_ugc`, donc une page vide, le pré-filtre carte étant actif par défaut.
+
 ## Ajouter / retirer une salle de la liste carte UGC
 
 ```bash
