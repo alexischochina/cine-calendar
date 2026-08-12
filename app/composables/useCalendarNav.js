@@ -6,12 +6,26 @@ export function useCalendarNav() {
 
     const currentYear = new Date().getFullYear()
 
-    const selectedYear = computed(() => {
-        const y = parseYearParam(route.params.year)
-        return y === undefined ? null : y
-    })
-    // Noms de route Nuxt : `year-timeline` / `year-stats`.
-    const viewMode = computed(() => String(route.name || '').endsWith('stats') ? 'stats' : 'timeline')
+    // `/seances` vit à la racine : sémantiquement juste (la vue ne dépend d'aucune année), mais
+    // la route ne porte alors aucun param `year`. Sans mémoire, `selectedYear` retomberait à null
+    // et le shell surlignerait « Sans date » dans le rail comme dans la pastille mobile.
+    const lastSelectedYear = useState('lastSelectedYear', () => currentYear)
+
+    // `undefined` = la route ne porte pas d'année (ou une année invalide) ; `null` = « Sans date »,
+    // qui est une sélection légitime — les deux ne se confondent pas.
+    const routeYear = computed(() => parseYearParam(route.params.year))
+    watch(routeYear, (year) => {
+        if (year !== undefined) lastSelectedYear.value = year
+    }, { immediate: true })
+
+    const selectedYear = computed(() =>
+        routeYear.value === undefined ? lastSelectedYear.value : routeYear.value
+    )
+
+    // Noms de route Nuxt : `year-timeline` / `year-stats` / `seances`. Lecture explicite plutôt
+    // qu'un `endsWith` : à trois vues, deviner la vue par son suffixe devient un piège.
+    const VIEW_BY_ROUTE = { seances: 'seances', 'year-stats': 'stats' }
+    const viewMode = computed(() => VIEW_BY_ROUTE[String(route.name || '')] ?? 'timeline')
 
     // Navigue vers la timeline de l'année du film, puis scrolle jusqu'à lui.
     const goToMovie = async (movieId) => {
@@ -23,12 +37,16 @@ export function useCalendarNav() {
     }
 
     const selectYear = async (year) => {
-        await navigateTo(`/${yearToSlug(year)}/${viewMode.value}`)
+        // `/2026/seances` n'existe pas : choisir une année depuis Séances ramène sur sa timeline.
+        const mode = viewMode.value === 'seances' ? 'timeline' : viewMode.value
+        await navigateTo(`/${yearToSlug(year)}/${mode}`)
         await nextTick()
         scrollToTop()
     }
 
-    const selectView = (mode) => navigateTo(`/${yearToSlug(selectedYear.value)}/${mode}`)
+    const selectView = (mode) => mode === 'seances'
+        ? navigateTo('/seances')
+        : navigateTo(`/${yearToSlug(selectedYear.value)}/${mode}`)
 
     const onScrollToToday = async () => {
         const target = closestMovie()
