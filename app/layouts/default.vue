@@ -3,7 +3,7 @@
 // de vue et charge le state une fois. Les pages ne rendent que le corps via <slot/>.
 const store = useMoviesStore()
 const {
-    movies, sortedMovies, moviesWithoutDate,
+    movies, sortedMovies, moviesWithoutDate, cinemaNow,
     getMovies, sortMovies, setCatchup, refreshLetterboxdRatings,
     handleMovieAdded, handleMovieExists,
 } = useMovieCalendar()
@@ -17,13 +17,6 @@ const { catchupNotice } = useCatchupFlow()
 const { dispatchMovieAdded, dispatchMovieExists, dispatchScrollToToday, dispatchSearchMovie } = useNavEvents()
 
 const mobileYearMenu = ref(false)
-
-// Films actuellement en salle (rail droit + bande mobile), triés par date.
-const cinemaNow = computed(() =>
-    movies.value
-        .filter(m => m.state === 'inTheaters')
-        .sort((a, b) => new Date(a.release_date) - new Date(b.release_date))
-)
 
 // Années disponibles + compteurs (rail gauche / menu mobile).
 const yearList = computed(() => {
@@ -113,7 +106,6 @@ onBeforeUnmount(() => {
         <!-- `--rail-space` dépend seulement de la présence de films en salle (pas de la vue) → stable
              pendant un switch, donc la vue sortante ne se recomprime pas pendant le crossfade. -->
         <div class="shell-main" :style="{ '--rail-space': cinemaNow.length ? '26.4rem' : '0px' }">
-            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-band" variant="band" :movies="cinemaNow" @select-movie="goToMovie" />
             <slot />
         </div>
 
@@ -298,9 +290,5 @@ onBeforeUnmount(() => {
     }
 
     .shell-mobilehead { display: block; }
-}
-
-@media (min-width: 1000px) {
-    .timeline-shell .shell-band { display: none; }
 }
 </style>

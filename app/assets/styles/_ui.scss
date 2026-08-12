@@ -36,6 +36,15 @@ body {
     .desktop-only {
         display: none !important;
     }
+
+    // Safari iOS zoome sur tout champ sous 16px au focus, et ne dézoome pas au blur.
+    // `!important` : les composants posent leur typo en scoped, donc plus spécifique.
+    // `maximum-scale=1` réglerait aussi le problème mais tuerait le pinch-zoom manuel.
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="button"]):not([type="submit"]):not([type="reset"]),
+    textarea,
+    select {
+        font-size: 1.6rem !important;
+    }
 }
 
 @media #{$tablet-portrait} {

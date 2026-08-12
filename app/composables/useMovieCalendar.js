@@ -341,10 +341,18 @@ export function useMovieCalendar() {
         sortMovies(movies.value);
     }
 
+    // Films actuellement en salle (rail droit desktop + bande mobile), triés par date.
+    const cinemaNow = computed(() =>
+        movies.value
+            .filter(m => m.state === 'inTheaters')
+            .sort((a, b) => new Date(a.release_date) - new Date(b.release_date))
+    )
+
     return {
         movies,
         sortedMovies,
         moviesWithoutDate,
+        cinemaNow,
         getMovies,
         sortMovies,
         handleMovieAdded,

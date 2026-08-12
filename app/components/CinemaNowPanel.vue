@@ -17,7 +17,9 @@ const props = defineProps({
 
 const emits = defineEmits(['select-movie']);
 
-const open = ref(true);
+// `useState` et non `ref` : le panneau est démonté quand on passe aux stats, un état local
+// repartirait à « ouvert » au retour.
+const open = useState('cinemaNowBandOpen', () => true);
 
 const MSHORT = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUN', 'JUL', 'AOÛ', 'SEP', 'OCT', 'NOV', 'DÉC'];
 const dateShort = (dateStr) => {
