@@ -100,7 +100,7 @@ onBeforeUnmount(() => {
                     {{ selectedYearLabel }}<Svg name="chevron" class="chev" aria-hidden="true" />
                 </button>
             </div>
-            <NavViewTabs :view-mode="viewMode" @select-view="selectView" />
+            <NavViewTabs layout="row" :view-mode="viewMode" @select-view="selectView" />
         </div>
 
         <!-- `--rail-space` dépend seulement de la présence de films en salle (pas de la vue) → stable
