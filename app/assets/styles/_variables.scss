@@ -11,6 +11,7 @@ $color-text-body: #E8E9ED;     // texte corps
 $color-primary: #FF3D77;       // accent rose (ex-#ec008b), aussi « En salle »
 $color-primary-light: #FF6D97; // rose clair (liens, libellés)
 $color-primary-lighter: #FF9BB8; // rose clair (hover)
+$color-primary-warm: #FF7A3D;  // orange, uniquement en fin de dégradé du jour actif (vue Séances)
 $color-green: #2FBF71;         // vu au ciné
 $color-yellow: #F0A935;        // vu en streaming (ambre)
 $color-status-grey: #3A3F4A;   // à venir / téléchargeable (bord seul)
@@ -34,6 +35,11 @@ $color-text-dim: #C9CCD4;
 $color-text-faint: #9AA0AD;    // jour d'une ligne atténuée
 $color-text-weak: #565B66;
 $color-text-weaker: #6B7280;
+// 3e niveau de gris, mais lisible : 4,51:1 sur $color-surface-1 (et mieux sur les fonds plus
+// sombres), donc conforme AA pour du petit texte. À préférer à $color-text-weak (2,66:1) et
+// $color-text-weaker (3,74:1) dès qu'il s'agit de **texte** et non d'un élément décoratif — les
+// deux autres échouent le seuil et sont conservés pour l'existant (Timeline, Stats).
+$color-text-quiet: #7A7F8B;
 
 // Surfaces de survol / états
 $color-hover: #1C1F27;         // survol des contrôles
