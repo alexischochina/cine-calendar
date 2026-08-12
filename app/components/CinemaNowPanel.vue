@@ -175,13 +175,9 @@ const posterUrl = (path) => path ? `https://image.tmdb.org/t/p/w342${path}` : nu
         }
 
         > .list {
-            display: flex;
-            gap: 1.1rem;
-            overflow-x: auto;
             padding-bottom: 1.2rem;
-            scrollbar-width: none;
+            @include stripScroll(1.8rem, 1.1rem);
 
-            &::-webkit-scrollbar { height: 0; }
             &.-hidden { display: none; }
         }
 

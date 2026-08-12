@@ -25,16 +25,26 @@ const top = computed(() => {
 
 const letterboxdUrl = (movieId) => `https://letterboxd.com/tmdb/${movieId}/`;
 const fmtRating = (v) => v == null ? '—' : v.toFixed(1);
+
+// Bande scrollable native + flèches (voir useHorizontalStrip).
+const { stripEl, atStart, atEnd, nudge, updateEdges } =
+    useHorizontalStrip(() => top.value.length);
 </script>
 
 <template>
     <section class="stats-toprated card">
         <div class="head flex -align-center">
             <div class="label">Top 10 Letterboxd — pas encore vus</div>
+            <div v-if="top.length" class="nav flex -align-center">
+                <button type="button" class="arrow -prev" aria-label="Faire défiler vers la gauche"
+                        :disabled="atStart" @click="nudge(-1)"><Svg name="chevron" /></button>
+                <button type="button" class="arrow -next" aria-label="Faire défiler vers la droite"
+                        :disabled="atEnd" @click="nudge(1)"><Svg name="chevron" /></button>
+            </div>
         </div>
 
-        <swiper-container v-if="top.length" class="strip" slides-per-view="auto" :space-between="12" free-mode="true">
-            <swiper-slide v-for="(f, i) in top" :key="f.id" class="cell">
+        <div v-if="top.length" ref="stripEl" class="strip" @scroll.passive="updateEdges">
+            <div v-for="(f, i) in top" :key="f.id" class="cell">
                 <a :href="letterboxdUrl(f.movie_id)" target="_blank" rel="noopener" class="cardlink">
                     <div class="poster">
                         <NuxtImg v-if="posterUrl(f.poster_path)" :src="posterUrl(f.poster_path)"
@@ -48,8 +58,8 @@ const fmtRating = (v) => v == null ? '—' : v.toFixed(1);
                     </div>
                     <div class="title">{{ f.title }}</div>
                 </a>
-            </swiper-slide>
-        </swiper-container>
+            </div>
+        </div>
 
         <div v-else class="none">Tout est vu pour cette année.</div>
     </section>
@@ -74,12 +84,18 @@ const fmtRating = (v) => v == null ? '—' : v.toFixed(1);
             letter-spacing: .12rem;
             text-transform: uppercase;
         }
+
+        > .nav {
+            margin-left: auto;
+            @include stripArrows();
+        }
     }
 
     > .strip {
-        display: block;
+        padding-bottom: .4rem;
+        @include stripScroll(2rem);
 
-        .cell { width: 9.6rem; }
+        > .cell { width: 9.6rem; }
     }
 
     .cardlink { display: block; }

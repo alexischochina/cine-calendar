@@ -55,6 +55,60 @@
     @include hideScrollbar();
 }
 
+// Bande de cartes scrollable horizontalement. $pad = padding latéral du conteneur parent :
+// les marges négatives l'annulent pour que les cartes défilent jusqu'aux deux bords, le
+// padding gardant la première et la dernière alignées sur le reste du contenu.
+@mixin stripScroll($pad, $gap: 1.2rem) {
+    display: flex;
+    gap: $gap;
+    margin-inline: -$pad;
+    padding-inline: $pad;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+    scroll-padding-inline-start: $pad;
+    @include hideScrollbar();
+
+    > * {
+        flex: none;
+        scroll-snap-align: start;
+    }
+}
+
+// Flèches de navigation d'une bande `stripScroll`, à poser sur le conteneur des boutons
+// `.-prev` / `.-next`. À n'inclure que depuis un `<style scoped>` : le chevron vient du
+// composant `Svg`, donc atteint via `:deep()`, sans effet dans une feuille globale.
+@mixin stripArrows() {
+    gap: .7rem;
+
+    > .arrow {
+        display: grid;
+        place-items: center;
+        width: 2.6rem;
+        height: 2.6rem;
+        flex: none;
+        border-radius: 50%;
+        background: $color-surface-3;
+        border: 1px solid $color-border-3;
+        color: $color-text-dim;
+        cursor: pointer;
+        transition: color .18s ease, border-color .18s ease, opacity .18s ease;
+
+        > :deep(svg) { width: 1.5rem; height: 1.5rem; display: block; }
+
+        // Le chevron pointe vers le bas : on le pivote vers la gauche / la droite.
+        &.-prev > :deep(svg) { transform: rotate(90deg); }
+        &.-next > :deep(svg) { transform: rotate(-90deg); }
+
+        &:disabled { opacity: .3; cursor: default; }
+
+        @media (hover: hover) {
+            &:not(:disabled):hover { border-color: $color-primary; color: $color-primary-light; }
+        }
+    }
+}
+
 @function calcOnGrid($col_number) {
     @return calc(var(--width-grid-col) * $col_number + var(--grid-gap) * ($col_number - 1));
 }

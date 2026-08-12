@@ -133,6 +133,9 @@ const selectSuggestion = (o) => {
     else emit('add-catchup-movie', { movieId: o.movie_id, media: 'cinema', year: props.year });
     closePicker();
 };
+
+const { stripEl, atStart, atEnd, nudge, updateEdges } =
+    useHorizontalStrip(() => catchup.value.length);
 </script>
 
 <template>
@@ -140,10 +143,16 @@ const selectSuggestion = (o) => {
         <div class="head flex -align-center">
             <div class="label">À rattraper</div>
             <div class="count">{{ catchup.length }}/{{ MAX_CATCHUP }}</div>
+            <div class="nav flex -align-center">
+                <button type="button" class="arrow -prev" aria-label="Faire défiler vers la gauche"
+                        :disabled="atStart" @click="nudge(-1)"><Svg name="chevron" /></button>
+                <button type="button" class="arrow -next" aria-label="Faire défiler vers la droite"
+                        :disabled="atEnd" @click="nudge(1)"><Svg name="chevron" /></button>
+            </div>
         </div>
 
-        <swiper-container class="strip" slides-per-view="auto" :space-between="12" free-mode="true">
-            <swiper-slide v-for="f in catchup" :key="f.id" class="cell">
+        <div ref="stripEl" class="strip" @scroll.passive="updateEdges">
+            <div v-for="f in catchup" :key="f.id" class="cell">
                 <!-- Deux boutons frères (pas d'imbrication interactive) : la carte ouvre le film,
                      le bouton retrait est superposé sur l'affiche. -->
                 <div class="cardwrap">
@@ -158,9 +167,9 @@ const selectSuggestion = (o) => {
                     <button type="button" class="remove" aria-label="Retirer de la liste à rattraper"
                             @click="emit('toggle-catchup', f.id, false)"><Svg name="close" /></button>
                 </div>
-            </swiper-slide>
+            </div>
 
-            <swiper-slide v-for="i in slots" :key="`slot-${i}`" class="cell">
+            <div v-for="i in slots" :key="`slot-${i}`" class="cell">
                 <!-- Slot pleine hauteur d'une carte (réserve l'espace du titre, vide) pour que la
                      bande ne « saute » pas ; seule la boîte du haut (format affiche) est pointillée. -->
                 <button type="button" class="slot" @click="openPicker">
@@ -169,8 +178,8 @@ const selectSuggestion = (o) => {
                         <span class="txt">Ajouter</span>
                     </span>
                 </button>
-            </swiper-slide>
-        </swiper-container>
+            </div>
+        </div>
 
         <!-- Popin de recherche -->
         <div v-if="showPicker" class="overlay flex -justify-center" @click="closePicker">
@@ -223,12 +232,18 @@ const selectSuggestion = (o) => {
             color: $color-text-weak;
             font: $normal 1.1rem/1 $font-mono;
         }
+
+        > .nav {
+            margin-left: auto;
+            @include stripArrows();
+        }
     }
 
     > .strip {
-        display: block;
+        padding-bottom: .4rem;
+        @include stripScroll(2rem);
 
-        .cell { width: 9.6rem; }
+        > .cell { width: 9.6rem; }
     }
 
     .cardwrap {
@@ -246,8 +261,23 @@ const selectSuggestion = (o) => {
             background: rgba(0, 0, 0, .65);
             color: $color-primary-lighter;
             cursor: pointer;
+            transition: opacity .18s ease;
 
             > :deep(svg) { width: 1.2rem; height: 1.2rem; }
+        }
+
+        // Souris : le retrait se révèle au survol de la carte (ou au focus clavier) ; sur
+        // tactile, faute de hover, il reste visible. `pointer-events: none` tant qu'il est
+        // transparent — sur un hybride, la media query s'applique mais l'écran reste tactile.
+        @media (hover: hover) {
+            > .remove {
+                opacity: 0;
+                pointer-events: none;
+
+                &:focus-visible { opacity: 1; pointer-events: auto; }
+            }
+
+            &:hover > .remove { opacity: 1; pointer-events: auto; }
         }
     }
 
