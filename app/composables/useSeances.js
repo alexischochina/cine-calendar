@@ -132,7 +132,7 @@ export function useSeances() {
 
         await promisePool(toResolve.map(movie => async () => {
             try {
-                const { allocine_id } = await $fetch('/api/allocine/resolve', {
+                const { allocine_id, unavailable } = await $fetch('/api/allocine/resolve', {
                     query: {
                         title: movie.title,
                         release_date: movie.release_date || '',
@@ -140,8 +140,14 @@ export function useSeances() {
                         director: movie.director || '',
                     },
                 });
-                // On horodate même un échec : c'est ce qui empêche de repartir à l'assaut des
-                // 14 pages d'index à chaque ouverture pour un film introuvable.
+
+                // ⚠️ Allociné injoignable ≠ film introuvable. Horodater dans ce cas épinglerait le
+                // film comme « pas chez Allociné » pendant une semaine pour un simple hoquet réseau.
+                // On ne touche à rien : la prochaine ouverture de la vue réessaiera.
+                if (unavailable) return;
+
+                // Un « pas trouvé » avéré, lui, est horodaté : sans ça on relancerait une recherche
+                // à chaque ouverture pour un film qui n'est tout simplement pas au catalogue.
                 const patch = { allocine_id: allocine_id ?? null, allocine_checked_at: checkedAt };
                 await client.from('calendar').update(patch).eq('id', movie.id);
                 patches.set(movie.id, patch);

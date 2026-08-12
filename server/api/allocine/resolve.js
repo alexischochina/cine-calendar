@@ -8,27 +8,24 @@
 // Ne throw jamais sur un échec de match : un film introuvable renvoie `{ allocine_id: null }` en
 // 200, que l'appelant horodate via `calendar.allocine_checked_at` pour ne pas s'acharner.
 
-export default defineCachedEventHandler(async (event) => {
+// Pas de cache de réponse ici, volontairement : une résolution est faite **une fois par film** puis
+// persistée dans `calendar.allocine_id`, donc un cache ne servirait qu'à ré-servir… un échec. Or
+// mettre en cache 12 h un « pas trouvé » dû à une coupure réseau est exactement ce qu'on cherche à
+// éviter. Le coût est d'une requête sortante par film, une seule fois dans la vie de la ligne.
+export default defineEventHandler(async (event) => {
     const { title, release_date: releaseDate, director } = getQuery(event);
 
     if (typeof title !== 'string' || !title.trim()) {
         throw createError({ statusCode: 400, statusMessage: 'Missing title' });
     }
 
-    const allocineId = await resolveAllocineId({
+    const { allocineId, unavailable } = await resolveAllocineId({
         title,
         releaseDate: typeof releaseDate === 'string' ? releaseDate : null,
         director: typeof director === 'string' ? director : null,
     });
 
-    return { allocine_id: allocineId };
-}, {
-    maxAge: 60 * 60 * 12,
-    name: 'allocine',
-    // Clé sur le titre normalisé + la date : deux films distincts ne se marchent pas dessus, et le
-    // même film redemandé pendant la visite ne relance pas de recherche.
-    getKey: (event) => {
-        const { title, release_date: releaseDate } = getQuery(event);
-        return `resolve:${normalizeTitle(String(title ?? ''))}:${releaseDate ?? ''}`;
-    },
+    // `unavailable` dit à l'appelant de **ne pas** horodater sa tentative : le film n'a pas été
+    // déclaré introuvable, on n'a simplement pas pu demander.
+    return { allocine_id: allocineId, unavailable };
 });

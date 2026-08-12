@@ -56,6 +56,11 @@ const titleSimilarity = (a, b) => {
 
 // Moteur de recherche interne d'Allociné. C'est lui qui fait le travail flou (pluriels, casse,
 // diacritiques) ; on ne fait que trancher entre ses candidats.
+//
+// ⚠️ Renvoie `null` quand la recherche est **injoignable**, et `[]` quand elle répond sans résultat.
+// Confondre les deux avait une conséquence coûteuse : l'appelant horodate `allocine_checked_at` sur
+// un « pas trouvé » pour ne pas s'acharner, ce qui épinglait un film comme introuvable **pendant
+// 7 jours** alors qu'Allociné avait simplement eu un hoquet pendant l'unique requête.
 const fetchAutocomplete = async (query) => {
     const url = `${ALLOCINE_ORIGIN}/_/autocomplete/${encodeURIComponent(query)}`;
 
@@ -68,7 +73,7 @@ const fetchAutocomplete = async (query) => {
         return Array.isArray(payload?.results) ? payload.results : [];
     } catch (e) {
         console.error('[allocine] Recherche échouée', url, e?.message ?? e);
-        return [];
+        return null;
     }
 };
 
@@ -82,11 +87,17 @@ const fetchAutocomplete = async (query) => {
 // et le moindre écart de rédaction faisait échouer le match (« Chronique » vs « Chroniques du
 // Caire »). La recherche interne couvre le catalogue entier pour **une** requête au lieu de 14, sans
 // parsing HTML — donc sans la pièce la plus fragile du client.
+// Renvoie `{ allocineId, unavailable }`. `unavailable` distingue « Allociné n'a pas répondu » de
+// « Allociné a répondu, ce film n'existe pas chez eux » — seul le second justifie que l'appelant
+// arrête de réessayer.
 export const resolveAllocineId = async ({ title, releaseDate, director }) => {
-    if (!title) return null;
+    if (!title) return { allocineId: null, unavailable: false };
 
-    const movies = (await fetchAutocomplete(title)).filter(r => r?.entity_type === 'movie' && r.entity_id);
-    if (!movies.length) return null;
+    const results = await fetchAutocomplete(title);
+    if (results === null) return { allocineId: null, unavailable: true };
+
+    const movies = results.filter(r => r?.entity_type === 'movie' && r.entity_id);
+    if (!movies.length) return { allocineId: null, unavailable: false };
 
     const reference = /^\d{4}-\d{2}-\d{2}$/.test(String(releaseDate ?? '')) ? Date.parse(releaseDate) : null;
 
@@ -116,7 +127,7 @@ export const resolveAllocineId = async ({ title, releaseDate, director }) => {
             || b.similarity - a.similarity
             || a.gap - b.gap);
 
-    return candidates[0]?.id ?? null;
+    return { allocineId: candidates[0]?.id ?? null, unavailable: false };
 };
 
 // ⚠️ `d-` prend une **date ISO** (`d-2026-08-14`). Les offsets numériques (`d-1`, `d-2`) sont
