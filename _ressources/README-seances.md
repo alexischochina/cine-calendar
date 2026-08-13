@@ -96,13 +96,157 @@ Pathé La Villette 14 min (2,0 km), UGC Paris 19 25 min (2,3 km), MK2 Bibliothè
 Pathé Aquaboulevard 63 min (12,9 km). Médiane 43 min. Aucune incohérence distance/trajet.
 
 
+## L'état « En salle » est contrôlé sur les séances, plus sur une date
+
+```
+_ressources/sql/2608131000-add-in-theaters-check.sql   → éditeur SQL Supabase
+```
+
+Avant, un film cinéma sorti dans l'année en cours passait « En salle » et **n'en sortait jamais** :
+un film de janvier restait dans le rail « Au ciné en ce moment » en décembre, et dans la vue Séances
+sans une seule séance à montrer (c'était la limite « `inTheaters` est collant », plus bas). L'état
+répond désormais à la seule question qui vaille : **ce film a-t-il une séance à Paris dans les 7
+jours qui viennent ?**
+
+- **Quand.** Une fois par semaine ciné, en tâche de fond au chargement de l'app (`syncInTheaters()`
+  dans `layouts/default.vue`, sans `await` : jamais devant le premier rendu). Le gate est le
+  **mercredi**, pas « il y a 7 jours » — un contrôle du mardi soir n'a plus rien à dire de la grille
+  du mercredi matin. Même règle que la fraîcheur du cache de séances, volontairement.
+- **Qui.** Tous les films `unseen` ou `inTheaters` en `media = 'cinema'` et déjà sortis, **sans
+  borne d'ancienneté**. « Vu » et « Téléchargeable » sont des décisions de l'utilisateur : le
+  contrôle n'y touche pas.
+- **Comment.** Une requête par film, sur la journée du jour. Séances aujourd'hui → en salle ; sinon
+  le `nextDate` que livre Allociné tranche (un film qui ne joue que samedi, ou qui ressort mercredi,
+  est bien en salle cette semaine). En régime chaud — vue Séances déjà ouverte aujourd'hui —
+  **aucune sortie réseau** : le contrôle et la vue partagent le même cache (`useShowtimes`), donc
+  chacun préchauffe l'autre.
+- **Ce qu'on ne fait pas.** Allociné injoignable, horaires périmés, film non rapproché d'une fiche :
+  le verdict est *suspendu*, jamais « retiré ». Sans ce troisième cas, une panne d'un jour sortirait
+  un film du rail pour une semaine entière.
+
+Une seule promotion reste faite sur la date : celle d'un film **jamais contrôlé**, le jour de sa
+sortie (`applyAutoInTheaters`), pour ne pas attendre le prochain mercredi. Dès qu'une ligne porte un
+`in_theaters_checked_at`, Allociné est seul juge — sans cette garde, un film retiré par le contrôle
+serait re-flaggé au chargement suivant, puis re-retiré : un va-et-vient perpétuel.
+
+> Le contrôle est **silencieux tant que la migration n'est pas jouée** : la première écriture
+> échoue en `42703`, il se désactive pour la session et le dit en console. Rien n'est écrit à
+> moitié — appliquer les états sans pouvoir horodater relancerait une salve de requêtes à chaque
+> ouverture de l'app. `node scripts/check-seances.mjs` le signale aussi.
+
+### Pourquoi aucune borne d'ancienneté
+
+Une première version ne reprenait que les sorties de moins de 120 jours, pour ne pas « interroger
+Allociné sur tout le catalogue ». Elle ratait exactement le cas qui justifie ce contrôle : **le film
+de février qu'une salle art et essai reprogramme une semaine en août.** Une programmation tardive
+n'a pas de date de péremption.
+
+Le volume mesuré au 13/08/2026 tranche le débat — la prudence coûtait plus qu'elle ne rapportait :
+
+| fenêtre | films interrogés / semaine |
+|---|---|
+| 120 j | 12 |
+| 365 j | 36 |
+| **aucune** | **91** (~13 requêtes/jour) |
+
+Le passage complet sur les 91 films a pris **1 seconde pour 91 requêtes** (87 identifiants Allociné
+étaient déjà en base, hérités des passages précédents de la vue Séances). Et il a trouvé **3 films
+en salle que la borne à 120 jours manquait** : *Ça tourne à Séoul !* (sorti le 08/11/2023),
+*Tardes de soledad* (26/03/2025), *L'Inconnu de la Grande Arche* (05/11/2025) — une salle
+parisienne chacun, ce jour-là. L'ouverture est donc un gain en soi : une ressortie en copie
+restaurée remonte d'elle-même dans « Au ciné en ce moment ».
+
+### Ce que le contrôle coûte vraiment
+
+Il ne touche **jamais** le premier rendu : lancé sans `await` après `getMovies()`, il ne rend la
+main à rien. Et il ne fait quelque chose qu'une fois par semaine ciné — les six autres jours, il
+sort sur un `filter` qui ne trouve aucun candidat.
+
+| | avant | après |
+|---|---|---|
+| Requêtes Allociné | ~0 hors consultation | **~91/semaine** (~13/jour) |
+| Lectures groupées du cache | 1 | 2 (paquets de 50) |
+| Cache mémoire L1 après contrôle | — | ~12 films gardés, ~80 relâchés |
+| `showtimes_cache` | +14 entrées/passage | +91, **moins les journées révolues** |
+
+Trois pièges de volume traités au passage, tous nés de l'élargissement à 91 films :
+
+1. **La lecture groupée cassait en silence.** `server/api/allocine/showtimes.js` refuse plus de 60
+   identifiants (`MAX_IDS`) — vérifié : 91 → **HTTP 400**. Le client retombait alors sur son chemin
+   de secours, un `refresh` unitaire par film : 91 invocations serverless et 91 lectures Supabase là
+   où deux requêtes suffisent. Le client découpe désormais en paquets de 50 (`CACHE_BATCH`), envoyés
+   ensemble puisqu'ils ne font que lire.
+2. **Mémoire.** Le contrôle charge ~91 payloads pour n'en garder qu'une douzaine à l'écran. Les
+   autres sont relâchés du L1 aussitôt le verdict rendu (~3 Ko l'unité, ~0,25 Mo récupérés) ; le L2
+   les garde, c'est là qu'ils servent.
+3. **Stockage.** Mesuré le 13/08/2026 : 185 entrées, 0,62 Mo, **3 Ko l'entrée** — soit ~16 Mo/an au
+   rythme de 91 entrées par semaine, pour des journées que plus rien ne relira (la vue ne regarde
+   que J → J+6). Le contrôle en profite donc pour supprimer les entrées de dates passées : une
+   requête, au seul endroit qui passe une fois par semaine et non à chaque chargement.
+
+Contrôlé en conditions réelles le 13/08/2026 sur les 14 films flaggés : 11 confirmés, 3 retirés
+(*Silent Friend*, *The Plague*, *Plus fort que moi* — recoupés à **0 séance sur les 7 jours**, et
+`nextDate` au 04/09 pour le dernier), et *Bait* conservé alors qu'il n'a aucune séance aujourd'hui,
+sa reprise du 16/08 tombant dans la fenêtre. Une requête par film, pas sept.
+
+## « Au ciné en ce moment » ouvre la vue Séances
+
+Cliquer un film du rail (ou de la bande mobile) mène à `/seances?film=<tmdbId>`, **cadré sur ce
+film** : la question qui suit « il est en salle » est toujours *où et quand*, jamais « où est-il dans
+ma timeline ». Le cadrage s'affiche en clair, avec l'affiche et un bouton « Tous les films » qui le
+retire — un filtre invisible est un bug pour qui le subit. Quand il ne reste qu'un groupe à l'écran,
+il s'ouvre tout seul : arriver sur une carte fermée demanderait un clic de trop.
+
+L'identifiant passe par l'URL et non par un `useState` : le lien est partageable et survit à un
+rechargement. Un `?film=` qui ne correspond à aucun film en salle (lien vieilli, film sorti de
+l'affiche depuis) vaut absence de cadrage — la page entière plutôt qu'un écran vide inexplicable.
+
+Le cadrage est appliqué **à la source** (`visibleFilms`) et non en bout de chaîne : compteurs,
+arrondissements proposés, « prochaine séance le … » et le décompte masqué par le filtre carte en
+découlent tous, et restent donc d'accord entre eux.
+
+### Arrivée sur le premier jour qui a des séances
+
+Un film cadré sans séance aujourd'hui fait avancer la vue jusqu'au premier jour qui en a : arriver
+sur un mur vide alors que le film joue dimanche n'apprend rien, l'information qu'on vient chercher
+est *quand*. Le repérage ne coûte **aucune requête** — `nextDate` est déjà dans le payload du jour,
+Allociné le livre précisément quand il n'a rien à cette date. Vérifié sur *Bait* le 13/08/2026 :
+`13/08 → 0 salle, nextDate 16/08` puis `16/08 → L'Archipel`, un seul saut.
+
+Trois garde-fous : la boucle est **bornée à 3 sauts** (`nextDate` est calculé sur Paris *et sa
+couronne*, il peut désigner un jour où le film ne joue qu'en banlieue, donc vide ici) ; le saut se
+base sur les séances **existantes** et non filtrées (une journée vidée par le pré-filtre carte a son
+propre message et sa propre porte de sortie, l'enjamber la masquerait) ; et il n'a lieu **qu'à
+l'arrivée** sur un film — un jour choisi à la main n'est jamais corrigé dans le dos.
+
+## Itinéraire vers une salle
+
+Une épingle à côté de l'étoile, dans les deux regroupements — en en-tête « Par cinéma », sur chaque
+ligne de salle « Par film ». Le nom lui-même n'est pas le lien : l'en-tête entier sert à déplier, et
+lui voler le clic coûterait plus que ça ne rapporte.
+
+- **iOS / iPadOS** → `maps.apple.com`, que le système remet à Plans ; **partout ailleurs** → Google
+  Maps, qui bascule seul dans l'app sur Android et reste une page web sur ordinateur. iPadOS se
+  présentant comme un Mac, c'est l'écran tactile qui les sépare.
+- **Aucun point de départ n'est transmis** : laissé vide, les deux services partent de la position
+  actuelle. On n'a donc jamais à demander la géolocalisation, ni à stocker quoi que ce soit —
+  cohérent avec le parti pris de `travel.js` sur les coordonnées du domicile.
+- **Mode transports en commun**, la même unité que le `24 min` affiché juste à côté.
+- **Destination = les coordonnées géocodées**, pas l'adresse Allociné (qui n'est pas toujours une
+  adresse). Repli sur « nom, code postal Paris » pour une salle pas encore passée au géocodage.
+
 ## Architecture
 
 ```
 app/pages/seances.vue              vue + 6 états non-heureux
 app/components/seances/            DayStrip · SeanceFilters · SeanceGroup · TimeChip
-app/composables/useSeances.js      TOUT l'état et la logique métier (les .vue ne font que rendre)
+app/composables/useSeances.js      état, chargement et dérivés de la page
+app/composables/useShowtimes.js    résolution + chargement d'une journée + cache L1 (partagés)
+app/composables/useInTheatersSync.js  contrôle hebdomadaire de l'état « En salle »
+app/utils/seancesGrouping.js       filtres, tri, regroupements — fonctions PURES, donc testables
+app/utils/maps.js                  itinéraire vers une salle (Plans / Google Maps)
 app/utils/travel.js                mise en forme du temps de trajet
+shared/utils/cineWeek.js           semaine ciné — source unique app + serveur + scripts
 
 server/api/allocine/resolve.js     titre TMDB → allocine_id (recherche interne Allociné, cache 12 h)
 server/api/allocine/showtimes.js   lecture GROUPÉE du cache — ne sort jamais sur le réseau
@@ -110,7 +254,27 @@ server/api/allocine/refresh.js     rafraîchit UN (film, date) — la seule rout
 server/utils/allocine.js           SOURCE UNIQUE de vérité du format Allociné
 server/utils/showtimesFreshness.js règle de fraîcheur partagée par les deux routes
 server/utils/promisePool.js        copie serveur du pool de concurrence
+
+scripts/test-seances-rules.mjs     30 tests des règles pures  →  npm test
+scripts/check-seances.mjs          contrôle de santé          →  npm run check:seances
+scripts/spike-cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ```
+
+### Les règles pures sont testées
+
+```bash
+npm test        # 30 assertions, aucune dépendance réseau ni base, < 1 s
+```
+
+Trois familles, toutes importées **du code réel** (aucune copie) : le report des salles disparues
+(`carryOverMissing`), les repères de la semaine ciné (`cineWeek`) et les filtres / tri /
+regroupements (`seancesGrouping`).
+
+Pourquoi celles-là et pas d'autres : elles sont **pures** — donc triviales à tester — et leurs
+erreurs sont **silencieuses**. Un cache qui perd une salle, un film qui reste « en salle » de trop,
+un mercredi mal calculé, un filtre carte qui laisse passer une séance IMAX : rien de tout cela ne
+lève d'exception, ça affiche simplement quelque chose de faux. C'est exactement le genre de bug que
+ce projet a passé sa journée à traquer à la main.
 
 ### Les deux caches
 
@@ -135,12 +299,162 @@ puis un rafraîchissement film par film pour ce qui manque seulement.
 autre onglet a pu la rafraîchir, et une requête en base coûte infiniment moins qu'une sortie inutile
 chez Allociné.
 
-TTL : ~2 h pour aujourd'hui/demain, ~12 h au-delà, **+ invalidation forcée le mercredi** (jour où
+TTL : ~2 h pour aujourd'hui/demain, ~3 h au-delà, **+ invalidation forcée le mercredi** (jour où
 les salles renouvellent leur programmation). Une journée sans séance est mise en cache comme les
 autres — sinon on retaperait Allociné à chaque affichage.
 
+> ⚠️ Le TTL lointain était de **12 h**, sur l'idée qu'« au-delà de demain, la programmation est
+> posée ». C'est faux, et ça s'est vu : le 13/08/2026, l'entrée du dimanche 16 pour *La fin d'Oak
+> Street* — écrite à 09 h 20 — portait 23 salles parisiennes, sans UGC Ciné Cité Les Halles,
+> qu'Allociné servait pourtant l'après-midi même avec 7 séances (09:00 → 22:00, identiques à
+> `ugc.fr`). Les exploitants ouvrent leurs ventes par vagues sur les jours à venir. Une demi-journée
+> de cache fige donc un état incomplet et fait mentir la vue face au site de la salle.
+
+**Le TTL ne suffit pas, et c'est mesuré.** Le canari (ci-dessous) a repris le même écart le jour
+même sur *Les matins merveilleux* — même salle, même jour cible, sur une entrée de **41 minutes**.
+Les deux cas tombent à J+3 : c'est la fenêtre d'ouverture des ventes (les exploitants mettent en
+vente à J-3 / J-4, Allociné intègre par vagues dans la journée). Aucun TTL défendable ne couvre ça —
+il faudrait rafraîchir en permanence les sept jours pour en rattraper trois. La pagination, elle, a
+été mise hors de cause : trois lectures complètes d'affilée rendent le même résultat, sans doublon
+ni manque.
+
+**Cinq garde-fous** ajoutés dans la foulée :
+
+- **Détection des salles muettes.** `check-seances.mjs` interroge chaque salle acceptant la carte
+  (41 aujourd'hui) et signale celles qui ne rendent **aucune** séance sur deux jours écartés. Un
+  multiplexe qui ne joue rien de la semaine n'existe pas : c'est cette invraisemblance qu'on teste.
+  ⚠️ En **deux temps** : `theater-<code>` filtre (il est direct, mais creux — cf. plus bas), puis
+  chaque suspecte est **confirmée** par `movie-<id>`, l'endpoint de production, sur un film témoin
+  largement diffusé. Sans cette confirmation, le contrôle accusait une salle parfaitement programmée
+  et la vue affichait un avertissement faux — pire que pas d'avertissement du tout.
+
+- **Revalidation en arrière-plan sur J+2 → J+4.** Le cache s'affiche immédiatement, puis une seconde
+  lecture forcée part sans bloquer si l'entrée servie a plus de 30 minutes ; la vue se complète
+  toute seule. Restreinte à ces trois jours et à ce seuil, parce que c'est là et seulement là que la
+  grille bouge en cours de journée. Sans boucle possible : la relecture réécrit `fetched_at`, la
+  condition retombe.
+- **Un canari qui compare cache et source.** `node scripts/check-seances.mjs` relit Allociné en
+  direct pour un échantillon de films à J+3 et **nomme les salles absentes du cache**. C'est ce qui
+  manquait le 13/08 : l'écart n'était visible qu'en ouvrant `ugc.fr` à côté. Le contrôle ne suppose
+  aucune cause — TTL trop long, page perdue, salle sortie du référentiel donnent le même symptôme,
+  et c'est le symptôme qu'on mesure.
+
+- **« Actualiser »**, dans la ligne de provenance en bas de page : ressort chez Allociné pour le jour
+  affiché en ignorant les deux caches (`force=1` sur `/api/allocine/refresh`). Geste explicite,
+  jamais déclenché tout seul — c'est la porte de sortie quand la vue et le site de la salle
+  divergent, et aucun TTL ne peut deviner à quelle heure un exploitant ouvre ses ventes.
+- **Un résultat amputé d'une page n'entre plus en cache.** Un blockbuster tient sur 5 pages ; si
+  l'une échoue, le payload reste parfaitement bien formé, simplement privé de 15 salles — aucun
+  signal, et le trou serait gravé jusqu'à expiration. Il est désormais affiché (mieux que rien) mais
+  pas figé : `fetchParisShowtimes` remonte `partial`, `refresh` s'abstient d'écrire. Un cache vide se
+  rattrape au prochain affichage, un cache faux ne se rattrape pas.
+
 Les filtres (jour mis à part), le regroupement et le toggle carte sont **purement dérivés** : en
 changer ne déclenche jamais de requête.
+
+## Quand la lacune est chez Allociné
+
+Le 13/08/2026, toujours sur *La fin d'Oak Street* : `ugc.fr` affichait 7 séances aux Halles pour le
+lundi 17, la vue n'en montrait aucune, et « Actualiser » n'y changeait rien. Le diagnostic a écarté,
+dans l'ordre :
+
+| piste | verdict |
+|---|---|
+| Cache périmé | non — relecture forcée, même résultat |
+| Page perdue dans la pagination | non — `totalItems: 74`, les 5 pages lues, `p-6` en erreur |
+| Troncature d'Allociné à N salles | non — Conflans et Evry sont rendus, Les Halles non : ce n'est pas une question de rayon |
+| Pagination instable | non — trois lectures complètes d'affilée, résultat identique, zéro doublon |
+| Filtre 75xxx / référentiel | non — `C0159`, `75001`, `accepts_ugc: true` |
+
+**La salle avait disparu d'Allociné.** Interrogée par film comme par salle
+(`/_/showtimes/theater-C0159/`), sur les 7 jours : `0 film`, `next.showtime.on`. Au même moment, UGC
+Maillot rendait ses 16 films par jour. Et nos entrées de cache écrites quelques heures plus tôt la
+contenaient encore — elle s'est donc évaporée en cours de journée.
+
+Aucune ligne de ce projet ne peut inventer ces séances : **quand la source ne les a pas, la vue ne
+les a pas.** Le seul palier au-dessus serait une **seconde source de listes** (le site de l'exploitant,
+UGC en tête) — pas le double-check de la Phase 2, qui vérifie les séances présentes et ne peut rien
+dire des absentes. C'est un chantier à part entière, à n'ouvrir que si le contrôle des salles muettes
+montre que le cas est fréquent plutôt qu'accidentel.
+
+### Pourquoi paris-cine.info l'a et pas nous
+
+Parce qu'il ne lit pas la même chose. Son référentiel de salles porte des identifiants **numériques
+maison** (`Le Grand Rex: 103`, `MK2 Beaubourg: 105`) et non les codes Allociné : il agrège chez les
+exploitants et ne se sert d'Allociné que pour les fiches et les notes. Une lacune d'Allociné ne
+l'atteint donc pas.
+
+Refaire la même chose pour UGC a été exploré, et **la porte est fermée** : la page cinéma publique
+(`ugc.fr/cinema.html?id=10`) ne rend aucun horaire côté serveur — 0 sur 106 Ko —, les séances
+arrivent par un appel `/AjaxAction!`, que leur `robots.txt` interdit explicitement. C'est
+exactement le motif qui avait fait écarter MK2 au Step 13 ; le même standard s'applique à UGC.
+
+Restent, si le cas devenait fréquent : une source ouverte tierce, ou demander l'accès à UGC. Aucune
+des deux n'est un après-midi de travail.
+
+### Spike Cinéfil (13/08/2026) — la piste tient, et le problème est plus large que prévu
+
+```bash
+node scripts/spike-cinefil.mjs
+```
+
+Protocole : deux salles saines (témoins, qui valident le parseur) et la salle en panne (qui mesure
+le gain). Résultats sur les 7 jours affichables :
+
+| salle | Cinéfil | Allociné |
+|---|---|---|
+| UGC Maillot (témoin) | 362 séances · **7/7 jours** | 362 séances · 6/7 jours |
+| UGC Bercy (témoin) | 450 séances · **7/7 jours** | 141 séances · **2/7 jours** |
+| UGC Les Halles (en panne) | 909 séances · **7/7 jours** | 140 séances · **1/7 jour** |
+
+Trois enseignements, dont un qu'on ne cherchait pas :
+
+1. **Le parseur est juste.** Sur Maillot, les deux sources donnent le *même total exact* (362). Un
+   écart ici aurait été un bug de parsing ; il n'y en a pas.
+2. **Cinéfil rendrait bien la salle perdue** : 909 séances aux Halles, dont *La fin d'Oak Street*
+   avec ses 7 séances — celles-là mêmes qu'ugc.fr affichait et qu'Allociné avait perdues.
+3. ~~La profondeur de publication d'Allociné est très inégale.~~ **Faux — et l'erreur valait d'être
+   trouvée.** Le spike interroge `theater-<code>`, alors que la production utilise
+   `movie-<id>/near-Paris`. Les deux n'ont pas la même profondeur du tout :
+
+   | salle | `/theater/` | `/movie/` (production) |
+   |---|---|---|
+   | Bercy | 2/7 jours | **6/7** |
+   | Les Halles | 1/7 jours | **6/7**, 7 séances/jour |
+   | Maillot | 6/7 jours | 6/7 |
+
+   L'endpoint par salle est **creux**, celui qu'on utilise ne l'est pas. Comparer Cinéfil à `theater-`
+   revenait à mesurer la faiblesse du mauvais endpoint et à l'attribuer à la source. **Conséquence
+   directe : le contrôle des salles muettes, bâti sur `theater-`, produisait un faux positif** — il
+   a déclaré Les Halles muette alors que la production la voyait. Il confirme désormais chaque
+   suspecte avec `movie-` avant de conclure (cf. ci-dessous).
+
+Ce que le spike ne dit pas : la **stabilité du HTML de Cinéfil dans le temps**. C'est le vrai coût
+de la piste — le projet a précisément abandonné le parsing HTML d'Allociné pour cette raison. À
+relancer quelques jours de suite avant de s'engager.
+
+Reste aussi à régler le **rapprochement des titres** : 83 % seulement sur le témoin, alors que les
+deux sources disent la même chose. Un slug (`la-bataille-de-gaulle-lage-de-fer`) et un titre rédigé
+(« La Bataille de Gaulle : L'Âge de fer ») ne se recoupent pas de façon fiable — il faudra un
+mapping par identifiant, pas par chaîne.
+
+### Ce qu'on fait à la place : le dire
+
+```
+_ressources/sql/2608131800-add-cinema-silence.sql   → éditeur SQL Supabase
+```
+
+`check-seances.mjs` persiste son verdict (`cinemas.allocine_silent_since`) et la vue l'affiche :
+« *UGC Ciné Cité Les Halles n'est plus publié par Allociné depuis le 13 août — ses séances existent
+peut-être, mais ne peuvent pas être listées ici.* » Une salle qui manque ne fait aucun bruit,
+contrairement à une salle dont les horaires seraient faux : sans ce signalement, l'absence se lit
+comme « ce cinéma ne joue rien », ce qui est faux et ruine la confiance dans tout le reste. Un
+avertissement de plus de 7 jours ne s'affiche pas — mieux vaut se taire qu'alerter sur une salle qui
+a peut-être reparlé depuis.
+
+> Piège rencontré en écrivant ce contrôle : une colonne absente remonte `42703` en **lecture** mais
+> `PGRST204` en **écriture** (PostgREST refuse sur son cache de schéma, sans atteindre la base). Ne
+> tester que le premier faisait échouer le script en silence.
 
 ## Cinémas favoris
 
@@ -181,11 +495,18 @@ reste la vérité.
 
 ## Liste `accepts_ugc`
 
-`2608121539-seed-cinemas-ugc.sql` marque **33 salles sur 48**, liste validée le 12/08/2026 :
-11 UGC, 10 MK2, 6 CIP, 6 divers (Grand Rex, Louxor, Elysées Lincoln, Cinq Caumartin, Sept
+`2608121539-seed-cinemas-ugc.sql` marque **34 salles sur 49**, liste validée le 12/08/2026 :
+11 UGC, 10 MK2, 7 CIP, 6 divers (Grand Rex, Louxor, Elysées Lincoln, Cinq Caumartin, Sept
 Parnassiens, Chaplin Saint Lambert). Les 15 « non » sont essentiellement le circuit Pathé, qui a sa
 propre carte. Point de départ : le champ `loyaltyCards` d'Allociné, repris uniquement pour ne pas
 partir d'une page blanche.
+
+> **13/08/2026 — Reflet Medicis (C0074) ajouté.** Salle apparue après le seed initial, donc entrée
+> avec la valeur d'Allociné plutôt qu'avec une décision. Retenue : Allociné la classe
+> `cip_cinemas_independants_parisiens`, et les six autres CIP du référentiel (Épée de bois, Grand
+> Action, Saint-André des Arts, 3 Luxembourg, Escurial, Nouvel Odéon) sont déjà marquées acceptantes
+> — le « oui » est cohérent avec la curation, pas hérité par défaut. Non recoupé sur le site du
+> cinéma, `lesecransdeparis.fr` répondant 522 ce jour-là.
 
 Pourquoi curée à la main plutôt que scrapée : Allociné porte bien cette donnée mais a déjà été pris
 en défaut dessus (cas rapporté d'une salle annoncée comme prenant la carte CIP, contredite par
@@ -240,14 +561,20 @@ ligne d'un bloc à l'autre suffit à l'amender, puis on rejoue le `.sql`.
 | **`isPreview` n'existe pas** | Contrairement à ce qu'annonçait le plan, le payload Allociné ne porte aucun marqueur d'avant-première (ni champ, ni tag). Le test est écrit et **inerte** : il se réveillera seul si le champ réapparaît. L'exclusion des avant-premières du filtre carte est donc aujourd'hui sans effet. |
 | **Exclusions carte approximatives** | Le filtre est juste sur le gros (salle acceptante + formats majorés listés dans `CARD_EXCLUDED_FORMATS`), approximatif sur les cas exotiques. **Le lien billetterie reste l'arbitre.** |
 | **`robots.txt` Allociné** | `Disallow: /_/` couvre l'endpoint des séances. Compromis assumé et documenté en tête de `server/utils/allocine.js` : volume dérisoire, cache durable, User-Agent identifiable, concurrence bornée à 4, aucun contournement anti-bot. Les voies conformes ont été explorées et ne tiennent pas. |
+| **Une salle peut disparaître d'Allociné** | Constaté sur UGC Ciné Cité Les Halles le 13/08/2026 : absente de *toutes* les réponses pendant que le site de la salle affichait ses séances. Indétectable dans la vue (une salle qui manque ne fait pas de bruit), et irrattrapable sans seconde source. Le contrôle des salles muettes est là pour ça. |
 | **Contrat interne non garanti** | Allociné peut renommer la route ou changer la forme du JSON. Toute la connaissance du format est confinée à `server/utils/allocine.js` ; un échec donne `{ theaters: [] }` + message, **jamais** de 500. |
-| **`state === 'inTheaters'` est collant** | Un film flaggé le reste même sorti des salles : il apparaît alors sans séance. Pas faux, juste bruyant. |
+| **« En salle » = en salle *à Paris intra-muros*** | Le contrôle hebdomadaire tranche sur les salles 75xxx, comme le reste de la vue. Un film qui ne joue plus qu'en banlieue sort donc du rail — cohérent avec le périmètre de l'app, mais ce n'est pas « plus à l'affiche » au sens général. |
+| **Une reprise est vue avec au plus une semaine de retard** | Le contrôle passe une fois par semaine ciné. Une reprise qui démarre un mercredi est donc vue le mercredi même (le film joue déjà) ou, au pire, détectée d'avance par le `nextDate` du contrôle précédent. Une reprise d'une seule journée en milieu de semaine peut passer entre les mailles. |
 | **Distance à vol d'oiseau** | Pas de temps de trajet réel (exigerait une API de routage et une clé). Salle non géocodée → rien ne s'affiche, jamais de position approximée (les scores BAN < 0,5 sont rejetés). |
 
 ## Phase 2 — double-check « point vert » : spike conclu (12/08/2026)
 
 Piste retenue : vérifier la vivacité du lien de billetterie qu'Allociné nous donne déjà, sans
 rétro-ingénierer le moindre endpoint interne. Verdict : **on fait, mais UGC seulement.**
+
+> ⚠️ **Ce double-check ne répond pas au problème des séances manquantes.** Il vérifie qu'une séance
+> qu'on affiche existe bien ; il ne peut rien dire d'une séance qu'on n'affiche pas. Une absence ne
+> se détecte qu'en comparant des listes — c'est le rôle du canari de `check-seances.mjs`.
 
 - **UGC ✅** — `reservationSeances.html?id=…` est rendu côté serveur et discrimine parfaitement :
   identifiant réel 21 950 o, identifiant trafiqué **et** identifiant bidon 21 474 o, octet pour
