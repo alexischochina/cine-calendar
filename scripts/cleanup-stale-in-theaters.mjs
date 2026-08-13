@@ -1,6 +1,13 @@
 // Nettoyage one-shot : les films d'années précédentes restés à l'état
 // « inTheaters » (en salle maintenant) sont repassés « unseen » (pas vu).
 //
+// ⚠️ OBSOLÈTE depuis le contrôle hebdomadaire (`app/composables/useInTheatersSync.js`), et
+// désormais **contre-productif** : l'état ne se juge plus sur l'année de sortie mais sur les
+// séances du moment. Un film de 2023 repris une semaine dans une salle art et essai est
+// légitimement « en salle » — ce script le dé-flaggerait à tort (cas réel constaté le 13/08/2026 :
+// « Ça tourne à Séoul ! », sorti en novembre 2023, à l'affiche à Paris ce jour-là).
+// Conservé pour mémoire ; ne plus lancer.
+//
 // À lancer une fois. La date effective = manual_release_date sinon release_date.
 //
 //   node scripts/cleanup-stale-in-theaters.mjs --dry-run   # aperçu

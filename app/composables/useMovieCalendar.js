@@ -52,9 +52,15 @@ export function useMovieCalendar() {
 
         // Sorties cinéma de l'année en cours, déjà sorties, non vues → « en salle maintenant ».
         // Garde-fou `>= currentYear` : on ne (re)flague jamais un film d'une année précédente.
+        //
+        // ⚠️ Promotion **optimiste et provisoire** : elle ne vaut que tant qu'Allociné n'a rien dit.
+        // Dès qu'une ligne a été contrôlée (`in_theaters_checked_at`), `useInTheatersSync` est seul
+        // à décider — sans cette garde, un film retiré de l'affiche par le contrôle serait re-flaggé
+        // au chargement suivant, puis re-retiré la semaine d'après : un va-et-vient perpétuel.
         const toUpdate = movieList.filter(m =>
             m.media === 'cinema' &&
             m.state === 'unseen' &&
+            !m.in_theaters_checked_at &&
             m.release_date &&
             m.release_date <= todayStr &&
             yearOf(m.release_date) >= currentYear
@@ -341,7 +347,9 @@ export function useMovieCalendar() {
         sortMovies(movies.value);
     }
 
-    // Films actuellement en salle (rail droit desktop + bande mobile), triés par date.
+    // Films actuellement en salle (rail droit desktop + bande mobile), triés par date. L'état est
+    // tenu à jour par `useInTheatersSync` : ce sont les films qui ont au moins une séance à Paris
+    // dans les 7 jours qui viennent, donc exactement ceux que la vue Séances sait montrer.
     const cinemaNow = computed(() =>
         movies.value
             .filter(m => m.state === 'inTheaters')

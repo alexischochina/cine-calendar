@@ -10,8 +10,10 @@ const {
 
 const {
     currentYear, selectedYear, viewMode,
-    selectYear, selectView, goToMovie, onScrollToToday, onSearch,
+    selectYear, selectView, goToMovie, goToSeances, onScrollToToday, onSearch,
 } = useCalendarNav()
+
+const { syncInTheaters } = useInTheatersSync()
 
 const { catchupNotice } = useCatchupFlow()
 const { dispatchMovieAdded, dispatchMovieExists, dispatchScrollToToday, dispatchSearchMovie } = useNavEvents()
@@ -75,6 +77,11 @@ onMounted(async () => {
     // Landing par défaut (année courante, timeline) → cadre sur le film du jour ; deep-link respecté.
     if (viewMode.value === 'timeline' && selectedYear.value === currentYear) onScrollToToday()
     else if (viewMode.value === 'stats' && selectedYear.value !== null) refreshLetterboxdRatings(selectedYear.value)
+
+    // Contrôle « en salle » (Allociné), en tâche de fond et **sans await** : il ne doit jamais
+    // retarder le premier rendu. Il ne fait quelque chose qu'une fois par semaine ciné ; les jours
+    // où il tourne, la timeline et le rail se réordonnent d'eux-mêmes à son retour.
+    syncInTheaters()
 })
 
 onBeforeUnmount(() => {
@@ -111,7 +118,7 @@ onBeforeUnmount(() => {
 
         <!-- Rail droit en overlay (hors flux) → largeur de shell-main constante entre les vues. -->
         <Transition name="rail">
-            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToMovie" />
+            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToSeances" />
         </Transition>
 
         <!-- Notice « ajouté à la liste à rattraper de <année> » -->

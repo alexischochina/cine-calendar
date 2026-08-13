@@ -51,6 +51,12 @@ const selectedMedia = ref(props.media);
 const selectedState = ref(props.state);
 const client = useSupabaseClient();
 
+// L'état est aussi écrit **de l'extérieur** : `useInTheatersSync` fait entrer et sortir les films de
+// « En salle » en tâche de fond. La ligne n'est pas remontée pour autant (`:key="movie.id"` dans
+// TimelineList), donc sans ce report la pastille et le liseré resteraient sur l'ancienne valeur
+// jusqu'au prochain rechargement complet.
+watch(() => props.state, (state) => { selectedState.value = state });
+
 const onMediaSelected = (option) => {
     selectedMedia.value = option;
     updateMedia(option)
