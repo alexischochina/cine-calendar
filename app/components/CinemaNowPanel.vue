@@ -1,8 +1,10 @@
 <script setup>
-// « Au ciné en ce moment » : films state === 'inTheaters'.
+// « Au ciné en ce moment » : films `state === 'inTheaters'`, c'est-à-dire — depuis
+// `useInTheatersSync` — ceux qui ont une séance à Paris dans les 7 jours qui viennent.
 //  - variant 'rail'  : colonne de droite (desktop)
 //  - variant 'band'  : bande horizontale repliable en haut de la timeline (mobile)
-// Clic sur un item → scroll vers la ligne du film.
+// Clic sur un item → vue Séances cadrée sur ce film. C'est la suite naturelle de « il est en
+// salle » : la question d'après est toujours *où et quand*, jamais « où est-il dans ma timeline ».
 const props = defineProps({
     movies: {
         type: Array,
@@ -50,6 +52,7 @@ const posterUrl = (path) => path ? `https://image.tmdb.org/t/p/w342${path}` : nu
 
         <div class="list" :class="{ '-hidden': variant === 'band' && !open }">
             <button v-for="m in movies" :key="m.id" class="item" type="button"
+                    :aria-label="m.title ? `Voir les séances de ${m.title}` : 'Voir les séances'"
                     @click="emits('select-movie', m.movie_id)">
                 <NuxtImg v-if="posterUrl(m.poster_path)" :src="posterUrl(m.poster_path)"
                          :alt="m.title ? `Affiche du film ${m.title}` : ''" class="poster" loading="lazy" />

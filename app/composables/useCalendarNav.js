@@ -36,6 +36,12 @@ export function useCalendarNav() {
         scrollToMovie(movieId)
     }
 
+    // « Au ciné en ce moment » → la vue Séances, cadrée sur ce film. L'identifiant passe par l'URL
+    // (et non par un `useState`) pour que le lien soit partageable et surtout survive à un
+    // rechargement : la page relit `?film` au montage.
+    const goToSeances = (movieId) =>
+        navigateTo({ path: '/seances', query: { film: String(movieId) } })
+
     const selectYear = async (year) => {
         // `/2026/seances` n'existe pas : choisir une année depuis Séances ramène sur sa timeline.
         const mode = viewMode.value === 'seances' ? 'timeline' : viewMode.value
@@ -65,6 +71,7 @@ export function useCalendarNav() {
         viewMode,
         yearOfMovie,
         goToMovie,
+        goToSeances,
         selectYear,
         selectView,
         onScrollToToday,
