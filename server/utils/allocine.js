@@ -233,6 +233,13 @@ export const fetchParisShowtimes = async (allocineId, date) => {
         )
         : [];
 
+    // Une page manquante, c'est jusqu'à 15 salles évanouies **sans le moindre signal** : le
+    // résultat reste parfaitement bien formé, simplement amputé. L'appelant a besoin de le savoir
+    // pour ne pas graver ce trou dans le cache — un blockbuster tient sur 5 pages, en perdre une
+    // reviendrait à masquer un cinquième des salles jusqu'à la prochaine expiration.
+    const missedPages = rest.filter(page => !page).length;
+    if (missedPages) console.error(`[allocine] ${missedPages}/${totalPages} page(s) perdues pour le film ${allocineId} au ${date}`);
+
     const results = [first, ...rest].filter(Boolean).flatMap(payload => payload.results ?? []);
 
     // Une salle ne devrait apparaître que sur une page, mais on fusionne par code pour rester
@@ -281,6 +288,8 @@ export const fetchParisShowtimes = async (allocineId, date) => {
 
     return {
         ok: true,
+        // Résultat incomplet : bon à afficher, pas à mettre en cache (cf. `missedPages`).
+        partial: missedPages > 0,
         // Prochaine date avec des séances quand il n'y en a aucune ce jour-là — sert au message
         // « prochaine séance le … » plutôt qu'un vide sec.
         nextDate: first.nextDate ?? null,

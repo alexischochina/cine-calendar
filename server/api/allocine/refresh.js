@@ -42,7 +42,7 @@ const rememberTheaters = async (client, theaters) => {
 };
 
 export default defineEventHandler(async (event) => {
-    const { id, date } = getQuery(event);
+    const { id, date, force } = getQuery(event);
 
     if (!/^\d+$/.test(String(id ?? ''))) {
         throw createError({ statusCode: 400, statusMessage: 'Invalid allocine id' });
@@ -50,6 +50,11 @@ export default defineEventHandler(async (event) => {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date ?? ''))) {
         throw createError({ statusCode: 400, statusMessage: 'Invalid date' });
     }
+
+    // `force` : sortir chez Allociné même si l'entrée est encore réputée fraîche. Réservé au geste
+    // explicite de l'utilisateur (bouton « Actualiser »), jamais à un chargement automatique — les
+    // exploitants ajoutent des séances en cours de journée, et aucun TTL ne peut deviner quand.
+    const bypassCache = String(force ?? '') === '1';
 
     const allocineId = Number(id);
     const client = await serverSupabaseClient(event);
@@ -63,7 +68,7 @@ export default defineEventHandler(async (event) => {
 
     // Relecture volontaire : entre la lecture groupée et cet appel, un autre onglet a pu rafraîchir
     // la même entrée. Une requête en base coûte infiniment moins qu'une sortie inutile chez Allociné.
-    if (cached && isShowtimesFresh(cached.fetched_at, date)) {
+    if (!bypassCache && cached && isShowtimesFresh(cached.fetched_at, date)) {
         return { ...cached.payload, stale: false, fetchedAt: cached.fetched_at };
     }
 
@@ -76,11 +81,31 @@ export default defineEventHandler(async (event) => {
         return { nextDate: null, theaters: [], stale: false, fetchedAt: null, error: true };
     }
 
-    const payload = { nextDate: fresh.nextDate, theaters: fresh.theaters };
+    // Report des salles que cette lecture a perdues (cf. `carryOverMissing`), puis re-tri sur le
+    // même critère que le client : code postal, puis nom.
+    const carried = cached
+        ? carryOverMissing(cached.payload?.theaters, fresh.theaters, cached.fetched_at)
+        : [];
+    if (carried.length) console.warn(`[allocine] ${carried.length} salle(s) disparue(s) pour ${allocineId} au ${date}, reportées : ${carried.map(t => t.name).join(', ')}`);
+
+    const theaters = [...fresh.theaters, ...carried]
+        .sort((a, b) => String(a.zip).localeCompare(String(b.zip)) || String(a.name).localeCompare(String(b.name)));
+
+    const payload = { nextDate: fresh.nextDate, theaters };
     const fetchedAt = new Date().toISOString();
 
     // Une journée sans séance est un résultat, pas un échec : elle est mise en cache comme les
     // autres, sinon on retaperait Allociné à chaque affichage de ce jour-là.
+    //
+    // Un résultat **amputé d'une page**, lui, ne rentre pas : on l'affiche (mieux que rien) mais on
+    // ne le fige pas. Le graver reviendrait à masquer jusqu'à 15 salles jusqu'à expiration, sans
+    // que rien ne le laisse voir — un cache vide se rattrape au prochain affichage, un cache faux
+    // ne se rattrape pas.
+    if (fresh.partial) {
+        console.warn(`[allocine] Résultat partiel pour ${allocineId} au ${date} — non mis en cache`);
+        return { ...payload, stale: false, fetchedAt };
+    }
+
     const { error } = await client
         .from('showtimes_cache')
         .upsert({ allocine_id: allocineId, date, payload, fetched_at: fetchedAt }, { onConflict: 'allocine_id,date' });
