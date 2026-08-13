@@ -29,6 +29,7 @@ update cinemas set accepts_ugc = true, updated_at = now() where code in (
   'C0013',         -- Luminor Hôtel de Ville (75004)
   'W7504',         -- Epée de bois (75005)
   'C0072',         -- Le Grand Action (75005)
+  'C0074',         -- Reflet Medicis (75005) — CIP, apparue après le seed initial (13/08/2026)
   'C0102',         -- UGC Danton (75006)
   'C0100',         -- Saint-André des Arts (75006)
   'C0103',         -- UGC Montparnasse (75006)
