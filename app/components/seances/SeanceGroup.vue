@@ -57,19 +57,42 @@ const subtitle = computed(() =>
 const favoriteLabel = (cinema) => cinema.favorite
     ? `Retirer ${cinema.name} des cinémas favoris`
     : `Ajouter ${cinema.name} aux cinémas favoris`;
+
+// Nom de salle → itinéraire depuis la position actuelle (cf. `utils/maps.js`). Le nom **est** le
+// lien, dans les deux regroupements : c'est le mot qu'on regarde quand on se demande si on peut y
+// être à temps.
+const mapsLabel = (cinema) => `Itinéraire vers ${cinema.name} — nouvel onglet`;
+
+// Salle vue récemment mais qu'Allociné ne rend plus (cf. `carryOverMissing`). On continue de
+// l'afficher — la séance a toutes les chances d'exister — mais jamais sans le dire.
+const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la source ne les confirme plus. À vérifier sur le site de la salle.';
+
+// Le badge ne portait son explication que dans un `title` — invisible au clavier comme au doigt.
+// Le texte visible reste court (« non confirmé »), l'explication complète part dans un contenu
+// réservé aux lecteurs d'écran, et `role="note"` la rattache à la salle qu'elle qualifie.
 </script>
 
 <template>
     <section class="seances-group">
-        <!-- En-tête en deux boutons distincts et non un bouton dans un bouton : imbriquer deux
-             contrôles cliquables est du HTML invalide, et le lecteur d'écran n'en annoncerait qu'un. -->
+        <!-- En-tête en contrôles distincts et non imbriqués : un bouton (ou un lien) dans un bouton
+             est du HTML invalide, et le lecteur d'écran n'en annoncerait qu'un. L'en-tête entier
+             déplie — c'est le geste principal — et l'itinéraire vit dans sa propre icône, à côté de
+             l'étoile : deux actions sur la salle, au même endroit, sans voler le clic de dépliage. -->
         <div class="head">
-            <button v-if="mode === 'cinema'" class="fav -head" type="button"
-                    :class="{ '-on': bucket.cinema.favorite }" :aria-pressed="bucket.cinema.favorite"
-                    :aria-label="favoriteLabel(bucket.cinema)"
-                    @click="emit('toggle-favorite', bucket.cinema.code)">
-                <Svg name="star-outline" aria-hidden="true" />
-            </button>
+            <template v-if="mode === 'cinema'">
+                <button class="fav -head" type="button"
+                        :class="{ '-on': bucket.cinema.favorite }" :aria-pressed="bucket.cinema.favorite"
+                        :aria-label="favoriteLabel(bucket.cinema)"
+                        @click="emit('toggle-favorite', bucket.cinema.code)">
+                    <Svg name="star-outline" aria-hidden="true" />
+                </button>
+
+                <a v-if="directionsUrl(bucket.cinema)" class="dir -head" :href="directionsUrl(bucket.cinema)"
+                   target="_blank" rel="noopener noreferrer" :aria-label="mapsLabel(bucket.cinema)"
+                   :title="mapsLabel(bucket.cinema)">
+                    <Svg name="location" aria-hidden="true" />
+                </a>
+            </template>
 
             <button class="toggle" type="button" :aria-expanded="open" :aria-controls="panelId"
                     @click="emit('toggle')">
@@ -82,7 +105,11 @@ const favoriteLabel = (cinema) => cinema.favorite
                 <span v-else class="ico" aria-hidden="true"><Svg name="ticket" /></span>
 
                 <span class="infos">
-                    <span class="title">{{ title }}</span>
+                    <span class="title">
+                        {{ title }}
+                        <span v-if="mode === 'cinema' && bucket.cinema.unconfirmedSince" class="unconfirmed"
+                              role="note" :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
+                    </span>
                     <span class="sub">{{ subtitle }}</span>
                 </span>
 
@@ -100,8 +127,17 @@ const favoriteLabel = (cinema) => cinema.favorite
                                 @click="emit('toggle-favorite', entry.cinema.code)">
                             <Svg name="star-outline" aria-hidden="true" />
                         </button>
+                        <a v-if="directionsUrl(entry.cinema)" class="dir" :href="directionsUrl(entry.cinema)"
+                           target="_blank" rel="noopener noreferrer" :aria-label="mapsLabel(entry.cinema)"
+                           :title="mapsLabel(entry.cinema)">
+                            <Svg name="location" aria-hidden="true" />
+                        </a>
                         <span class="txt">
-                            <span class="name">{{ entry.cinema.name }}</span>
+                            <span class="name">
+                                {{ entry.cinema.name }}
+                                <span v-if="entry.cinema.unconfirmedSince" class="unconfirmed"
+                                      role="note" :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
+                            </span>
                             <span class="meta">{{ placeLabel(entry.cinema) }}</span>
                         </span>
                     </span>
@@ -157,6 +193,57 @@ const favoriteLabel = (cinema) => cinema.favorite
     }
 }
 
+// Marqueur « non confirmé ». Ambre comme l'avertissement de fraîcheur de la page : c'est la même
+// famille d'information — ce qui est affiché mérite un coup d'œil sur la billetterie.
+// Contenu lu par les lecteurs d'écran, jamais affiché. Recette standard : hors flux, 1 px, découpé
+// — surtout pas `display: none` ni `visibility: hidden`, qui le retireraient aussi de l'arbre
+// d'accessibilité et le rendraient donc muet pour tout le monde.
+.sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+@mixin unconfirmedTag {
+    display: inline-block;
+    margin-left: .6rem;
+    padding: .15rem .5rem;
+    vertical-align: .1rem;
+    border: 1px solid rgba($color-yellow, .45);
+    border-radius: .5rem;
+    color: $color-yellow;
+    font: $semi-bold .95rem/1.3 $font-body;
+    letter-spacing: .02rem;
+    white-space: nowrap;
+    cursor: help;
+}
+
+// Épingle « itinéraire », jumelle de l'étoile : même gabarit, même cible tactile, même discrétion
+// au repos. Elle vire au rose plutôt qu'au jaune — c'est une sortie de l'app, pas une préférence.
+@mixin dirPin($size) {
+    display: grid;
+    place-items: center;
+    width: $size + .8rem;
+    height: $size + .8rem;
+    flex: none;
+    border-radius: 50%;
+    color: $color-text-weaker;
+    cursor: pointer;
+    transition: color .18s ease, transform .18s ease;
+
+    > :deep(svg) { width: $size; height: $size; display: block; }
+
+    @media (hover: hover) {
+        &:hover { color: $color-primary-light; transform: scale(1.12); }
+    }
+}
+
 .seances-group {
     background: $color-surface-1;
     border: 1px solid $color-border-2;
@@ -174,6 +261,11 @@ const favoriteLabel = (cinema) => cinema.favorite
             margin-left: 1.6rem;
             @include favStar(1.7rem);
         }
+
+        // L'itinéraire se colle à l'étoile : même gabarit, même retrait nul à droite. Les deux
+        // actions sur la salle tiennent ainsi dans la même colonne, et le reste de la ligne
+        // continue de déplier.
+        > .dir.-head { @include dirPin(1.6rem); }
 
         > .toggle {
             display: flex;
@@ -219,6 +311,8 @@ const favoriteLabel = (cinema) => cinema.favorite
                     white-space: nowrap;
                     overflow: hidden;
                     text-overflow: ellipsis;
+
+                    > .unconfirmed { @include unconfirmedTag; }
                 }
 
                 > .sub {
@@ -265,6 +359,7 @@ const favoriteLabel = (cinema) => cinema.favorite
                 flex: none;
 
                 > .fav { @include favStar(1.4rem); }
+                > .dir { @include dirPin(1.35rem); }
 
                 > .txt {
                     min-width: 0;
@@ -273,6 +368,8 @@ const favoriteLabel = (cinema) => cinema.favorite
                         display: block;
                         color: $color-text-body;
                         font: $semi-bold 1.3rem/1.2 $font-body;
+
+                        > .unconfirmed { @include unconfirmedTag; }
                     }
 
                     > .meta {
