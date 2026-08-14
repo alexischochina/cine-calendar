@@ -6,9 +6,9 @@ definePageMeta({ middleware: ['auth'] })
 useHead({ title: 'Séances à Paris' })
 
 const {
-    days, dayIndex, group, version, arrondissement, ugcOnly, openCard, focusFilmId,
+    days, dayIndex, group, timeSlot, customRange, ugcOnly, openCard, focusFilmId,
     loading, error, stale, silentCinemas, hasUnconfirmed, films, focusFilm, unresolved, byFilm, byCinema,
-    nbFilms, nbSeances, hiddenByCard, arrondissements, nextDate, updatedAt,
+    nbFilms, nbSeances, hiddenByCard, hiddenByTime, nextDate, updatedAt,
     load, retry, refreshDay, selectDay, toggleFavorite, jumpToNextAvailableDay, syncToday, refreshCinemas,
 } = useSeances()
 
@@ -167,11 +167,10 @@ watch(() => films.value.map(m => m.id).join(','), (now, before) => {
 
         <SeancesDayStrip class="days" :days="days" :active-index="dayIndex" @select="selectDay" />
 
-        <SeancesSeanceFilters class="filters" :group="group" :version="version"
-                              :arrondissement="arrondissement" :ugc-only="ugcOnly"
-                              :arrondissements="arrondissements"
-                              @update:group="group = $event" @update:version="version = $event"
-                              @update:arrondissement="arrondissement = $event"
+        <SeancesSeanceFilters class="filters" :group="group" :time-slot="timeSlot"
+                              :custom-range="customRange" :ugc-only="ugcOnly"
+                              @update:group="group = $event" @update:time-slot="timeSlot = $event"
+                              @update:custom-range="customRange = $event"
                               @update:ugc-only="ugcOnly = $event" />
 
         <!-- Horaires servis depuis une entrée périmée : on les montre quand même (mieux qu'une page
@@ -218,6 +217,14 @@ watch(() => films.value.map(m => m.id).join(','), (now, before) => {
             <p class="msg">Aucune séance acceptant la carte UGC pour ces critères.</p>
             <p class="hint">{{ hiddenByCard }} séance{{ hiddenByCard > 1 ? 's' : '' }} dans les autres salles parisiennes.</p>
             <button class="action" type="button" @click="ugcOnly = false">Ouvrir à tout Paris</button>
+        </div>
+
+        <!-- 4 bis. Le filtre horaire a tout mangé : on le dit et on rouvre la journée d'un clic,
+             plutôt que d'annoncer une journée vide qui ne l'est pas. -->
+        <div v-else-if="!buckets.length && hiddenByTime > 0" class="state">
+            <p class="msg">Aucune séance dans cette plage horaire.</p>
+            <p class="hint">{{ hiddenByTime }} séance{{ hiddenByTime > 1 ? 's' : '' }} en dehors du créneau choisi.</p>
+            <button class="action" type="button" @click="timeSlot = 'all'">Voir toutes les heures</button>
         </div>
 
         <!-- 5. Journée réellement vide : on exploite `nextDate` plutôt que de laisser sur un mur.

@@ -8,8 +8,8 @@
 //
 // La résolution, le chargement d'une journée et le cache L1 vivent dans `useShowtimes`, partagé
 // avec le contrôle « en salle » — c'est son en-tête qui décrit les deux niveaux de cache.
-// Les filtres (film, version, arrondissement, carte, regroupement) sont purement dérivés : en
-// changer ne déclenche jamais de requête.
+// Les filtres (film, plage horaire, carte, regroupement) sont purement dérivés : en changer ne
+// déclenche jamais de requête.
 
 const DAYS_AHEAD = SEANCES_HORIZON_DAYS;
 const DAY_NAMES = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -29,8 +29,11 @@ export function useSeances() {
     // --- état de la vue (useState : la page est démontée au passage sur Timeline/Stats) ---
     const dayIndex = useState('seancesDay', () => 0);
     const group = useState('seancesGroup', () => 'film');       // 'film' | 'cinema'
-    const version = useState('seancesVersion', () => 'all');    // 'all' | 'VO' | 'VF'
-    const arrondissement = useState('seancesArr', () => 'all'); // 'all' | number
+    // Créneau horaire : 'all' | 'morning' | 'afternoon' | 'evening' | 'custom'. La plage libre est
+    // tenue à part (`[depuis, jusqu'à]` en minutes) pour qu'un aller-retour par « Matin » ne la
+    // détruise pas — on y revient d'un clic sur « Choisir plage… ».
+    const timeSlot = useState('seancesSlot', () => 'all');
+    const customRange = useState('seancesCustomRange', () => null);
     const ugcOnly = useState('seancesUgcOnly', () => true);      // pré-filtre carte, actif par défaut
     const openCard = useState('seancesOpenCard', () => null);
 
@@ -344,9 +347,12 @@ export function useSeances() {
         return out;
     });
 
+    // Plage horaire demandée, en minutes depuis minuit — `null` quand le filtre est sur « Toutes ».
+    const timeRange = computed(() => slotRange(timeSlot.value, customRange.value));
+
     // Les filtres actifs, sous la forme qu'attend `applyFilters`. `card` reste à part : on l'appelle
     // aussi avec `false` pour compter ce que le pré-filtre carte masque.
-    const filters = (card) => ({ card, arrondissement: arrondissement.value, version: version.value });
+    const filters = (card) => ({ card, range: timeRange.value });
 
     const filtered = computed(() => applyFilters(entries.value, filters(ugcOnly.value)));
 
@@ -360,19 +366,21 @@ export function useSeances() {
     // « il n'y a rien ce jour-là » de « c'est le filtre carte qui a tout mangé » — sans quoi
     // l'écran vide se lit comme un bug plutôt que comme un filtre.
     const hiddenByCard = computed(() =>
-        ugcOnly.value ? countShowtimes(applyFilters(entries.value, filters(false))) - nbSeances.value : 0
+        ugcOnly.value ? countMatching(entries.value, filters(false)) - nbSeances.value : 0
     );
 
-    // Arrondissements réellement présents ce jour-là, hors filtre d'arrondissement lui-même
-    // (sinon sélectionner le 6e viderait la liste et on ne pourrait plus en sortir).
-    const arrondissements = computed(() => {
-        const present = new Set();
-        for (const entry of entries.value) {
-            if (ugcOnly.value && !entry.cinema.acceptsUgc) continue;
-            if (entry.cinema.arrondissement) present.add(entry.cinema.arrondissement);
-        }
-        return [...present].sort((a, b) => a - b);
-    });
+    // Même raisonnement pour la plage horaire : sans ce compte, une journée pleine mais hors créneau
+    // afficherait « aucune séance ce jour-là », suivi d'un « prochaine séance le … » franchement
+    // faux — il y en a une, c'est juste qu'on a demandé à ne pas la voir.
+    //
+    // La plage est **levée sur la base des filtres courants** (`...filters`) et non d'un objet
+    // reconstruit à la main : un filtre ajouté plus tard à `filters()` s'appliquera ici sans qu'on y
+    // repense, alors qu'un littéral l'aurait oublié en silence — et ce décompte serait devenu faux.
+    const hiddenByTime = computed(() =>
+        timeRange.value
+            ? countMatching(entries.value, { ...filters(ugcOnly.value), range: null }) - nbSeances.value
+            : 0
+    );
 
     // Salles que le dernier contrôle a trouvées **absentes d'Allociné** (cf. `check-seances.mjs`).
     // Leurs séances existent peut-être — elles ne sont simplement pas dans la source. Une salle qui
@@ -428,11 +436,11 @@ export function useSeances() {
 
     return {
         // état
-        days, dayIndex, selectedDay, group, version, arrondissement, ugcOnly, openCard,
+        days, dayIndex, selectedDay, group, timeSlot, customRange, ugcOnly, openCard,
         focusFilmId, loading, error, stale, silentCinemas, hasUnconfirmed,
         // données
-        films, focusFilm, unresolved, byFilm, byCinema, nbFilms, nbSeances, hiddenByCard,
-        arrondissements, nextDate, updatedAt,
+        films, focusFilm, unresolved, byFilm, byCinema, nbFilms, nbSeances, hiddenByCard, hiddenByTime,
+        nextDate, updatedAt,
         // actions
         load, retry, refreshDay, selectDay, toggleFavorite, jumpToNextAvailableDay, syncToday, refreshCinemas,
     };
