@@ -20,6 +20,7 @@ import { isoDay, lastWednesday, SEANCES_HORIZON_DAYS } from '../shared/utils/cin
 import {
     applyFilters, groupByFilm, groupByCinema, countShowtimes,
     isCardEligible, arrondissementFromZip, arrondissementLabel,
+    minutesOfShowtime, slotRange, inTimeRange, rangeLabel, timeLabel, sanitizeRange, countMatching,
 } from '../app/utils/seancesGrouping.js';
 
 let pass = 0, fail = 0;
@@ -86,7 +87,7 @@ console.log('\n\x1b[1mseancesGrouping — filtre carte, ordre des salles, bucket
         showtimes: times,
     });
 
-    const all = { card: false, arrondissement: 'all', version: 'all' };
+    const all = { card: false, range: null };
 
     t('filtre carte : salle non acceptante écartée',
         applyFilters([entry(1, 'A'), entry(2, 'B', { ugc: false })], { ...all, card: true }).length, 1);
@@ -97,15 +98,31 @@ console.log('\n\x1b[1mseancesGrouping — filtre carte, ordre des salles, bucket
     t('   … mais gardée si le filtre carte est levé',
         applyFilters([entry(1, 'A', { times: [show('20:00', 'VO', ['IMAX'])] })], all).length, 1);
 
-    t('filtre version : ne garde que la VO',
-        countShowtimes(applyFilters([entry(1, 'A', { times: [show('18:00', 'VO'), show('20:00', 'VF')] })],
-            { ...all, version: 'VO' })), 1);
-
-    t('filtre arrondissement : compare en nombre, pas en chaîne',
-        applyFilters([entry(1, 'A', { arr: 6 })], { ...all, arrondissement: '6' }).length, 1);
+    t('filtre horaire : ne garde que ce qui tombe dans la plage',
+        countShowtimes(applyFilters([entry(1, 'A', { times: [show('11:00'), show('20:00')] })],
+            { ...all, range: slotRange('morning') })), 1);
 
     t('entrée vidée de ses séances par les filtres → retirée',
-        applyFilters([entry(1, 'A', { times: [show('20:00', 'VF')] })], { ...all, version: 'VO' }), []);
+        applyFilters([entry(1, 'A', { times: [show('20:00')] })], { ...all, range: slotRange('morning') }), []);
+
+    // `countMatching` doit répondre exactement comme `countShowtimes(applyFilters(…))`, sans allouer.
+    // Deux implémentations qui divergeraient rendraient les messages « N séances masquées » faux.
+    {
+        const list = [
+            entry(1, 'A', { times: [show('11:00'), show('20:00'), show('22:00', 'VO', ['IMAX'])] }),
+            entry(2, 'B', { ugc: false, times: [show('20:00')] }),
+        ];
+        const cases = [
+            ['sans filtre', all],
+            ['carte', { ...all, card: true }],
+            ['plage', { ...all, range: slotRange('evening') }],
+            ['carte + plage', { card: true, range: slotRange('evening') }],
+        ];
+        for (const [label, f] of cases) {
+            t(`countMatching == countShowtimes(applyFilters) — ${label}`,
+                countMatching(list, f), countShowtimes(applyFilters(list, f)));
+        }
+    }
 
     // Ordre : favori d'abord, puis arrondissement, puis nom.
     const ordered = groupByCinema([
@@ -131,6 +148,58 @@ console.log('\n\x1b[1mseancesGrouping — filtre carte, ordre des salles, bucket
     t('code postal hors Paris → null', arrondissementFromZip('92100'), null);
     t('libellé du 1er arrondissement', arrondissementLabel(1), '1er');
     t('libellé du 6e arrondissement', arrondissementLabel(6), '6e');
+}
+
+// --- 4. Plage horaire ---------------------------------------------------------------------------
+console.log('\n\x1b[1mplage horaire — créneaux, bornes, séances de nuit\x1b[0m');
+{
+    const at = (time) => ({ time });
+
+    t('14:30 → 870 minutes', minutesOfShowtime(at('14:30')), 870);
+    t('séance de nuit projetée après minuit (00:20 → 1460)', minutesOfShowtime(at('00:20')), 1460);
+    t('horaire illisible → null', minutesOfShowtime(at('')), null);
+
+    t('borne basse incluse : 12:00 est dans l\'après-midi', inTimeRange(at('12:00'), slotRange('afternoon')), true);
+    t('borne haute exclue : 12:00 n\'est plus le matin', inTimeRange(at('12:00'), slotRange('morning')), false);
+    t('08:00 est bien le matin', inTimeRange(at('08:00'), slotRange('morning')), true);
+    t('20:00 est bien le soir', inTimeRange(at('20:00'), slotRange('evening')), true);
+
+    t('séance de nuit gardée par « Soir » (borne haute à minuit = fin de soirée)',
+        inTimeRange(at('00:20'), slotRange('evening')), true);
+    t('   … et par une plage libre qui va jusqu\'à minuit',
+        inTimeRange(at('00:20'), [20 * 60, 24 * 60]), true);
+    t('   … mais pas par une plage libre qui s\'arrête avant',
+        inTimeRange(at('00:20'), [14 * 60, 20 * 60]), false);
+
+    t('aucune plage → tout passe', inTimeRange(at('03:00'), null), true);
+    t('horaire illisible → gardé plutôt qu\'écarté', inTimeRange(at('n\'importe quoi'), slotRange('morning')), true);
+
+    t('« Toutes » n\'a pas de plage', slotRange('all'), null);
+    t('plage libre lue depuis `custom`', slotRange('custom', [840, 1200]), [840, 1200]);
+    t('plage libre absente → aucune plage', slotRange('custom', null), null);
+    t('un créneau nommé ignore la plage libre', slotRange('morning', [840, 1200]), [0, 12 * 60]);
+    t('« Matin » part de minuit — aucune séance ne tombe entre deux créneaux',
+        inTimeRange(at('07:30'), slotRange('morning')), true);
+
+    t('libellé de plage', rangeLabel([840, 1200]), '14:00 – 20:00');
+    t('libellé sans plage', rangeLabel(null), 'Toutes');
+    t('minuit s\'écrit 24:00 en borne haute', timeLabel(24 * 60), '24:00');
+
+    // Les trois créneaux nommés partitionnent la journée : aucune séance ne peut tomber entre deux.
+    for (const time of ['00:10', '05:30', '07:30', '08:00', '11:59', '12:00', '17:59', '18:00', '23:50']) {
+        const hit = ['morning', 'afternoon', 'evening'].filter(s => inTimeRange({ time }, slotRange(s)));
+        t(`${time} tombe dans exactement un créneau nommé (${hit.join(',') || 'aucun'})`, hit.length, 1);
+    }
+
+    // Plage libre : seule entrée de forme libre de la chaîne, donc validée au seuil.
+    t('plage inversée → refusée', sanitizeRange([1200, 840]), null);
+    t('plage vide (bornes égales) → refusée', sanitizeRange([840, 840]), null);
+    t('NaN → refusé plutôt que filtre muet', sanitizeRange([NaN, 1200]), null);
+    t('chaînes numériques → acceptées et converties', sanitizeRange(['840', '1200']), [840, 1200]);
+    t('bornes hors journée → ramenées dans la journée', sanitizeRange([-120, 5000]), [0, 24 * 60]);
+    t('valeurs fractionnaires → arrondies', sanitizeRange([840.4, 1200.6]), [840, 1201]);
+    t('forme inattendue → refusée', sanitizeRange('14:00-20:00'), null);
+    t('plage libre invalide → aucun filtre appliqué', slotRange('custom', [1200, 840]), null);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);
