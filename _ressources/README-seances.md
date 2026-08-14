@@ -202,8 +202,8 @@ rechargement. Un `?film=` qui ne correspond à aucun film en salle (lien vieilli
 l'affiche depuis) vaut absence de cadrage — la page entière plutôt qu'un écran vide inexplicable.
 
 Le cadrage est appliqué **à la source** (`visibleFilms`) et non en bout de chaîne : compteurs,
-arrondissements proposés, « prochaine séance le … » et le décompte masqué par le filtre carte en
-découlent tous, et restent donc d'accord entre eux.
+« prochaine séance le … » et les décomptes masqués par les filtres en découlent tous, et restent
+donc d'accord entre eux.
 
 ### Arrivée sur le premier jour qui a des séances
 
@@ -218,6 +218,62 @@ couronne*, il peut désigner un jour où le film ne joue qu'en banlieue, donc vi
 base sur les séances **existantes** et non filtrées (une journée vidée par le pré-filtre carte a son
 propre message et sa propre porte de sortie, l'enjamber la masquerait) ; et il n'a lieu **qu'à
 l'arrivée** sur un film — un jour choisi à la main n'est jamais corrigé dans le dos.
+
+## Barre de filtres : la plage horaire à la place de VO/VF et de l'arrondissement
+
+Trois contrôles seulement — regroupement, **heures**, pré-filtre carte.
+
+La version (VO/VF) et l'arrondissement ont été retirés : la version se lit déjà sur **chaque** chip
+d'horaire (`VOST` / `VF`), l'arrondissement sur chaque ligne de salle, et le tri remonte de toute
+façon les salles proches en premier. Filtrer sur une information déjà visible partout coûtait deux
+contrôles pour rien. À l'inverse, la vraie contrainte quand on cherche une séance — *à quelle heure
+suis-je libre ?* — n'était filtrable nulle part.
+
+Le menu « Heures » propose **Toutes**, **Matin** (8h–12h), **Après-midi** (12h–18h), **Soir**
+(18h–00h) et une plage libre (« Choisir plage… ») réglée au double-curseur, de 08:00 à 24:00 par pas
+de 30 minutes. Le bouton fermé affiche le créneau, ou la plage elle-même (« 14:00 – 20:00 ») :
+écrire « Personnalisé » obligerait à rouvrir la popin pour savoir ce qu'on filtre.
+
+Quatre décisions dans `app/utils/seancesGrouping.js`, toutes couvertes par `npm test` :
+
+- **Tout se compte en minutes depuis minuit.** Un entier se compare, s'interpole (le curseur) et se
+  teste sans fuseau, contrairement à une `Date`.
+- **Borne basse incluse, borne haute exclue.** 12:00 appartient à « Après-midi » et pas au matin —
+  sinon une séance de midi serait comptée dans les deux selon le filtre choisi.
+- **Les séances d'après minuit appartiennent à la soirée.** Allociné rattache un « 00:20 » au jour de
+  la *soirée*, pas au lendemain. Comparé brut, il tomberait dans le petit matin et sortirait de
+  « Soir » — donc on le projette au-delà de minuit (00:20 → 1460 min), et une borne haute posée sur
+  minuit se lit « jusqu'à la fin de la soirée » plutôt que « strictement avant 24:00 ». Sans ça,
+  filtrer le soir perdait justement les séances les plus tardives.
+- **Les trois créneaux nommés partitionnent la journée entière.** « Matin » part techniquement de
+  **minuit** alors que son libellé annonce 8 h : avec une borne à 8 h, une séance à 07:30 ne tombait
+  dans aucun créneau et ne réapparaissait que sous « Toutes ». Un test balaie neuf horaires (00:10 →
+  23:50) et vérifie que chacun tombe dans **exactement un** créneau.
+
+Un horaire illisible est **gardé**, jamais écarté : faire disparaître une séance qui existe sur une
+donnée qu'on n'a pas su lire est le contraire de ce que fait un filtre. Symétriquement, la plage
+libre est la seule entrée de forme libre de la chaîne (elle survit en `useState` à la navigation) :
+elle est donc validée au seuil par `sanitizeRange` — inversée, vide, `NaN` ou hors journée, elle est
+refusée plutôt qu'appliquée. Un `NaN` non filtré aurait désactivé le filtre en silence, un couple
+inversé aurait vidé la page sans explication.
+
+Les décomptes « ce que le filtre masque » passent par `countMatching` et non par
+`countShowtimes(applyFilters(…))` : même réponse (un test le vérifie sur quatre combinaisons de
+filtres), sans reconstruire une entrée ni allouer un tableau d'horaires par salle pour n'en garder
+qu'un entier.
+
+Côté popin : le focus entre sur la première poignée à l'ouverture, tourne en rond dans la modale au
+Tab, revient sur le bouton « Heures » à la fermeture, et le scroll de l'arrière-plan est gelé le
+temps de l'ouverture. Sans ça, `aria-modal` mentait — le bouton d'origine est démonté avec le menu,
+donc le focus retombait sur `<body>`. Les poignées font 28 px dans une bande de 44 px : la cible
+tactile tient sur l'axe vertical, celui où le doigt rate. Et la piste dessinée est calée sur le
+trajet réel du centre de la poignée (`largeur − poignée`), sinon le remplissage et les repères se
+décalent d'une demi-poignée aux extrémités.
+
+Comme pour le pré-filtre carte, une journée vidée par le créneau a son propre message et sa propre
+porte de sortie (`hiddenByTime` → « Voir toutes les heures »). Sans ce décompte, une journée pleine
+mais hors créneau afficherait « aucune séance ce jour-là », suivi d'un « prochaine séance le … »
+franchement faux : il y en a une, on a simplement demandé à ne pas la voir.
 
 ## Itinéraire vers une salle
 
@@ -238,7 +294,7 @@ lui voler le clic coûterait plus que ça ne rapporte.
 ## Architecture
 
 ```
-app/pages/seances.vue              vue + 6 états non-heureux
+app/pages/seances.vue              vue + 7 états non-heureux
 app/components/seances/            DayStrip · SeanceFilters · SeanceGroup · TimeChip
 app/composables/useSeances.js      état, chargement et dérivés de la page
 app/composables/useShowtimes.js    résolution + chargement d'une journée + cache L1 (partagés)
@@ -255,7 +311,7 @@ server/utils/allocine.js           SOURCE UNIQUE de vérité du format Allociné
 server/utils/showtimesFreshness.js règle de fraîcheur partagée par les deux routes
 server/utils/promisePool.js        copie serveur du pool de concurrence
 
-scripts/test-seances-rules.mjs     30 tests des règles pures  →  npm test
+scripts/test-seances-rules.mjs     70 tests des règles pures  →  npm test
 scripts/check-seances.mjs          contrôle de santé          →  npm run check:seances
 scripts/spike-cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ```
