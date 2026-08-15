@@ -1,9 +1,7 @@
 // Reconnaître « cet objet n'existe pas encore en base » à travers PostgREST.
 //
-// **Source unique**, partagée par les trois mondes du projet comme `cineWeek.js` : les routes serveur
-// (qui lisent et écrivent les caches), les composables (qui écrivent sur `calendar` et lisent
-// `cinemas`) et les scripts. `shared/utils/` est auto-importé côté app comme côté Nitro depuis
-// Nuxt 3.14 ; les scripts l'importent par chemin relatif, ce fichier n'ayant aucune dépendance.
+// **Source unique** partagée par les routes serveur, les composables et les scripts (cf. l'en-tête de
+// `cineWeek.js` pour le pourquoi de `shared/`).
 //
 // ⚠️ La règle est contre-intuitive au point d'avoir été ratée à cinq endroits, chacun avec un jeu de
 // codes différent : une **colonne** absente remonte `42703` en lecture mais **`PGRST204`** en écriture,

@@ -75,9 +75,9 @@ const updateState = async (newState) => {
     await client.from('calendar').update({ state: newState }).eq('id', props.id)
 }
 
-// Sous-titre de droite : réalisateur si connu, sinon libellé état/média (cf. plan « sub »).
+// Sous-titre de droite : réalisateur si connu, sinon libellé état/média.
 const MEDIA_LABELS = { cinema: 'Cinéma', netflix: 'Netflix', primeVideo: 'Prime Video', 'disney+': 'Disney+', streaming: 'Streaming', vod: 'Streaming', unknown: 'Streaming' };
-// En salle : on garde le nom du réal dans le sous-titre, le badge « En salle » se cale à droite du titre (cf. template).
+// En salle : le nom du réal reste dans le sous-titre, le badge « En salle » se cale à droite du titre.
 const isInTheaters = computed(() => selectedState.value === 'inTheaters');
 const sub = computed(() => {
     const dir = props.director;

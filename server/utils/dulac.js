@@ -1,13 +1,7 @@
 // Libellés d'événement des salles Dulac — L'Arlequin, L'Escurial, Majestic Bastille, Majestic Passy,
 // Reflet Médicis. Cinq salles art et essai parisiennes, celles qui concentrent le plus d'événements.
 //
-// Pourquoi cette source. Allociné ne livre **aucun texte libre** décrivant un événement : son
-// vocabulaire est fermé (`showtimeEventLabels` dans `allocine.js`) et donne « Avant-première », jamais
-// « en présence du réalisateur ». Vérifié séance par séance, `internalId` à l'appui. C'est aussi ce que
-// fait paris-cine.info, dont le champ `srcs` trahit deux sources par séance (`AO`, `AB` sur la même
-// salle) : Allociné pour la grille, l'exploitant pour le texte.
-//
-// Pourquoi Dulac plutôt qu'un autre. Ce n'est **pas du parsing HTML** — c'est précisément ce que le
+// Pourquoi Dulac en premier. Ce n'est **pas du parsing HTML** — c'est précisément ce que le
 // projet a abandonné, pour cause de fragilité. Chaque fiche événement porte un
 // `application/ld+json` au format `schema.org/Event`, avec `name`, `description`, `startDate` et
 // `location.name`. De la donnée structurée et standardisée, donc stable. Et `robots.txt` l'autorise
@@ -20,17 +14,11 @@
 
 import { normalize, escapeRe, fold, truncateDetail, isEventHeadline } from './exhibitorText.js';
 
-// ⚠️ Aucun import vers `shared/` : le test charge ce fichier hors de Nuxt, et un `../../shared/…`
-// casse au bundling (Vite le réécrit hors du projet). D'où les helpers de texte dans
-// `./exhibitorText.js`, voisin de palier. `isDulacVenue` vient de l'auto-import Nitro, que seule la
-// fonction réseau atteint.
+// ⚠️ Aucun import vers `shared/` (cf. l'en-tête de `exhibitorText.js`) : `isDulacVenue` vient de
+// l'auto-import Nitro, que seule la fonction réseau atteint.
 
 const DULAC_ORIGIN = 'https://www.dulaccinemas.com';
-// ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
-// plus haut ne tient que si l'on est identifiable — se présenter comme un navigateur serait la
-// première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
-// UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
-// même charge utile à l'octet près).
+// ⚠️ User-Agent **honnête**, jamais une chaîne de navigateur — cf. `allocine.js`.
 const USER_AGENT = 'cine-calendar/1.0';
 const TIMEOUT = 8000;
 

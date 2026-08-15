@@ -6,8 +6,7 @@
 // serveur (`showtimeEventLabels` dans `server/utils/allocine.js`) et transportés dans le payload de
 // séances. Ce fichier ne connaît aucun tag : il lit du texte déjà prêt, et le lit avec méfiance.
 //
-// Fonctions pures, sans réactivité ni réseau, testées par `scripts/test-seances-rules.mjs` — même
-// discipline que `seancesGrouping.js`, qui les importe.
+// Fonctions pures, sans réactivité ni réseau, testées par `scripts/test-seances-rules.mjs`.
 
 // --- Côté séance --------------------------------------------------------------------------------
 
@@ -228,11 +227,8 @@ export const groupEventsByDay = (entries) => {
 };
 
 // Film à faire remonter dans la rubrique « Événement à venir » : un événement devant lui, et un film
-// pas encore vu.
-//
-// La seconde condition n'est **pas** redondante ici, contrairement à ce qu'elle était quand la
-// rubrique n'existait pas : elle couvre désormais des films qui ne sont pas `inTheaters` du tout (une
-// avant-première a lieu *avant* la sortie — c'est le cas qui a motivé la rubrique). Rien ne garantit
-// donc plus que l'état exclue `'seen'`.
+// pas encore vu. ⚠️ Le test sur `state` n'est pas redondant : la rubrique couvre aussi des films qui
+// ne sont pas `inTheaters` du tout (une avant-première a lieu *avant* la sortie), donc rien ne
+// garantit que l'état exclue `'seen'`.
 export const hasUpcomingEvent = (movie, bounds) =>
     movie?.state !== 'seen' && movieEvents(movie, bounds).length > 0;

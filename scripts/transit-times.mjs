@@ -19,14 +19,10 @@
 //   HOME_LAT / HOME_LNG   domicile
 //   SUPABASE_URL + NUXT_SUPABASE_SECRET_KEY (ou SUPABASE_KEY)
 //
-// ⚠️ Ces deux-là s'appelaient `NUXT_PUBLIC_HOME_LAT` / `NUXT_PUBLIC_HOME_LNG`, et le préfixe était un
-// piège armé : `NUXT_PUBLIC_` est **exactement** ce qui déclenche l'exposition d'une variable au
-// navigateur. Aujourd'hui elles ne partent nulle part (`runtimeConfig.public` de `nuxt.config.ts` ne
-// déclare que `siteUrl`, et Nuxt ne mappe que les clés déclarées), mais il aurait suffi qu'on ajoute
-// un jour `homeLat` sous `runtimeConfig.public` pour que les coordonnées du domicile entrent dans le
-// bundle client — l'inverse exact de ce que `app/utils/travel.js` se donne du mal à éviter.
-// Ces valeurs ne sont lues que par ce script Node, jamais par Nuxt : elles n'ont aucune raison de
-// porter un préfixe Nuxt, encore moins celui-là.
+// ⚠️ Ces deux-là ne doivent **jamais** reprendre le préfixe `NUXT_PUBLIC_` qu'elles portaient avant :
+// c'est lui qui expose une variable au navigateur dès qu'une clé correspondante existe sous
+// `runtimeConfig.public`. Les coordonnées du domicile ne sont lues que par ce script Node — les
+// laisser entrer dans le bundle client est l'inverse exact de ce que `app/utils/travel.js` protège.
 
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';

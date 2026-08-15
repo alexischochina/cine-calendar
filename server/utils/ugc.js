@@ -12,11 +12,7 @@
 import { normalize } from './exhibitorText.js';
 
 const UGC_ORIGIN = 'https://www.ugc.fr';
-// ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
-// plus haut ne tient que si l'on est identifiable — se présenter comme un navigateur serait la
-// première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
-// UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
-// même charge utile à l'octet près).
+// ⚠️ User-Agent **honnête**, jamais une chaîne de navigateur — cf. `allocine.js`.
 const USER_AGENT = 'cine-calendar/1.0';
 const TIMEOUT = 8000;
 

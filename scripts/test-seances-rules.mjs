@@ -8,14 +8,16 @@
 // un film qui reste « en salle » de trop, un mercredi mal calculé ne lèvent aucune exception, ils
 // affichent simplement quelque chose de faux.
 //
-// Sept familles, toutes importées depuis le code réel (aucune copie) :
+// Neuf familles, toutes importées depuis le code réel (aucune copie) :
 //   1. `carryOverMissing`     — report des salles disparues (server/utils/showtimesFreshness.js)
 //   2. `cineWeek`             — semaine ciné partagée app/serveur/scripts (shared/utils/cineWeek.js)
 //   3. `seancesGrouping`      — filtres, tri, regroupements (app/utils/seancesGrouping.js)
-//   4. `showtimeEventLabels`  — tags Allociné → libellés d'événement (server/utils/allocine.js)
-//   5. `seanceEvents`         — règles des séances événement (app/utils/seanceEvents.js)
-//   6. `exploitants`          — libellés Dulac / MK2 / UGC (server/utils/{dulac,mk2,ugc,…}.js)
-//   7. `inTheaters`           — qui est « en salle » (app/utils/inTheaters.js)
+//   4. plage horaire          — créneaux, bornes, séances de nuit (app/utils/seancesGrouping.js)
+//   5. `showtimeEventLabels`  — tags Allociné → libellés d'événement (server/utils/allocine.js)
+//   6. `seanceEvents`         — règles des séances événement (app/utils/seanceEvents.js)
+//   7. `exploitants`          — libellés Dulac / MK2 / UGC (server/utils/{dulac,mk2,ugc,…}.js)
+//   8. `inTheaters`           — qui est « en salle » (app/utils/inTheaters.js)
+//   9. gardes                 — schéma PostgREST et dates locales (shared/utils, app/utils)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -225,7 +227,7 @@ console.log('\n\x1b[1mplage horaire — créneaux, bornes, séances de nuit\x1b[
     t('plage libre invalide → aucun filtre appliqué', slotRange('custom', [1200, 840]), null);
 }
 
-// --- 4. Tags Allociné → libellés d'événement ----------------------------------------------------
+// --- 5. Tags Allociné → libellés d'événement ----------------------------------------------------
 //
 // Le tri entre « qualifie la séance » et « décrit la projection » est le cœur de la fonctionnalité :
 // trop large, le badge se pose sur 1 656 séances sur 2 293 et ne dit plus rien.
@@ -292,7 +294,7 @@ console.log('\n\x1b[1mshowtimeEventLabels — ce qui est un événement, et surt
     }
 }
 
-// --- 5. Séances événement — côté séance et côté film --------------------------------------------
+// --- 6. Séances événement — côté séance et côté film --------------------------------------------
 console.log('\n\x1b[1mseanceEvents — marquer sans jamais inventer\x1b[0m');
 {
     const st = (time, events) => (events ? { time, events } : { time });
@@ -596,7 +598,7 @@ console.log('\n\x1b[1mseanceEvents — marquer sans jamais inventer\x1b[0m');
     t('film sans événement → pas dans la rubrique', hasUpcomingEvent({ state: 'inTheaters' }, B), false);
 }
 
-// --- 6. Libellés d'exploitant (Dulac) -----------------------------------------------------------
+// --- 7. Libellés d'exploitant (Dulac) -----------------------------------------------------------
 //
 // Allociné ne décrit pas ses événements ; Dulac publie du `schema.org/Event` en JSON-LD. Ce bloc teste
 // le rapprochement et l'extraction du texte — les deux endroits où ça peut se tromper en silence.
@@ -756,7 +758,7 @@ console.log('\n\x1b[1mdulac — le texte libre qu\'Allociné n\'a pas\x1b[0m');
         ['111:Concert', '222:Rencontre']);
 }
 
-// --- 7. Qui est « en salle » --------------------------------------------------------------------
+// --- 8. Qui est « en salle » --------------------------------------------------------------------
 //
 // Erreurs silencieuses des deux côtés : un film retiré à tort disparaît sans un mot, un film gardé à
 // tort occupe le rail avec zéro séance. D'où trois issues et jamais deux.
@@ -816,7 +818,7 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
     t('aucun film du tout → rien à corroborer', sourceLooksAlive([]), false);
 }
 
-// --- 8. Gardes de schéma et dates locales -------------------------------------------------------
+// --- 9. Gardes de schéma et dates locales -------------------------------------------------------
 //
 // Deux règles qui vivaient chacune en plusieurs copies divergentes, et dont chaque copie ratait un
 // cas. Elles ont désormais une seule définition — autant la tenir par des tests.

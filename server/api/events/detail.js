@@ -14,11 +14,9 @@ import { serverSupabaseClient } from '#supabase/server';
 import { normalize } from '../../utils/exhibitorText.js';
 
 // Clé de cache : la salle et la date suffisent presque, le titre départage deux événements le même soir
-// dans la même salle. Normalisé pour que « L'Arlequin » et « l arlequin » ne fassent pas deux lignes.
-//
-// La normalisation vient du voisin de palier plutôt que d'une copie locale : c'est **la même** que
-// celle qui compare les noms de salle chez l'exploitant (`dulac.js`, `mk2.js`), et deux formes qui
-// divergeraient produiraient deux lignes de cache pour un seul événement — sans que rien ne le montre.
+// dans la même salle. ⚠️ Normalisé par la **même** fonction que les comparaisons de nom de salle chez
+// l'exploitant (`dulac.js`, `mk2.js`) : deux formes divergentes produiraient deux lignes de cache pour
+// un seul événement, sans que rien ne le montre.
 const cacheKey = (value) => normalize(value);
 
 export default defineEventHandler(async (event) => {

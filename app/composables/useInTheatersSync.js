@@ -81,13 +81,8 @@ export function useInTheatersSync() {
             );
 
             // Séances événement du jour, pour que le rail « Au ciné en ce moment » les mette en avant
-            // sans que l'utilisateur ait à ouvrir la vue Séances — c'est le badge qui doit l'y envoyer,
-            // pas l'inverse.
-            //
-            // Coût : ~25 salles interrogées, **une fois par semaine ciné**. C'est la seule dépense
-            // ajoutée au chargement de l'app, et elle préchauffe la vue Séances pour aujourd'hui.
-            // Seuls les films gardés sont concernés : les autres viennent de sortir du L1 juste
-            // au-dessus, donc `loadEvents` ne demandera aucune de leurs salles.
+            // sans avoir à ouvrir la vue Séances. Coût : ~25 salles, **une fois par semaine ciné**,
+            // et ça préchauffe la vue pour aujourd'hui.
             //
             // Placé **avant** les écritures d'état, pour ne pas dépendre de leur sortie anticipée
             // (`if (!applied.size) return`) : une semaine sans changement d'affiche est le cas normal,
@@ -152,12 +147,9 @@ export function useInTheatersSync() {
         }
     };
 
-    // Retire un film dont **l'horizon entier** est vide, sans attendre le mercredi : le contrôle
-    // hebdomadaire laisserait sinon jusqu'au mercredi suivant un film parti le jeudi. Ne coûte aucune
-    // requête — la preuve est déjà dans le cache (sept journées chargées, zéro salle intra-muros).
-    //
-    // ⚠️ Ne conclut que sur des preuves complètes (cf. `horizonVerdict`) : un verdict trop pressé
-    // retirerait un film sur un hoquet réseau, et il ne reviendrait qu'une semaine plus tard.
+    // Retire un film dont **l'horizon entier** est vide, sans attendre le mercredi. Ne coûte aucune
+    // requête — la preuve est déjà dans le cache. ⚠️ Ne conclut que sur des preuves complètes (cf.
+    // `horizonVerdict`) : un verdict trop pressé retirerait un film sur un hoquet réseau.
     const pruneEmptyHorizon = async (list, dates) => {
         if (disabled.value || dates.length < SEANCES_HORIZON_DAYS) return;
 

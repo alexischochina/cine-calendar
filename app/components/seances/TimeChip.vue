@@ -16,11 +16,8 @@ const versionLabel = computed(() =>
 );
 
 // Séance événement : avant-première, séance unique, label de programmation. Les libellés arrivent
-// déjà traduits dans le payload (cf. `showtimeEventLabels`, server/utils/allocine.js) — il n'y a
-// rien à interpréter ici.
-//
-// ⚠️ Allociné ne fournit **aucun texte libre** : pas de « En présence de l'équipe du film ». Ce
-// qu'on affiche est donc son vocabulaire à lui, et c'est tout ce qui existe.
+// déjà traduits dans le payload (cf. `showtimeEventLabels`, server/utils/allocine.js) — rien à
+// interpréter ici.
 const events = computed(() => showtimeEvents(props.showtime));
 
 // Plusieurs libellés sur une même séance (une avant-première jeune public) : on les met bout à bout

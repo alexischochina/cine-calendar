@@ -51,9 +51,6 @@ export function useSeances() {
     const loading = useState('seancesLoading', () => false);
     const error = useState('seancesError', () => null);
 
-    // Films que la vue doit savoir montrer, dans l'ordre du rail : la rubrique « Événement à venir »
-    // d'abord, puis « Au ciné en ce moment ». Certains ne sont pas encore sortis — une avant-première a
-    // lieu avant la sortie — et c'est justement pour eux qu'on vient ici.
     const films = computed(() => seanceFilms.value);
 
     // Film mis au premier plan, ou `null`. Un identifiant qui ne correspond à aucun film en salle

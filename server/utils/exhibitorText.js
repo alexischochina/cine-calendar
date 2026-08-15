@@ -27,8 +27,7 @@ export const fold = (str) => {
 };
 
 // Forme de comparaison, sur le modèle de `normalizeTitle` (allocine.js) : accents dépliés, tout ce qui
-// n'est pas alphanumérique réduit à un espace. Recopié plutôt qu'importé pour que les connecteurs
-// restent chargeables par le script de test sans monter Nuxt.
+// n'est pas alphanumérique réduit à un espace.
 export const normalize = (str) => fold(str).out.replace(/\s+/g, ' ').trim();
 
 export const escapeRe = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -1,10 +1,6 @@
 // Le référentiel des salles parisiennes : lecture, favoris, et le signalement des salles absentes
 // d'Allociné.
 //
-// Extrait de `useSeances` — c'est une table, avec sa propre dégradation et sa propre écriture, qui
-// n'a rien à voir avec le filtrage des séances. La clé `useState` est conservée à l'identique
-// (`seancesCinemas`), c'est le même état qu'avant l'extraction.
-//
 // Alimenté à la marge par `/api/allocine/refresh`, qui y fait entrer toute salle croisée dans une
 // réponse (`on conflict do nothing` : une ligne connue n'est jamais réécrite). Le gros du contenu
 // vient des scripts — seed carte UGC, géocodage, temps de trajet.

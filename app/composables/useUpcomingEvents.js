@@ -189,8 +189,7 @@ export function useUpcomingEvents() {
                 if (!movie || movieEvents(movie, bounds).some(e => e.date === date)) continue;
 
                 const payload = payloadFor(movie, date);
-                // Aucune salle intra-muros ce jour-là : `nextDate` désignait la couronne (il est calculé
-                // sur Paris **et sa banlieue**, cf. `PARIS_LOCALIZATION`). Rien à annoncer.
+                // Aucune salle intra-muros ce jour-là : `nextDate` désignait la couronne. Rien à annoncer.
                 const theaters = (payload?.theaters ?? []).filter(t => t.name);
                 if (!theaters.length) continue;
 

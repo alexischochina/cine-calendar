@@ -1,15 +1,12 @@
 // Quelles salles sont couvertes par une source de libellés d'événement, et par laquelle.
-// **Source unique**, partagée par les trois mondes du projet comme `cineWeek.js` : l'app (qui décide
-// s'il vaut la peine d'appeler la route), le serveur (qui interroge l'exploitant) et les scripts.
+// **Source unique** partagée par l'app, le serveur et les scripts (cf. l'en-tête de `cineWeek.js`).
 //
-// Pourquoi ce test vit ici et pas seulement côté serveur : c'est **lui** qui économise les appels. Sans
-// lui, l'app demanderait un libellé pour chaque séance événement de Paris, dont l'immense majorité n'a
-// aucune source branchée — un aller-retour HTTP pour se faire répondre non, à chaque fois.
+// Pourquoi ce test vit aussi côté app : c'est **lui** qui économise les appels. Sans lui, l'app
+// demanderait un libellé pour chaque séance événement de Paris, dont l'immense majorité n'a aucune
+// source branchée — un aller-retour HTTP pour se faire répondre non, à chaque fois.
 //
-// ⚠️ Aucune dépendance, volontairement — même discipline que `cineWeek.js`. D'où la normalisation
-// recopiée ici en quelques lignes plutôt qu'importée : `shared/` doit rester chargeable depuis
-// n'importe où, y compris un script Node nu. (Et un import relatif *vers* `shared/` casse au bundling,
-// ce qui interdit le trajet inverse — cf. l'en-tête de `server/utils/exhibitorText.js`.)
+// ⚠️ Aucune dépendance, volontairement, d'où la normalisation recopiée ici : `shared/` doit rester
+// chargeable depuis n'importe où, y compris un script Node nu.
 
 const normalize = (str) => String(str ?? '')
     .normalize('NFD')

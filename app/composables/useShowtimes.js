@@ -33,8 +33,7 @@ export function useShowtimes() {
     const client = useSupabaseClient();
     const { movies } = useMovieCalendar();
 
-    // L1. Clé historique conservée : c'est le même cache qu'avant l'extraction.
-    const payloads = useState('seancesPayloads', () => ({}));
+    const payloads = useState('seancesPayloads', () => ({}));   // L1
 
     const cacheKey = (allocineId, date) => `${allocineId}:${date}`;
 

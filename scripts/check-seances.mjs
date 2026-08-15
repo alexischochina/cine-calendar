@@ -1,4 +1,4 @@
-// Contrôle de santé de la vue Séances (plan 2608121539).
+// Contrôle de santé de la vue Séances.
 //
 // Répond à une seule question : « est-ce que la récupération des séances marche encore ? ».
 // À lancer quand un doute survient, ou de temps en temps — typiquement le mercredi, jour où les
@@ -7,9 +7,6 @@
 // ⚠️ Lecture seule **sauf `--mute`**, qui persiste son verdict dans `cinemas.allocine_silent_since`
 // et `allocine_checked_at` — c'est ce qui permet à la vue de dire « cette salle est absente
 // d'Allociné depuis le … » au lieu de la passer sous silence (cf. `2608131800-add-cinema-silence.sql`).
-// L'en-tête a annoncé « aucune écriture » pendant tout le temps où cette famille de contrôles
-// existait : dans un projet dont la documentation interne est le principal support de maintenance,
-// c'est le genre d'écart qui coûte plus cher qu'ailleurs.
 //
 //   node scripts/check-seances.mjs                 # tout
 //   node scripts/check-seances.mjs --drift --mute  # seulement ces contrôles
@@ -29,11 +26,9 @@
 
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
-// Même source que l'app et le serveur : un contrôle de santé qui daterait ses journées autrement
-// que le code qu'il surveille ne surveillerait plus rien.
+// Mêmes règles que l'app et le serveur : un contrôle de santé qui daterait ses journées ou lirait
+// ses erreurs autrement que le code qu'il surveille ne surveillerait plus rien.
 import { isoDay, lastWednesday } from '../shared/utils/cineWeek.js';
-// Même garde que l'app et les routes serveur : c'est ici qu'on a découvert que PostgREST ne rend pas
-// le code qu'on croyait, autant ne pas en garder une copie locale.
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
 
 const loadEnv = () => {

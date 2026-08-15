@@ -3,9 +3,9 @@
 // Purement présentationnel — tous les filtres sont dérivés côté `useSeances`, en changer ne
 // déclenche jamais de requête.
 //
-// La version (VO/VF) et l'arrondissement ont été retirés : la version se lit déjà sur chaque chip
-// d'horaire et l'arrondissement sur chaque ligne de salle, alors que l'heure — la vraie contrainte
-// quand on cherche une séance — n'était filtrable nulle part.
+// Ni version ni arrondissement : la première se lit sur chaque chip d'horaire, le second sur chaque
+// ligne de salle. L'heure — la vraie contrainte quand on cherche une séance — est la seule à mériter
+// un filtre.
 import { onClickOutside } from '@vueuse/core';
 
 const props = defineProps({
@@ -19,11 +19,10 @@ const emit = defineEmits(['update:group', 'update:timeSlot', 'update:customRange
 
 const GROUPS = [{ value: 'film', label: 'Par film' }, { value: 'cinema', label: 'Par cinéma' }];
 
-// Bornes, créneaux et formatage viennent de `utils/seancesGrouping.js` — la même source que le
-// filtrage lui-même, pour qu'un découpage ne puisse pas dire une chose ici et une autre à
-// l'application. Reliés à des bindings locaux : un auto-import Nuxt utilisé **uniquement** dans le
-// template ne serait pas résolu par le compilateur de SFC (il le prendrait pour une propriété
-// d'instance et rendrait `undefined`).
+// Bornes, créneaux et formatage viennent de `utils/seancesGrouping.js`, la même source que le
+// filtrage lui-même. ⚠️ Reliés à des bindings locaux : un auto-import Nuxt utilisé **uniquement**
+// dans le template n'est pas résolu par le compilateur de SFC (il le prend pour une propriété
+// d'instance et rend `undefined`).
 const SLOTS = TIME_SLOTS;
 const MIN = RANGE_MIN;
 const MAX = RANGE_MAX;
@@ -249,10 +248,7 @@ onBeforeUnmount(() => {
     transition: border-color .18s ease, color .18s ease;
 }
 
-// `focusRing` vient de `assets/styles/_a11y.scss`, injecté partout : la barre de filtres a été le
-// premier endroit à en avoir besoin (une modale à piège à focus est intenable sans repère visible),
-// mais le manque valait pour toute la vue — c'est désormais un mixin partagé et non une recette
-// locale.
+// `focusRing` : mixin partagé de `assets/styles/_a11y.scss`, injecté partout.
 
 .seances-filters {
     display: flex;

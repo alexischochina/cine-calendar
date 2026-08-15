@@ -26,9 +26,6 @@ export function useSeanceEvents() {
     // **effaçait** un texte obtenu la veille : `mergeEventEntries` remplace les entrées des journées
     // relues, et une entrée revenue sans `detail` écrasait celle qui en avait un. C'est exactement
     // l'appauvrissement silencieux que `graftEvents` s'interdit via `seen` — la même règle vaut ici.
-    //
-    // `entryKey` vient de `app/utils/seanceEvents.js`, où vit aussi `mergeEventEntries` : les deux
-    // doivent trancher l'identité d'une entrée exactement pareil.
     const carryOverOne = (entry, known) => {
         const previous = known?.get(entryKey(entry));
         return previous?.detail ? { ...entry, detail: previous.detail, url: previous.url ?? null } : entry;
@@ -43,9 +40,8 @@ export function useSeanceEvents() {
     const withDetails = async (entries, title, known) => {
         if (detailsDisabled.value) return carryOver(entries, known);
 
-        // ⚠️ En parallèle borné, pas en série. Un `await` par entrée sérialisait autant d'allers-retours
-        // vers notre propre API — le pré-filtre borne leur *nombre*, pas leur durée cumulée.
-        // `promisePool` est le mécanisme utilisé partout ailleurs dans le projet pour ça.
+        // ⚠️ En parallèle borné, pas en série : le pré-filtre borne le *nombre* d'allers-retours vers
+        // notre API, pas leur durée cumulée.
         return promisePool(entries.map(entry => async () => {
             if (!isKnownExhibitorVenue(entry.cinema)) return entry;
 
@@ -89,15 +85,10 @@ export function useSeanceEvents() {
         // travailler sur des copies périmées écraserait ces mises à jour.
         const current = new Map(movies.value.map(m => [m.id, m]));
 
-        // Ce que chaque film a à écrire, résolu en parallèle borné.
-        //
-        // ⚠️ En série, un film attendait la résolution des libellés du précédent — or `withDetails`
-        // sort sur le réseau. Sur la vue Événements, qui balaie sept journées, ces attentes
-        // s'additionnaient sur le seul chemin qui ne peut pas être servi par un cache. Le pré-filtre
-        // `isKnownExhibitorVenue` fait que l'immense majorité des films n'a rien à demander et rend
-        // donc la main tout de suite : ce pool ne se remplit qu'au moment qui coûte.
-        //
-        // Plafond réel de requêtes simultanées vers notre propre API : 3 films × `DETAIL_CONCURRENCY`.
+        // Ce que chaque film a à écrire, résolu en parallèle borné. ⚠️ En série, un film attendait la
+        // résolution des libellés du précédent — or `withDetails` sort sur le réseau, et la vue
+        // Événements balaie sept journées. Plafond de requêtes simultanées vers notre propre API :
+        // 3 films × `DETAIL_CONCURRENCY`.
         const MOVIE_CONCURRENCY = 3;
 
         const resolved = await promisePool(list.map(({ id }) => async () => {

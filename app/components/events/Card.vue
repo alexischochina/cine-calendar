@@ -4,15 +4,9 @@
 //   - mode 'film' : en-tête = affiche + titre du film,   lignes = journées
 //   - mode 'day'  : en-tête = pictogramme + journée,     lignes = films
 //
-// Décalque de `SeancesSeanceGroup` : même en-tête (affiche 4,4 × 6,6, titre 1,5 rem, sous-titre gris
-// portant la pastille d'événement, chevron), mêmes lignes (colonne d'identification à gauche sur
-// 23 rem, rangée de pastilles à droite), mêmes métriques de padding et de filet. Les deux vues
-// montrent la même matière — des séances parisiennes — et n'ont aucune raison de se ressembler à
-// moitié.
-//
-// La différence est dans le contenu de la rangée : côté Séances ce sont des horaires, ici ce sont les
-// qualifications de la séance (« Avant-première », « Ciné-club »). Le vocabulaire vient d'Allociné,
-// traduit une seule fois côté serveur.
+// Décalque de `SeancesSeanceGroup` — mêmes métriques d'en-tête, de ligne et de filet : les deux vues
+// montrent la même matière et n'ont aucune raison de se ressembler à moitié. Seule la rangée diffère,
+// des horaires là-bas, les qualifications de la séance ici (« Avant-première », « Ciné-club »).
 const props = defineProps({
     mode: {
         type: String,

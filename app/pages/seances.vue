@@ -1,7 +1,7 @@
 <script setup>
 // Vue « Séances » : où voir, à Paris, les films de ma liste encore à l'affiche.
-// Route à la racine et non sous `/[year]/` — la vue ne dépend d'aucune année (cf. Step 11 du plan) :
-// donc pas de middleware `valid-year`, et pas de `key` (rien à réutiliser entre années).
+// Route à la racine et non sous `/[year]/` — la vue ne dépend d'aucune année : donc pas de
+// middleware `valid-year`, et pas de `key` (rien à réutiliser entre années).
 definePageMeta({ middleware: ['auth'] })
 useHead({ title: 'Séances à Paris' })
 
@@ -118,13 +118,10 @@ const focusThenLoad = async () => {
 // chargement, puisqu'il y a déjà quelque chose à l'écran.
 //
 // ⚠️ Un `onMounted` seul ne suffit pas : une page qu'on laisse ouverte n'est jamais remontée, et son
-// cache mémoire ressert indéfiniment la journée telle qu'elle était au chargement. Constaté le
-// 13/08/2026 : une visite ouverte depuis la veille au soir continuait d'afficher un lundi 17 sans
-// UGC Les Halles, alors que la salle était revenue chez Allociné entre-temps. Le cache serveur avait
-// bien expiré (25 h pour un TTL de 3 h) — c'est le cache de la visite qui masquait la mise à jour.
-// Relire à chaque retour d'onglet serait exagéré : un alt-tab de dix secondes déclencherait une
-// résolution et une lecture de cache pour rien, et ferait clignoter l'état de chargement. On ne
-// relit que si l'écran a vieilli — un changement de date, lui, passe toujours.
+// cache mémoire ressert indéfiniment la journée telle qu'elle était au chargement (constaté le
+// 13/08/2026 sur une visite de la veille, cache serveur pourtant expiré). Relire à chaque retour
+// d'onglet serait exagéré — un alt-tab de dix secondes ferait clignoter l'état de chargement pour
+// rien. On ne relit que si l'écran a vieilli ; un changement de date, lui, passe toujours.
 const RELOAD_AFTER_MS = 5 * 60 * 1000
 
 const onVisible = async () => {

@@ -107,7 +107,7 @@ export function useMovieCalendar() {
         }
 
         // `release_date` local = date effective (triable) ; `_tmdbReleaseDate` conserve
-        // la date TMDB stockée en base (pour la revérif Step 6 et le retrait d'un override manuel).
+        // la date TMDB stockée en base (pour `recheckUpcomingCinema` et le retrait d'un override).
         const withDates = data.map(movie => ({
             ...movie,
             _tmdbReleaseDate: movie.release_date || null,
@@ -139,8 +139,6 @@ export function useMovieCalendar() {
             try {
                 const meta = await $fetch(`/api/movies/${movie.movie_id}/full`);
                 const fresh = meta.release_date || null;
-                // Films à venir : titre/poster peuvent encore bouger côté TMDB → on les rafraîchit
-                // aussi (l'appel /full les renvoie déjà, coût nul).
                 const patch = {};
                 if (fresh !== (movie._tmdbReleaseDate || null)) patch.release_date = fresh;
                 if (meta.title && meta.title !== movie.title) patch.title = meta.title;
@@ -347,10 +345,9 @@ export function useMovieCalendar() {
         sortMovies(movies.value);
     }
 
-    // Bornes de lecture des événements datés. ⚠️ Lues à chaque réévaluation et non capturées : elles
-    // suivent donc le jour et la semaine. Elles ne bougent pas d'elles-mêmes si la liste ne change pas
-    // — même limite documentée que `today` dans `useSeances`, et de conséquence plus faible ici (une
-    // rubrique du rail, pas une date affichée dans une grille d'horaires).
+    // Bornes de lecture des événements datés. ⚠️ Lues à chaque réévaluation et non capturées, pour
+    // suivre le jour et la semaine — mais elles ne bougent pas d'elles-mêmes tant que la liste ne
+    // change pas.
     const eventBounds = () => ({ freshSince: lastWednesday(), today: isoDay(0) })
 
     // Rubrique « Événement à venir » du rail : les films qui ont une séance événement devant eux —
@@ -384,16 +381,11 @@ export function useMovieCalendar() {
             .sort((a, b) => new Date(a.release_date) - new Date(b.release_date))
     })
 
-    // Périmètre de la vue Séances : **les deux rubriques du rail réunies**.
+    // Périmètre de la vue Séances : **les deux rubriques du rail réunies**, celles à événement devant.
     //
     // ⚠️ Et surtout pas `cinemaNow` seul, qui retire les films pris en charge par « Événement à venir »
-    // pour ne pas les afficher deux fois. S'en servir comme périmètre de données avait une conséquence
-    // qu'on ne voyait qu'au clic : le film ouvrait `/seances?film=…`, n'y était pas trouvé, donc ni
-    // cadré ni chargé. Le cas d'une avant-première est pire encore — le film n'est pas `inTheaters`,
-    // il n'a jamais été dans `cinemaNow`.
-    //
-    // Les films à événement passent devant : ils dictent l'ordre des cartes, et c'est bien eux qu'on
-    // vient voir.
+    // pour ne pas les afficher deux fois : le film ouvrait alors `/seances?film=…` sans y être trouvé,
+    // donc ni cadré ni chargé.
     const seanceFilms = computed(() => {
         const out = [...eventSoon.value]
         const seen = new Set(out.map(m => m.id))

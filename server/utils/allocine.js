@@ -1,6 +1,5 @@
-// Client Allociné — source unique de vérité du format, sur le modèle de `tmdbDates.js`.
-// Tout ce que le reste du projet sait d'Allociné est confiné ici : si la route interne change de
-// nom ou de forme, c'est le seul fichier à re-diagnostiquer.
+// Client Allociné — source unique de vérité du format. Si la route interne change de nom ou de
+// forme, c'est le seul fichier à re-diagnostiquer.
 //
 // Deux endpoints, deux usages :
 //   - `/_/autocomplete/{titre}`  → recherche interne, résout un titre TMDB en identifiant Allociné.
@@ -149,22 +148,16 @@ export const fetchShowtimesPage = (allocineId, date, page = 1) =>
 const fetchTheaterPage = (code, date, page = 1) =>
     fetchJson(`${ALLOCINE_ORIGIN}/_/showtimes/theater-${code}/d-${date}/p-${page}/`, 'Séances de salle');
 
-// Séances événement d'une **salle** pour une date, indexées par `internalId`.
-//
-// Raison d'être : c'est le seul endpoint qui porte les champs d'événement (cf. l'encadré « Deux
-// endpoints, deux jeux de champs »). On l'interroge en second, pour les seules salles qui jouent des
-// films de la liste, et on rapproche séance par séance — l'endpoint film reste la source des horaires,
-// celui-ci ne fait qu'ajouter une qualification.
+// Séances événement d'une **salle** pour une date, indexées par `internalId`. Seul endpoint à porter
+// les champs d'événement (cf. l'encadré « Deux endpoints, deux jeux de champs »).
 //
 // ⚠️⚠️ CET ENDPOINT EST CREUX — mesuré : `theater-C0159` rendait 1 jour sur 7 là où l'endpoint film en
 // rendait 6. Une réponse vide veut le plus souvent dire « rien à dire de cette journée », pas « aucun
 // événement ». D'où `seen` : les `internalId` réellement observés, seule preuve permettant de se
-// prononcer. L'appelant ne réécrit que ceux-là — on résout **par séance** et non par salle, une salle à
-// moitié rendue étant le cas courant.
+// prononcer. On résout **par séance** et non par salle, une salle à moitié rendue étant le cas courant.
 //
-// `events` ne porte que ce qui a au moins un libellé (une salle rend ~50 séances/jour pour 0 à 1
-// événement) ; `seen` suffit à distinguer « vue sans événement » de « pas vue ». `previews` voyage à
-// part parce que c'est la seule qualification qui décide quelque chose en aval (`isCardEligible`).
+// `previews` voyage à part parce que c'est la seule qualification qui décide quelque chose en aval
+// (`isCardEligible`).
 //
 // N'échoue jamais : `ok: false` = « on n'a pas joint Allociné », sans quoi la route de cache graverait
 // une panne réseau comme une journée sans événement.
@@ -219,11 +212,8 @@ export const fetchTheaterEvents = async (code, date) => {
 // Première URL de billetterie exploitable. Les `relay.mvtx.us` (provider `relay`) sont des
 // redirections internes Allociné, pas la billetterie de l'exploitant : on veut le lien direct.
 //
-// ⚠️ Le schéma est validé **ici**, à l'entrée, et pas au moment de rendre le lien : cette URL vient
-// d'un tiers et finit dans un `href`. Vue ne filtre pas les schémas — un `javascript:` dans le
-// payload s'exécuterait au clic. Le projet a déjà ce réflexe sur les chemins d'affiche TMDB
-// (`posterUrl` dans `app/utils/movieHelpers.js`) ; on le tient au même endroit que le reste de
-// l'interprétation du format.
+// ⚠️ Le schéma est validé **ici**, à l'entrée : cette URL vient d'un tiers et finit dans un `href`.
+// Vue ne filtre pas les schémas — un `javascript:` dans le payload s'exécuterait au clic.
 const SAFE_SCHEMES = ['http:', 'https:'];
 
 const safeUrl = (value) => {
@@ -256,21 +246,14 @@ const pickBooking = (ticketing) => {
 //
 // ⚠️⚠️ DEUX ENDPOINTS, DEUX JEUX DE CHAMPS — le piège central de ce fichier. À `internalId` égal, le
 // même `Showtime` ne porte les champs d'événement que sur la route **par salle** ; la route par film,
-// celle qui sert les horaires, ne les porte pas. Conséquence pratique, la seule à retenir ici :
-// appelée depuis `normalizeShowtime` (chemin film), cette fonction rend `[]` ; ce sont
-// `fetchTheaterEvents` et la seconde passe qui posent les libellés, greffés ensuite par
-// `graftEvents`.
+// celle qui sert les horaires, ne les porte pas. Conséquence : appelée depuis `normalizeShowtime`
+// (chemin film), cette fonction rend `[]` ; ce sont `fetchTheaterEvents` et la seconde passe qui
+// posent les libellés. Mesures et coût : `_ressources/README-seances.md`.
 //
-// Le tableau comparatif, la mesure qui l'établit et ce que la seconde passe coûte :
-// `_ressources/README-seances.md`, « Pourquoi une seconde passe par salle — et pourquoi elle est
-// partielle ». Le détail n'est pas recopié ici : il a déjà vieilli une fois dans ce commentaire, qui
-// annonçait la passe par salle comme une éventualité future alors qu'elle existait.
-//
-// Table volontairement explicite : c'est le seul endroit du projet où un tag Allociné devient du
-// texte affiché à l'utilisateur. Elle reste **côté serveur** — l'app ne compare jamais ces chaînes,
-// elle ne fait que les afficher. Ce qu'elle a besoin de *décider* (une avant-première n'est pas
-// couverte par la carte UGC) passe par le booléen `isPreview`, pas par le libellé : un test métier
-// adossé à un texte d'interface se casse au premier reformulage, et en silence.
+// La table reste **côté serveur** — l'app ne compare jamais ces chaînes, elle ne fait que les
+// afficher. Ce qu'elle a besoin de *décider* (une avant-première n'est pas couverte par la carte UGC)
+// passe par le booléen `isPreview` : un test métier adossé à un texte d'interface se casse au premier
+// reformulage, et en silence.
 const EVENT_LABELS = {
     'Showtime.Event.Preview': 'Avant-première',
     'Showtime.Event.OnlySession': 'Séance unique',
@@ -360,10 +343,9 @@ const normalizeShowtime = (showtime) => {
 
     return {
         startsAt,
-        // Identifiant de la séance chez Allociné. C'est la **clé de jointure** avec la passe par
-        // salle : le même `Showtime` porte le même `internalId` sur les deux endpoints (vérifié le
-        // 14/08/2026 — 80248550361 des deux côtés), alors que rien d'autre ne les rapprocherait de
-        // façon sûre (une salle peut programmer deux séances à la même heure dans deux salles).
+        // **Clé de jointure** avec la passe par salle : identique sur les deux endpoints (vérifié le
+        // 14/08/2026), alors que rien d'autre ne les rapprocherait de façon sûre (une salle peut
+        // programmer deux séances à la même heure dans deux salles).
         internalId: showtime.internalId ?? null,
         // ⚠️ `startsAt` est en heure locale **sans offset** (`2026-08-14T10:00:00`). Un `new Date()`
         // le réinterpréterait selon le fuseau du serveur : on découpe la chaîne, point.
@@ -373,13 +355,11 @@ const normalizeShowtime = (showtime) => {
         version: showtime.diffusionVersion === 'ORIGINAL' ? 'VO' : 'VF',
         subtitled: tags.includes('Localization.Subtitle.French'),
         accessible: tags.includes('Showtime.Accessibility.Accessible'),
-        // ⚠️ `isPreview` est absent des séances rendues par `/_/showtimes/movie-…` — non pas « pas
-        // encore vu à `true` », mais **pas dans la réponse du tout** (cf. l'encadré « Deux endpoints,
-        // deux jeux de champs » plus haut). On le lit s'il est là, avec un repli sur les tags, et on
-        // considère « pas une avant-première » par défaut plutôt que d'exclure à tort.
+        // ⚠️ `isPreview` est **absent de la réponse** sur ce chemin (cf. l'encadré plus haut). On le
+        // lit s'il est là, avec un repli sur les tags, et on considère « pas une avant-première » par
+        // défaut plutôt que d'exclure à tort.
         isPreview: showtime.isPreview === true || tags.some(t => /preview|avantpremiere/i.test(String(t).replace(/[^a-z]/gi, ''))),
-        // Libellés d'événement, résolus **ici et une seule fois** : le front n'a jamais à connaître
-        // le vocabulaire de tags d'Allociné, il ne lit que du texte prêt à afficher.
+        // Résolus ici : le front ne connaît jamais le vocabulaire de tags d'Allociné.
         events: showtimeEventLabels(showtime, tags),
         projection: Array.isArray(showtime.projection) ? showtime.projection : [],
         booking: pickBooking(showtime.data?.ticketing),
