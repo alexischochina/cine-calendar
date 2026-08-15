@@ -48,14 +48,6 @@ const open = useState('cinemaNowBandOpen', () => true);
 
 const MSHORT = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUN', 'JUL', 'AOÛ', 'SEP', 'OCT', 'NOV', 'DÉC'];
 
-// Dates découpées à la main plutôt que passées à `new Date(chaîne)` : une chaîne `YYYY-MM-DD` est
-// interprétée en UTC, ce qui décale d'un jour sur les fuseaux à offset négatif. Pattern déjà banni
-// ailleurs dans le projet (cf. `parseYMD` dans `useYearStats.js`).
-const parseYMD = (value) => {
-    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
-    return parts ? new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])) : null;
-};
-
 const dateShort = (dateStr) => {
     const d = dateStr ? new Date(dateStr) : null;
     if (!d || isNaN(d)) return 'Sans date';
@@ -64,12 +56,13 @@ const dateShort = (dateStr) => {
 
 // « auj. », « demain », puis « lun. 17 août ». Les deux premiers portent l'urgence bien mieux qu'une
 // date à décoder — c'est l'information qui décide si on y va ce soir.
+// `parseLocalDate` / `daysBetween` : `app/utils/localDate.js` — jamais `new Date('2026-08-17')`, qui
+// se lit en UTC et retombe la veille sur un fuseau à offset négatif.
 const eventDayLabel = (date) => {
-    const local = parseYMD(date);
+    const local = parseLocalDate(date);
     if (!local) return '';
 
-    const today = parseYMD(isoDay(0));
-    const days = Math.round((local - today) / 86400000);
+    const days = daysBetween(isoDay(0), date);
     if (days <= 0) return 'auj.';
     if (days === 1) return 'demain';
 
@@ -192,6 +185,9 @@ const itemLabel = (movie) => {
 <style lang="scss" scoped>
 .cinema-now {
     .header {
+        // Les deux en-têtes sont des boutons quand ils mènent quelque part : le repli de la bande
+        // mobile, et « Tout voir » de la rubrique événement. Sans effet sur la variante `<div>`.
+        @include focusRing;
         display: flex;
         align-items: center;
         gap: .7rem;
@@ -266,6 +262,7 @@ const itemLabel = (movie) => {
     }
 
     .item {
+        @include focusRing($offset: -2px);
         display: flex;
         position: relative;
         cursor: pointer;

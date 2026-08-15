@@ -86,14 +86,7 @@ const pickKind = (value) => {
     transition: border-color .18s ease, color .18s ease;
 }
 
-// Le reset du projet coupe les contours (`html:not(.a11y) * { outline: none }`). Ces règles-ci sont
-// plus spécifiques, donc le focus clavier reste visible sur les contrôles de la barre.
-@mixin ring {
-    &:focus-visible {
-        outline: 2px solid $color-primary-light;
-        outline-offset: 2px;
-    }
-}
+// `focusRing` : mixin partagé de `assets/styles/_a11y.scss`, injecté partout.
 
 .events-filters {
     display: flex;
@@ -112,7 +105,7 @@ const pickKind = (value) => {
         // Rose et non violet, comme dans la vue Séances : le violet dit « événement » dans toute
         // l'app, il ne peut pas dire aussi « option active » sur une page où tout est un événement.
         > .opt {
-            @include ring;
+            @include focusRing;
             padding: .8rem 1.2rem;
             border-radius: .8rem;
             color: $color-text-muted;
@@ -133,7 +126,7 @@ const pickKind = (value) => {
 
     > .trigger {
         @include pill;
-        @include ring;
+        @include focusRing;
         gap: .8rem;
 
         > .lbl > strong { color: $color-text; font-weight: $semi-bold; }
@@ -166,7 +159,7 @@ const pickKind = (value) => {
         box-shadow: 0 18px 40px rgba(0, 0, 0, .5);
 
         > .item {
-            @include ring;
+            @include focusRing;
             display: flex;
             align-items: baseline;
             justify-content: space-between;

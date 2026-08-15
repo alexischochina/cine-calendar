@@ -85,22 +85,13 @@ const hint = computed(() => {
 </template>
 
 <style lang="scss" scoped>
-// Contenu lu par les lecteurs d'écran, jamais affiché. Recette standard : hors flux, 1 px, découpé —
-// surtout pas `display: none` ni `visibility: hidden`, qui le retireraient aussi de l'arbre
-// d'accessibilité et le rendraient donc muet pour tout le monde.
-.sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
-}
+// Contenu lu par les lecteurs d'écran (cf. `srOnly` dans `assets/styles/_a11y.scss`).
+.sr { @include srOnly; }
 
+// L'anneau ne se voit que sur la variante `<a>` — un `<span>` n'est pas focusable, la règle y est
+// simplement sans effet.
 .seances-timechip {
+    @include focusRing;
     display: inline-flex;
     flex-direction: column;
     align-items: flex-start;

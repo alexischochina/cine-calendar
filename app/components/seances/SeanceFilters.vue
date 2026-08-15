@@ -249,16 +249,10 @@ onBeforeUnmount(() => {
     transition: border-color .18s ease, color .18s ease;
 }
 
-// Le reset du projet coupe les contours (`html:not(.a11y) * { outline: none }`), l'accessibilité étant
-// derrière une classe opt-in. Acceptable sur une liste ; intenable dans une modale à piège à focus :
-// le focus tourne en rond dans une boîte qu'on ne voit pas. Ces règles-là sont plus spécifiques que
-// le reset, donc le focus clavier reste visible sans dépendre de `html.a11y`.
-@mixin ring {
-    &:focus-visible {
-        outline: 2px solid $color-primary-light;
-        outline-offset: 2px;
-    }
-}
+// `focusRing` vient de `assets/styles/_a11y.scss`, injecté partout : la barre de filtres a été le
+// premier endroit à en avoir besoin (une modale à piège à focus est intenable sans repère visible),
+// mais le manque valait pour toute la vue — c'est désormais un mixin partagé et non une recette
+// locale.
 
 .seances-filters {
     display: flex;
@@ -275,7 +269,7 @@ onBeforeUnmount(() => {
         padding: .3rem;
 
         > .opt {
-            @include ring;
+            @include focusRing;
             padding: .8rem 1.2rem;
             border-radius: .8rem;
             color: $color-text-muted;
@@ -292,7 +286,7 @@ onBeforeUnmount(() => {
 
     > .card {
         @include pill;
-        @include ring;
+        @include focusRing;
         gap: .7rem;
 
         > .dot {
@@ -318,7 +312,7 @@ onBeforeUnmount(() => {
 
     > .trigger {
         @include pill;
-        @include ring;
+        @include focusRing;
         gap: .8rem;
 
         > .lbl > strong { color: $color-text; font-weight: $semi-bold; }
@@ -351,7 +345,7 @@ onBeforeUnmount(() => {
         box-shadow: 0 18px 40px rgba(0, 0, 0, .5);
 
         > .item {
-            @include ring;
+            @include focusRing;
             display: flex;
             align-items: baseline;
             justify-content: space-between;
@@ -424,7 +418,7 @@ onBeforeUnmount(() => {
         margin-top: 2.4rem;
 
         > .btn {
-            @include ring;
+            @include focusRing;
             flex: 1;
             padding: 1rem 1.6rem;
             background: transparent;

@@ -39,21 +39,16 @@ const plural = (n, word) => `${n} ${word}${n > 1 ? 's' : ''}`;
 // et client.
 const panelId = computed(() => `events-panel-${props.bucket.key}`);
 
-// Dates découpées à la main plutôt que passées à `new Date(chaîne)` : une chaîne `YYYY-MM-DD` est
-// interprétée en UTC, ce qui décale d'un jour sur les fuseaux à offset négatif. Pattern déjà banni
-// ailleurs dans le projet (cf. `parseYMD` dans `useYearStats.js`).
-const parseYMD = (value) => {
-    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''));
-    return parts ? new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])) : null;
-};
-
 // « Aujourd'hui », « Demain », puis « lundi 17 août ». Les deux premiers portent l'urgence bien mieux
 // qu'une date à décoder — c'est l'information qui décide si on y va ce soir.
+//
+// `parseLocalDate` / `daysBetween` : `app/utils/localDate.js` — jamais `new Date('2026-08-17')`, qui
+// se lit en UTC et retombe la veille sur un fuseau à offset négatif.
 const dayLabel = (date) => {
-    const local = parseYMD(date);
+    const local = parseLocalDate(date);
     if (!local) return '?';
 
-    const offset = Math.round((local - parseYMD(isoDay(0))) / 86400000);
+    const offset = daysBetween(isoDay(0), date);
     if (offset <= 0) return "Aujourd'hui";
     if (offset === 1) return 'Demain';
 
@@ -100,7 +95,7 @@ const eventHint = computed(() =>
 // Sortie du film, pour situer une avant-première (« sortie le 19 août »). C'est ce qui explique
 // pourquoi la séance est un événement, et pourquoi elle ne se rattrape pas.
 const releaseLabel = (movie) => {
-    const local = parseYMD(movie.release_date);
+    const local = parseLocalDate(movie.release_date);
     if (!local) return null;
 
     const upcoming = movie.release_date > isoDay(0);
@@ -131,7 +126,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                         <!-- Le décompte est du texte visible ; les libellés partent dans le `title`
                              et dans un contenu lu, la place manquant pour les afficher tous ici.
                              Chaque ligne porte les siens, une fois la carte dépliée. -->
-                        <span class="events" role="note" :title="eventHint">
+                        <span class="events" :title="eventHint">
                             <Svg name="star" aria-hidden="true" />
                             {{ eventCountLabel(rows.length) }}<span class="sr">&nbsp;: {{ eventHint }}.</span>
                         </span>
@@ -197,19 +192,8 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
 </template>
 
 <style lang="scss" scoped>
-// Contenu lu par les lecteurs d'écran, jamais affiché. Recette standard : hors flux, 1 px, découpé —
-// surtout pas `display: none`, qui le retirerait aussi de l'arbre d'accessibilité.
-.sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
-}
+// Contenu lu par les lecteurs d'écran (cf. `srOnly` dans `assets/styles/_a11y.scss`).
+.sr { @include srOnly; }
 
 // Pastille « N ÉVÉNEMENTS » de l'en-tête, à l'identique des cartes de séances.
 @mixin eventTag {
@@ -244,6 +228,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
         align-items: center;
 
         > .toggle {
+            @include focusRing($offset: -2px);
             display: flex;
             align-items: center;
             gap: 1.4rem;
@@ -345,6 +330,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                     // vient chercher. Le gabarit, lui, est celui du nom de salle des cartes de
                     // séances — même graisse, même corps, même interligne.
                     > .name {
+                        @include focusRing;
                         display: block;
                         padding: 0;
                         text-align: left;
@@ -381,6 +367,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                 min-width: 0;
 
                 > .name {
+                    @include focusRing;
                     display: block;
                     padding: 0;
                     text-align: left;
@@ -428,6 +415,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                         // Une pastille cliquable le dit : sans ça, seule la moitié des pastilles mène
                         // quelque part et rien ne distingue laquelle.
                         &.-link {
+                            @include focusRing;
                             text-decoration: none;
 
                             @media (hover: hover) {

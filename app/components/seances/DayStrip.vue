@@ -65,6 +65,7 @@ const dayLabel = (day) => {
         @include stripScroll(2.4rem, .8rem);
 
         > .cell {
+            @include focusRing;
             width: 6rem;
             padding: 1rem 0;
             background: $color-surface-1;
@@ -114,6 +115,8 @@ const dayLabel = (day) => {
         display: flex;
         flex: none;
         @include stripArrows();
+
+        > .arrow { @include focusRing; }
     }
 }
 

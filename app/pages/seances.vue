@@ -70,25 +70,21 @@ watch([focusFilm, buckets], ([focus, list]) => {
 // (la clé `f12` n'existe pas côté « par cinéma »).
 watch(group, () => { openCard.value = null })
 
-// Dates découpées à la main plutôt que passées à `new Date(chaîne)` : une chaîne `YYYY-MM-DD` est
-// interprétée en UTC, ce qui décale d'un jour sur les fuseaux à offset négatif. Le projet a déjà
-// banni ce pattern (cf. `parseYMD` dans `useYearStats.js`).
+// `parseLocalDate` : `app/utils/localDate.js` — jamais `new Date('2026-08-17')`, qui se lit en UTC et
+// retombe la veille sur un fuseau à offset négatif.
 //
 // « 13 août » pour le signalement d'une salle absente…
 const silenceLabel = (date) => {
-    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date ?? '')
-    if (!parts) return '?'
-    const local = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]))
-    return new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(local)
+    const local = parseLocalDate(date)
+    return local ? new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(local) : '?'
 }
 
 // … et « vendredi 4 septembre » pour la prochaine séance.
 const nextDateLabel = computed(() => {
-    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(nextDate.value ?? '')
-    if (!parts) return null
-
-    const local = new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3]))
-    return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(local)
+    const local = parseLocalDate(nextDate.value)
+    return local
+        ? new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(local)
+        : null
 })
 
 // Âge du dernier chargement, pour ne pas relire à chaque retour d'onglet (cf. `onVisible`).
@@ -345,6 +341,7 @@ watch(focusKey, (now, before) => {
         }
 
         > .clear {
+            @include focusRing;
             flex: none;
             padding: .6rem 1.2rem;
             background: transparent;
@@ -371,6 +368,7 @@ watch(focusKey, (now, before) => {
         &.-event { color: $color-event-light; }
 
         > .link {
+            @include focusRing;
             padding: 0;
             background: none;
             border: 0;
@@ -421,6 +419,7 @@ watch(focusKey, (now, before) => {
         }
 
         > .action {
+            @include focusRing;
             margin-top: 1.6rem;
             padding: .8rem 1.6rem;
             background: $color-surface-1;
@@ -468,6 +467,7 @@ watch(focusKey, (now, before) => {
         font: $normal 1.15rem/1.4 $font-body;
 
         > .refresh {
+            @include focusRing;
             padding: .4rem .9rem;
             background: transparent;
             border: 1px solid $color-border-4;

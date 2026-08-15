@@ -76,7 +76,11 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
 
 // Le badge ne portait son explication que dans un `title` — invisible au clavier comme au doigt.
 // Le texte visible reste court (« non confirmé »), l'explication complète part dans un contenu
-// réservé aux lecteurs d'écran, et `role="note"` la rattache à la salle qu'elle qualifie.
+// réservé aux lecteurs d'écran, juste à côté du mot qu'elle qualifie.
+//
+// ⚠️ Pas de `role="note"` : ces marqueurs vivent **dans** le bouton de dépliage, et le contenu d'un
+// bouton est aplati en texte accessible par les lecteurs d'écran — le rôle de structure y est ignoré
+// au mieux, trompeur au pire. Le doublon `.sr` fait déjà tout le travail.
 </script>
 
 <template>
@@ -115,14 +119,14 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
                     <span class="title">
                         {{ title }}
                         <span v-if="mode === 'cinema' && bucket.cinema.unconfirmedSince" class="unconfirmed"
-                              role="note" :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
+                              :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
                     </span>
                     <span class="sub">
                         {{ subtitle }}
                         <!-- Le décompte est du texte visible ; les libellés partent dans le `title`
                              et dans un contenu lu, la place manquant pour les afficher tous ici.
                              Chaque chip porte le sien, une fois la carte dépliée. -->
-                        <span v-if="bucket.nbEvents" class="events" role="note" :title="eventHint">
+                        <span v-if="bucket.nbEvents" class="events" :title="eventHint">
                             <Svg name="star" aria-hidden="true" />
                             {{ eventCountLabel(bucket.nbEvents) }}<span class="sr">&nbsp;: {{ eventHint }}.</span>
                         </span>
@@ -152,7 +156,7 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
                             <span class="name">
                                 {{ entry.cinema.name }}
                                 <span v-if="entry.cinema.unconfirmedSince" class="unconfirmed"
-                                      role="note" :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
+                                      :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
                             </span>
                             <span class="meta">{{ placeLabel(entry.cinema) }}</span>
                         </span>
@@ -182,6 +186,7 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
 // L'icône est un contour ; l'état actif la **remplit** en plus de la colorer, si bien que le favori
 // se distingue à la forme et pas seulement à la couleur.
 @mixin favStar($size) {
+    @include focusRing;
     display: grid;
     place-items: center;
     width: $size + .8rem;
@@ -209,22 +214,8 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
     }
 }
 
-// Marqueur « non confirmé ». Ambre comme l'avertissement de fraîcheur de la page : c'est la même
-// famille d'information — ce qui est affiché mérite un coup d'œil sur la billetterie.
-// Contenu lu par les lecteurs d'écran, jamais affiché. Recette standard : hors flux, 1 px, découpé
-// — surtout pas `display: none` ni `visibility: hidden`, qui le retireraient aussi de l'arbre
-// d'accessibilité et le rendraient donc muet pour tout le monde.
-.sr {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
-    border: 0;
-}
+// Contenu lu par les lecteurs d'écran (cf. `srOnly` dans `assets/styles/_a11y.scss`).
+.sr { @include srOnly; }
 
 // Pastille « N ÉVÉNEMENTS » de l'en-tête. Ni pleine ni criarde : elle vit à côté d'un sous-titre gris
 // et doit attirer l'œil sans devenir le sujet de la carte — le sujet reste le film ou la salle.
@@ -266,6 +257,7 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
 // Épingle « itinéraire », jumelle de l'étoile : même gabarit, même cible tactile, même discrétion
 // au repos. Elle vire au rose plutôt qu'au jaune — c'est une sortie de l'app, pas une préférence.
 @mixin dirPin($size) {
+    @include focusRing;
     display: grid;
     place-items: center;
     width: $size + .8rem;
@@ -307,6 +299,7 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
         > .dir.-head { @include dirPin(1.6rem); }
 
         > .toggle {
+            @include focusRing($offset: -2px);
             display: flex;
             align-items: center;
             gap: 1.4rem;

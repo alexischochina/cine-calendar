@@ -180,6 +180,7 @@ onMounted(() => scan())
         }
 
         > .action {
+            @include focusRing($color: $color-event-light);
             margin-top: 1.6rem;
             padding: .8rem 1.6rem;
             background: $color-surface-1;
@@ -201,6 +202,7 @@ onMounted(() => scan())
         font: $normal 1.15rem/1.4 $font-body;
 
         > .refresh {
+            @include focusRing($color: $color-event-light);
             padding: .4rem .9rem;
             background: transparent;
             border: 1px solid $color-border-4;
