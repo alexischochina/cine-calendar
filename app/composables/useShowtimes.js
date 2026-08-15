@@ -1,12 +1,6 @@
-// Accès aux séances Allociné : résolution des identifiants et chargement d'une journée.
-//
-// Extrait de `useSeances` parce que deux appelants en ont besoin, et qu'ils doivent partager le
-// **même** cache L1 :
-//   - la vue Séances, qui affiche une journée choisie ;
-//   - le contrôle « en salle » (`useInTheatersSync`), qui interroge la journée du jour pour savoir
-//     quels films sont encore à l'affiche.
-// Le second préchauffe donc le premier (et réciproquement) : ouvrir la vue Séances après le
-// contrôle hebdomadaire ne redemande rien pour aujourd'hui.
+// Accès aux séances Allociné : résolution des identifiants et chargement d'une journée. Extrait de
+// `useSeances` parce que la vue et le contrôle « en salle » doivent partager le **même** cache L1 —
+// chacun préchauffe l'autre.
 //
 // Deux niveaux de cache :
 //   L1 — `useState` clé `allocineId:date`, portée visite.
@@ -26,15 +20,13 @@ const CACHE_BATCH = 50;
 // qu'au bout d'une semaine plutôt qu'à chaque ouverture de la page.
 const RESOLVE_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 
-// Chargements en vol, un par date. Atterrir directement sur `/seances` déclenche le chargement de
-// la journée **et** le contrôle « en salle » à quelques millisecondes d'intervalle : les deux
-// visent la même date, et aucun ne voit encore le L1 rempli par l'autre. En les chaînant, le second
-// ne demande que ce que le premier n'a pas rapporté, au lieu de sortir en double chez Allociné.
+// Chargements en vol, un par date. Atterrir sur `/seances` déclenche le chargement de la journée
+// **et** le contrôle « en salle » à quelques millisecondes d'intervalle, sur la même date : les
+// chaîner évite de sortir en double chez Allociné.
 //
-// ⚠️ Module-level, donc **partagé entre toutes les requêtes** dans un serveur Nitro. C'est sans
-// danger tant que la file ne sert que le client — mais rien ne l'imposerait, et une régression y
-// serait invisible : la promesse d'un visiteur chaînée à celle d'un autre. La garde `import.meta.
-// server` dans `loadShowtimes` rend la situation impossible plutôt que simplement improbable.
+// ⚠️ Module-level, donc partagé entre toutes les requêtes dans un serveur Nitro — la promesse d'un
+// visiteur chaînée à celle d'un autre. La garde `import.meta.server` rend le cas impossible plutôt
+// qu'improbable.
 const inFlightByDate = new Map();
 
 export function useShowtimes() {
@@ -96,16 +88,12 @@ export function useShowtimes() {
         });
     };
 
-    // Séances du jour, pour les seuls films résolus et pas déjà en cache L1.
+    // Séances du jour, pour les seuls films résolus et pas déjà en cache L1. Deux temps : lecture
+    // **groupée** du cache (1 requête pour tout le jour), puis rafraîchissement film par film de ce qui
+    // manque. Le cas courant se règle en un aller-retour ; le cas froid garde l'éventail côté client,
+    // où chaque appel reste court.
     //
-    // Deux temps volontairement séparés : une lecture **groupée** du cache (1 requête pour tout le
-    // jour), puis un rafraîchissement film par film pour ce qui manque seulement. Le cas courant
-    // — cache plein — se règle donc en un seul aller-retour au lieu d'un par film ; le cas froid
-    // garde l'éventail ici, où chaque appel reste court et indépendant plutôt que de sérialiser une
-    // journée entière dans une seule fonction serveur.
-    //
-    // Renvoie `{ requested, failures }` : c'est à l'appelant de décider ce qu'un échec veut dire
-    // chez lui (message d'erreur pour la vue, verdict suspendu pour le contrôle « en salle »).
+    // Renvoie `{ requested, failures }` — à l'appelant de décider ce qu'un échec veut dire chez lui.
     const loadShowtimes = (list, date, { force = false } = {}) => {
         // Côté serveur, on court-circuite la file : elle vit au niveau module et serait partagée
         // entre visiteurs (cf. `inFlightByDate`). Le rendu serveur n'appelle pas cette fonction
@@ -120,9 +108,16 @@ export function useShowtimes() {
 
         inFlightByDate.set(date, chained);
         // On ne retire que si personne ne s'est enchaîné derrière entre-temps.
-        chained.finally(() => {
-            if (inFlightByDate.get(date) === chained) inFlightByDate.delete(date);
-        });
+        //
+        // ⚠️ Le `catch` avant le `finally` n'est pas décoratif : `chained.finally(…)` rend une
+        // promesse **dérivée**, distincte de celle qu'on retourne. Si `chained` rejette, l'appelant
+        // traite bien la sienne, mais la dérivée n'a aucun consommateur — le navigateur remonte alors
+        // un `unhandledrejection` pour une erreur pourtant déjà gérée.
+        chained
+            .catch(() => {})
+            .finally(() => {
+                if (inFlightByDate.get(date) === chained) inFlightByDate.delete(date);
+            });
         return chained;
     };
 
@@ -202,10 +197,9 @@ export function useShowtimes() {
         );
     };
 
-    // Oublie une liste précise de films pour une date. Le contrôle « en salle » charge ~91 films
-    // pour n'en garder qu'une douzaine à l'écran : sans ce coup de balai, les ~80 autres resteraient
-    // en mémoire pour toute la visite (~6 Ko l'unité, ~0,5 Mo au total) alors que plus rien ne les
-    // lira. Le L2 les conserve, lui — c'est là qu'ils sont utiles.
+    // Oublie une liste précise de films pour une date. Le contrôle « en salle » charge ~91 films pour
+    // n'en garder qu'une douzaine : sans ce balai, ~0,5 Mo resteraient en mémoire pour la visite. Le L2
+    // les conserve, lui.
     const forget = (allocineIds, date) => {
         const drop = new Set(allocineIds.map(id => cacheKey(id, date)));
         if (!drop.size) return;

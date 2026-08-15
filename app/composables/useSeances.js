@@ -77,21 +77,17 @@ export function useSeances() {
 
     // --- chargement ---
 
-    // Fenêtre d'ouverture des ventes : c'est là que la grille d'un jour se remplit **pendant** la
-    // journée, et donc là qu'un cache, même récent, ment. Les exploitants mettent en vente à J-3 /
-    // J-4 et Allociné intègre par vagues — constaté deux fois le 13/08/2026 sur UGC Ciné Cité Les
-    // Halles au dimanche 16 (J+3), une fois sur une entrée de 9 h et une fois sur une entrée de
-    // 41 minutes. Aucun TTL défendable ne couvre ce cas : à 41 minutes, il faudrait rafraîchir en
-    // permanence tous les jours de la semaine pour rattraper trois d'entre eux.
+    // Fenêtre d'ouverture des ventes : les exploitants mettent en vente à J-3 / J-4 et Allociné intègre
+    // par vagues, si bien qu'un cache même récent ment (constaté sur une entrée de 41 minutes). Aucun
+    // TTL défendable ne couvre ce cas — d'où une relecture ciblée sur ces seules journées.
     const PUBLICATION_WINDOW = [2, 4];      // J+2 → J+4 (index dans `days`)
     const REVALIDATE_AFTER = 30 * 60 * 1000;
 
     // Le jour affiché mérite-t-il une seconde lecture en arrière-plan ?
-    const needsRevalidation = () => {
+    const needsRevalidation = (date) => {
         const [from, to] = PUBLICATION_WINDOW;
         if (dayIndex.value < from || dayIndex.value > to) return false;
 
-        const date = selectedDay.value.date;
         const stamps = films.value
             .map(m => payloadFor(m, date)?.fetchedAt)
             .filter(Boolean)
@@ -102,44 +98,57 @@ export function useSeances() {
     };
 
     const load = async ({ force = false } = {}) => {
+        // Capturée une fois : tout ce qui suit s'étale sur plusieurs allers-retours, et un clic sur
+        // un autre jour entre-temps ferait travailler la suite sur une date qui n'est plus celle du
+        // chargement en cours.
+        const date = selectedDay.value.date;
+
         loading.value = true;
         error.value = null;
         try {
             await Promise.all([loadCinemas(), resolveAllocineIds(films.value)]);
-            const { requested, failures } = await loadShowtimes(films.value, selectedDay.value.date, { force });
+            const { requested, failures } = await loadShowtimes(films.value, date, { force });
             // Un seul film en échec sur douze ne justifie pas d'effacer la page : on n'annonce
             // l'erreur que si le jour est intégralement perdu.
             if (failures && failures === requested) error.value = 'Impossible de récupérer les séances.';
+        } catch (e) {
+            // ⚠️ Sans ce `catch`, une exception inattendue laissait `error` à `null` et `loading` à
+            // `false` : la page tombait sur l'état « Aucune séance pour ces critères », c'est-à-dire
+            // le message qui accuse les filtres. C'est exactement le faux diagnostic que
+            // `useShowtimes` se donne du mal à éviter sur les échecs qu'il sait voir.
+            console.error('Chargement des séances échoué', e);
+            error.value = 'Impossible de récupérer les séances.';
         } finally {
             loading.value = false;
         }
 
-        // Seconde passe : qualifier les séances en séances événement, puis noter ce qu'on a trouvé sur
-        // les lignes `calendar` pour que le rail « Au ciné en ce moment » puisse les mettre en avant.
+        // --- suite en arrière-plan, en UNE seule chaîne ---------------------------------------
         //
-        // **Hors du `try` et sans `await`, volontairement.** La vue s'affiche dès que les horaires sont
-        // là ; les marqueurs apparaissent une fraction de seconde après, sans écran de chargement.
-        // L'ordre importe en revanche : `syncEvents` lit le L1 que `loadEvents` vient d'enrichir, d'où
-        // le chaînage plutôt que deux appels côte à côte.
+        // ⚠️ Ces deux étapes écrivent le **même** cache L1 : jamais en parallèle. Quand elles l'étaient,
+        // la revalidation réassignait les payloads sans les libellés que `graftEvents` venait d'y poser,
+        // et `syncEvents` — qui relit le L1 après un aller-retour réseau par film — écrivait alors un
+        // `calendar.events` **vidé** pour la journée. C'est l'appauvrissement silencieux que le reste de
+        // la vue s'interdit partout (`seen`, `carryOverMissing`, `carryOverOne`) : on revalide d'abord,
+        // on qualifie ensuite, sur des payloads qui ne bougeront plus.
         //
+        // Rien n'est attendu par l'appelant : la vue s'affiche dès que les horaires sont là. La
+        // revalidation existe parce que la grille d'un jour se remplit **pendant** la journée ; pas de
+        // boucle possible, la relecture réécrit `fetchedAt` et la condition retombe.
+        const revalidated = (!force && needsRevalidation(date))
+            ? loadShowtimes(films.value, date, { force: true })
+                .catch(e => console.error('Revalidation du jour échouée', e))
+            : Promise.resolve();
+
         // `films.value` et non `visibleFilms` : cadré sur un film, le rail continue de parler de tous.
         // C'est aussi ce qui fait que revenir de `/seances?film=…` ne perd pas les badges des autres.
-        loadEvents(films.value, selectedDay.value.date)
-            .then(() => syncEvents(films.value, [selectedDay.value.date]))
+        revalidated
+            .then(() => loadEvents(films.value, date))
+            .then(() => syncEvents(films.value, [date]))
             // Et, gratuitement : si la navigation a fini par charger les sept journées, un film dont
             // l'horizon entier est vide sort de l'affiche sans attendre le mercredi. Ne fait rien tant
             // que la preuve est incomplète — c'est une lecture du cache L1, pas une requête.
             .then(() => pruneEmptyHorizon(films.value, days.value.map(d => d.date)))
             .catch(e => console.error('Relevé des séances événement échoué', e));
-
-        // Puis, sans bloquer l'affichage : on montre le cache tout de suite, et on va vérifier
-        // derrière. La vue se complète toute seule si une salle a ouvert ses ventes entre-temps —
-        // c'est le seul moyen de ne pas dépendre d'un clic sur « Actualiser » pour être juste.
-        // Pas de boucle possible : la relecture réécrit `fetchedAt`, la condition retombe.
-        if (!force && needsRevalidation()) {
-            loadShowtimes(films.value, selectedDay.value.date, { force: true })
-                .catch(e => console.error('Revalidation du jour échouée', e));
-        }
     };
 
     // Réessai après échec réseau : on purge le L1 du jour pour forcer un nouvel appel (le L2
@@ -162,14 +171,11 @@ export function useSeances() {
         return true;
     };
 
-    // « Actualiser » : ressortir chez Allociné pour le jour affiché, quels que soient les deux
-    // caches. C'est la porte de sortie quand la vue et le site de la salle ne disent pas la même
-    // chose — les exploitants ouvrent leurs ventes en cours de journée, aucun TTL ne peut deviner
-    // quand. Geste explicite, donc jamais déclenché tout seul.
+    // « Actualiser » : ressortir chez Allociné quels que soient les deux caches. Porte de sortie quand
+    // la vue et le site de la salle divergent. Geste explicite, jamais automatique.
     //
     // Borné à un forçage par minute et par date : un clic coûte jusqu'à 14 sorties réseau, et le
-    // `disabled` pendant le chargement ne protège que du double-clic — pas de l'utilisateur qui
-    // reclique parce qu'il ne voit rien changer (le cas le plus probable, justement).
+    // `disabled` ne protège que du double-clic, pas de celui qui reclique faute de voir un changement.
     const FORCE_COOLDOWN_MS = 60 * 1000;
     const lastForcedAt = useState('seancesLastForced', () => ({}));
 
@@ -189,19 +195,12 @@ export function useSeances() {
         await load();
     };
 
-    // Cadré sur un film sans séance aujourd'hui : on avance jusqu'au premier jour qui en a. Arriver
-    // depuis « Au ciné en ce moment » sur un mur vide alors que le film joue samedi n'a aucun
-    // intérêt — l'information qu'on vient chercher est *quand*.
+    // Cadré sur un film sans séance aujourd'hui : on avance jusqu'au premier jour qui en a —
+    // l'information qu'on vient chercher est *quand*. Gratuit : `nextDate` est déjà dans le payload.
     //
-    // Le repérage ne coûte rien : `nextDate` est déjà dans le payload du jour courant, Allociné le
-    // livre justement quand il n'a rien à cette date. On saute donc directement au bon jour au lieu
-    // de sonder les sept.
-    //
-    // La boucle existe parce que ce `nextDate` est calculé sur Paris **et sa couronne** (cf.
-    // `PARIS_LOCALIZATION`) : il peut désigner un jour où le film ne joue qu'à Boulogne, donc vide
-    // une fois le filtre intra-muros passé. On repart alors du `nextDate` de ce jour-là. Bornée à
-    // trois sauts — au-delà, mieux vaut laisser l'utilisateur sur le message « prochaine séance
-    // le … » que d'enchaîner les chargements.
+    // ⚠️ La boucle existe parce que ce `nextDate` est calculé sur Paris **et sa couronne** : il peut
+    // désigner un jour où le film ne joue qu'à Boulogne, donc vide une fois le filtre intra-muros
+    // passé. Bornée à trois sauts.
     const MAX_HOPS = 3;
 
     const jumpToNextAvailableDay = async () => {
@@ -287,31 +286,23 @@ export function useSeances() {
     const nbSeances = computed(() => countShowtimes(filtered.value));
     const nbEvents = computed(() => countEvents(filtered.value));
 
-    // Ce que le pré-filtre carte masque, à filtres égaux par ailleurs. Sert à distinguer
-    // « il n'y a rien ce jour-là » de « c'est le filtre carte qui a tout mangé » — sans quoi
-    // l'écran vide se lit comme un bug plutôt que comme un filtre.
+    // Ce que le pré-filtre carte masque, à filtres égaux : distingue « rien ce jour-là » de « le filtre
+    // a tout mangé », sans quoi l'écran vide se lit comme un bug.
     const hiddenByCard = computed(() =>
         ugcOnly.value ? countMatching(entries.value, filters(false)) - nbSeances.value : 0
     );
 
-    // Même raisonnement pour la plage horaire : sans ce compte, une journée pleine mais hors créneau
-    // afficherait « aucune séance ce jour-là », suivi d'un « prochaine séance le … » franchement
-    // faux — il y en a une, c'est juste qu'on a demandé à ne pas la voir.
-    //
-    // La plage est **levée sur la base des filtres courants** (`...filters`) et non d'un objet
-    // reconstruit à la main : un filtre ajouté plus tard à `filters()` s'appliquera ici sans qu'on y
-    // repense, alors qu'un littéral l'aurait oublié en silence — et ce décompte serait devenu faux.
+    // Même raisonnement pour la plage horaire. ⚠️ Levée sur la base des filtres courants (`...filters`)
+    // et non d'un littéral : un filtre ajouté plus tard s'y appliquera sans qu'on y repense.
     const hiddenByTime = computed(() =>
         timeRange.value
             ? countMatching(entries.value, { ...filters(ugcOnly.value), range: null }) - nbSeances.value
             : 0
     );
 
-    // Séances événement que le pré-filtre carte masque. Cas presque systématique et non anecdotique :
-    // une avant-première n'est pas couverte par la carte UGC (cf. `isCardEligible`), et le pré-filtre
-    // est actif par défaut. Sans ce décompte, le badge « ÉVÉNEMENT » du rail enverrait sur une page où
-    // l'événement est introuvable, sans un mot pour l'expliquer — la promesse d'un côté, le silence de
-    // l'autre. On préfère le dire et proposer la porte de sortie.
+    // Séances événement masquées par le pré-filtre carte. Cas presque systématique : une avant-première
+    // n'est pas couverte par la carte, et le pré-filtre est actif par défaut. Sans ce décompte, le badge
+    // du rail enverrait sur une page où l'événement est introuvable, sans un mot.
     const hiddenEvents = computed(() =>
         ugcOnly.value ? countMatchingEvents(entries.value, filters(false)) - nbEvents.value : 0
     );
