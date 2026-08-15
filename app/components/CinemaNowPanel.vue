@@ -1,16 +1,16 @@
 <script setup>
 // Deux rubriques, dans cet ordre :
 //
-//   1. « Événement à venir » — films avec une séance événement devant eux (avant-première, séance
+//   1. « Événements à venir » — films avec une séance événement devant eux (avant-première, séance
 //      unique, label de programmation). ⚠️ Ces films ne sont pas forcément à l'affiche : une
 //      avant-première a lieu *avant* la sortie, donc le film n'est pas « en salle » (cf.
 //      `useUpcomingEvents`). C'est la rubrique qui porte l'urgence — une avant-première ne se
 //      rattrape pas, contrairement à un film qui restera trois semaines à l'affiche.
 //
-//      Elle ne montre que **le prochain** événement de chaque film, et l'annonce quand il y en a
-//      d'autres (« +2 autres dates »). 26,4 rem de large ne portent pas cinq lignes datées de façon
-//      lisible, et un rail qui essaie de tout dire ne dit plus rien : la liste complète vit sur
-//      `/evenements`, vers laquelle l'en-tête renvoie.
+//      Elle ne dit que **le film et le jour** de son prochain événement. 26,4 rem de large ne portent
+//      pas cinq lignes datées de façon lisible, et un rail qui essaie de tout dire ne dit plus rien :
+//      le type d'événement, la salle et les autres dates vivent sur `/evenements`, vers laquelle
+//      l'en-tête renvoie. Seul le badge de l'affiche garde trace du nombre de journées.
 //   2. « Au ciné en ce moment » — films `state === 'inTheaters'`, c'est-à-dire, depuis
 //      `useInTheatersSync`, ceux qui ont une séance à Paris dans les 7 jours qui viennent. Les films
 //      remontés en 1 en sont retirés pour ne pas se lire deux fois (cf. `cinemaNow`).
@@ -25,7 +25,7 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
-    // Films de la rubrique « Événement à venir », déjà triés par imminence par `eventSoon`.
+    // Films de la rubrique « Événements à venir », déjà triés par imminence par `eventSoon`.
     eventMovies: {
         type: Array,
         default: () => [],
@@ -69,42 +69,45 @@ const eventDayLabel = (date) => {
     return new Intl.DateTimeFormat('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' }).format(local);
 };
 
-// Prochain événement d'un film, tel que persisté sur sa ligne `calendar`. Le rail n'appelle rien : il
-// lit — la timeline ne sort pas sur le réseau, c'est la règle du projet.
-const nextEvent = (movie) => nextMovieEvent(movie, eventBounds());
-
-// Nombre de journées d'événement d'un film. C'est ce que compte le badge posé sur l'affiche : on
-// compte les **journées** et non les entrées, parce que trois salles le même soir restent une seule
-// occasion d'y aller — c'est aussi la granularité de la liste dépliée juste en dessous.
-const eventCount = (movie) => groupEventsByDay(movieEvents(movie, eventBounds())).length;
-
-// Journées d'événement au-delà de la première. Annoncées et non affichées : c'est ce qui évite de
-// laisser croire que le film n'a qu'une seule date (le défaut de la première version de ce rail).
-const otherDays = (movie) => Math.max(0, eventCount(movie) - 1);
-
-// « Avant-première · MK2 Bibliothèque ». La salle est là parce qu'une avant-première n'a lieu que dans
-// une seule salle : sans elle, l'information est incomplète au point d'être inutilisable.
-const eventLine = (movie) => {
-    const event = nextEvent(movie);
-    if (!event) return '';
-    return [event.labels.join(' · '), event.cinema].filter(Boolean).join(' · ');
-};
-
 const posterUrl = (path) => path ? `https://image.tmdb.org/t/p/w342${path}` : null;
 
 // ⚠️ L'item est un `<button>` porteur d'un `aria-label` : celui-ci **remplace** tout le texte interne
 // pour un lecteur d'écran. Tout ce que le badge dit visuellement doit donc vivre ici aussi — sinon
 // c'est visible et muet, exactement le défaut que le reste de la vue s'interdit.
-const itemLabel = (movie) => {
+//
+// D'où les autres dates, que seul le badge résume désormais — et ni le type ni la salle, que la carte
+// n'affiche plus : les annoncer décrirait une carte qui n'existe pas.
+const itemLabel = (movie, event, others) => {
     const base = movie.title ? `Voir les séances de ${movie.title}` : 'Voir les séances';
-    const event = nextEvent(movie);
     if (!event) return base;
 
-    const when = eventDayLabel(event.date);
-    const others = otherDays(movie);
-    return `${base} — ${event.labels.join(', ')} ${when}${event.cinema ? ` à ${event.cinema}` : ''}`
+    return `${base} — ${eventDayLabel(event.date)}`
         + (others ? `, et ${others} autre${others > 1 ? 's' : ''} date${others > 1 ? 's' : ''}` : '');
 };
+
+// Tout ce qu'une carte affiche, calculé **une fois par film** — et non par des fonctions appelées
+// depuis le template, où le compte de journées se refaisait trois fois par carte à chaque rendu. Un
+// `computed` suit `eventMovies`, ce qui est la bonne fréquence : ces lignes viennent de Supabase.
+//
+// Le rail ne sort pas sur le réseau, il lit ce que `useSeanceEvents` a persisté sur la ligne
+// `calendar` — la règle de la timeline. Les règles de lecture, elles, restent celles de
+// `app/utils/seanceEvents.js` : appelées, jamais recopiées, quitte à passer deux fois sur les
+// événements d'un film.
+const eventRows = computed(() => {
+    const bounds = eventBounds();
+
+    return props.eventMovies.map((movie) => {
+        const next = nextMovieEvent(movie, bounds);
+        // Les **journées** et non les entrées : trois salles le même soir restent une seule occasion
+        // d'y aller. C'est ce que compte le badge posé sur l'affiche.
+        const days = groupEventsByDay(movieEvents(movie, bounds)).length;
+        // Au-delà de la première : plus écrites sur la carte, mais annoncées au lecteur d'écran, sans
+        // quoi le film paraîtrait n'avoir qu'une seule date.
+        const others = Math.max(0, days - 1);
+
+        return { movie, days, date: next?.date ?? null, when: eventDayLabel(next?.date), label: itemLabel(movie, next, others) };
+    });
+});
 </script>
 
 <template>
@@ -114,39 +117,34 @@ const itemLabel = (movie) => {
              c'est la seule information du rail qui se perd si on la lit trop tard. -->
         <template v-if="eventMovies.length">
             <!-- L'en-tête est un bouton : la rubrique ne montre que le prochain événement par film,
-                 c'est donc elle qui doit ouvrir la liste complète. -->
+                 c'est donc elle qui doit ouvrir la liste complète. ⚠️ Le chevron est sa **seule** marque
+                 de clic ; un effet de survol n'en serait pas une sur `band`, qui est le tactile. -->
             <button class="header -event -clickable" type="button"
                     aria-label="Voir tous les événements de la semaine" @click="goToEvents()">
                 <span class="star" aria-hidden="true"><Svg name="star" /></span>
-                <span class="label">Événement à venir</span>
-                <span class="count">{{ eventMovies.length }}</span>
-                <span class="spacer" />
-                <span class="all" aria-hidden="true">Tout voir</span>
+                <span class="label">Événements à venir</span>
+                <span class="go" aria-hidden="true"><Svg name="chevron" /></span>
             </button>
 
             <div class="list -events" :class="{ '-hidden': variant === 'band' && !open }">
                 <!-- La date part avec le clic : la carte annonce « dim. 16 août », la vue Séances doit
                      s'ouvrir sur ce jour-là et pas sur aujourd'hui. -->
-                <button v-for="m in eventMovies" :key="`ev-${m.id}`" class="item -event" type="button"
-                        :aria-label="itemLabel(m)"
-                        @click="emits('select-movie', m.movie_id, nextEvent(m)?.date ?? null)">
-                    <NuxtImg v-if="posterUrl(m.poster_path)" :src="posterUrl(m.poster_path)"
-                             :alt="m.title ? `Affiche du film ${m.title}` : ''" class="poster" loading="lazy" />
+                <button v-for="row in eventRows" :key="`ev-${row.movie.id}`" class="item -event" type="button"
+                        :aria-label="row.label"
+                        @click="emits('select-movie', row.movie.movie_id, row.date)">
+                    <NuxtImg v-if="posterUrl(row.movie.poster_path)" :src="posterUrl(row.movie.poster_path)"
+                             :alt="row.movie.title ? `Affiche du film ${row.movie.title}` : ''" class="poster" loading="lazy" />
                     <span v-else class="poster -placeholder" />
                     <!-- Étoile + compteur sur l'affiche. Décoratif au sens strict — `itemLabel` dit
                          déjà tout ce que le badge résume — d'où `aria-hidden` : le lire donnerait
                          « 3 » sans sujet, juste après la phrase qui l'explique. -->
-                    <span v-if="eventCount(m)" class="badge" aria-hidden="true">
-                        <Svg name="star" />{{ eventCount(m) }}
+                    <span v-if="row.days" class="badge" aria-hidden="true">
+                        <Svg name="star" />{{ row.days }}
                     </span>
                     <span class="infos">
-                        <span class="title">{{ m.title }}</span>
+                        <span class="title">{{ row.movie.title }}</span>
                         <!-- Le jour d'abord : c'est lui qui décide s'il faut y aller ce soir. -->
-                        <span class="when">{{ eventDayLabel(nextEvent(m)?.date) }}</span>
-                        <span class="what">{{ eventLine(m) }}</span>
-                        <span v-if="otherDays(m)" class="more">
-                            +{{ otherDays(m) }} autre{{ otherDays(m) > 1 ? 's' : '' }} date{{ otherDays(m) > 1 ? 's' : '' }}
-                        </span>
+                        <span class="when">{{ row.when }}</span>
                     </span>
                 </button>
             </div>
@@ -248,15 +246,22 @@ const itemLabel = (movie) => {
 
             &.-clickable { cursor: pointer; }
 
-            > .all {
+            // Couché vers la droite comme celui du repli quand il est fermé : dans cette app, un
+            // chevron horizontal veut dire « ça continue par là ».
+            > .go {
+                display: grid;
+                place-items: center;
                 flex: none;
                 color: $color-text-quiet;
-                font: $semi-bold 1.05rem/1 $font-body;
-                text-decoration: underline;
+                transform: rotate(-90deg);
+                transition: color .18s ease;
+
+                > :deep(svg) { width: 1.4rem; height: 1.4rem; }
             }
 
             @media (hover: hover) {
-                &.-clickable:hover > .all { color: $color-event-light; }
+                &.-clickable:hover > .label { color: $color-text; }
+                &.-clickable:hover > .go { color: $color-event-light; }
             }
         }
     }
@@ -299,20 +304,6 @@ const itemLabel = (movie) => {
             font: $bold 1.1rem/1 $font-body;
             letter-spacing: .04rem;
             text-transform: uppercase;
-        }
-
-        .what {
-            display: block;
-            margin-top: .2rem;
-            color: $color-text-muted;
-            font: $normal 1.05rem/1.3 $font-body;
-        }
-
-        .more {
-            display: block;
-            margin-top: .3rem;
-            color: $color-event-light;
-            font: $semi-bold 1rem/1 $font-body;
         }
 
         // Badge d'affiche : violet plein, en haut à gauche. Calé sur `.item` (et non sur l'affiche,
@@ -430,11 +421,6 @@ const itemLabel = (movie) => {
 
             .date { font-size: 1rem; }
             .when { font-size: 1rem; }
-
-            // Sur 8,6 rem de large, le libellé complet ne tient pas : le jour suffit, le reste est dans
-            // le nom accessible et à un clic dans la vue Séances.
-            .what { display: none; }
-            .more { font-size: .95rem; }
         }
     }
 }
