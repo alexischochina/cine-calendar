@@ -20,7 +20,7 @@
 // (cf. README, « Résolution aveugle à l'art et essai »). À relancer quelques jours de suite avant
 // de s'engager.
 
-import { isoDay, SEANCES_HORIZON_DAYS } from '../shared/utils/cineWeek.js';
+import { isoDay, SEANCES_HORIZON_DAYS } from '../../shared/utils/cineWeek.js';
 
 const UA = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
 const PARIS = 115755;

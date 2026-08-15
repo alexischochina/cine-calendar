@@ -726,7 +726,7 @@ server/utils/promisePool.js        copie serveur du pool de concurrence
 
 scripts/test-seances-rules.mjs     70 tests des règles pures  →  npm test
 scripts/check-seances.mjs          contrôle de santé          →  npm run check:seances
-scripts/spike-cinefil.mjs          mesure de la seconde source (cf. plus bas)
+scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ```
 
 ### Les règles pures sont testées
@@ -864,7 +864,7 @@ des deux n'est un après-midi de travail.
 ### Spike Cinéfil (13/08/2026) — la piste tient, et le problème est plus large que prévu
 
 ```bash
-node scripts/spike-cinefil.mjs
+node scripts/spikes/cinefil.mjs
 ```
 
 Protocole : deux salles saines (témoins, qui valident le parseur) et la salle en panne (qui mesure
@@ -906,6 +906,67 @@ Reste aussi à régler le **rapprochement des titres** : 83 % seulement sur le t
 deux sources disent la même chose. Un slug (`la-bataille-de-gaulle-lage-de-fer`) et un titre rédigé
 (« La Bataille de Gaulle : L'Âge de fer ») ne se recoupent pas de façon fiable — il faudra un
 mapping par identifiant, pas par chaîne.
+
+### Canari paris-cine.info (15/08/2026) — le verrou du spike Cinéfil saute, le gain n'est pas où on croyait
+
+```bash
+node scripts/spikes/pci.mjs                    # tout (~2 min)
+node scripts/spikes/pci.mjs --contract         # 2 requêtes — à relancer chaque jour
+node scripts/spikes/pci.mjs --coverage --films=6
+```
+
+Lecture seule, aucune écriture, rien de branché. Successeur du spike Cinéfil, qui butait sur le
+rapprochement des titres (83 % : « il faudra un mapping par identifiant, pas par chaîne »).
+
+⚠️ **Ce mapping existe.** Le site est du PHP nu servant du JSON à jQuery / FullCalendar / DataTables —
+c'est sa page « technologies » qui a mis sur la piste. Deux endpoints en GET, sans session ni jeton
+(l'authentification Google n'y sert qu'aux favoris) :
+
+| endpoint | ce qu'il rend |
+|---|---|
+| `get_movies.php` | l'affiche parisienne — **`id` est l'identifiant Allociné** (188280 → *Fjord*), `i_id` l'IMDb |
+| `get_showtimes.php?mov_id=…` | 10 jours de séances en **une** requête — **`tid` est le code salle Allociné**, plus `com` (texte libre), `srcs` (provenance), `screen_name` (n° de salle), `csup` (supplément) |
+
+La jointure est donc une **égalité d'identifiants**, comme celle d'UGC par numéro de séance. Mesuré :
+**14/14** de nos films en salle retrouvés, zéro rapprochement de titre. Et `i_id` renseigné sur
+400/416 films (96 %) — de quoi résoudre TMDB sans la similarité de titres de `resolve.js`.
+
+**Premier relevé — et il refroidit la piste « seconde source de listes » :**
+
+| mesure | résultat |
+|---|---|
+| Séances communes (4 films, 7 jours) | 248 |
+| **Vues seulement par paris-cine.info** | **0** |
+| Vues seulement par Allociné | 8 (3 %, sur un film à 239 séances) |
+| Provenances `srcs` | `AO` 1468 · `AB` 48 — **aucune sans Allociné** |
+
+La lacune du 13/08 reste donc **accidentelle**, pas structurelle : ce jour-là, ce site n'aurait rien
+apporté de plus. C'est exactement ce que le canari devait trancher, et il tranche dans le sens qui
+évite un chantier. À reconduire quelques jours : c'est la **récurrence** qui ferait la différence.
+
+**Le gain est ailleurs — les libellés, et dans les salles qu'on ne couvre pas :**
+
+```
+10 libellés sur 1492 séances (18 films)
+   2 en salle déjà couverte : MK2 Bibliothèque, UGC Les Halles (Fjord)
+   8 en salle qu'AUCUN connecteur ne couvre :
+       Le Louxor    — « présenté par l'équipe du film »
+       L'Entrepôt   — « Ciné-bébé » (×5, deux journées)
+```
+
+Soit **80 % de gain net** : Le Louxor et L'Entrepôt sont nommément dans la liste des salles que le
+README dit demander « chacune son connecteur ». Et « Ciné-bébé » n'existe dans aucun vocabulaire
+Allociné — c'est un événement que rien, aujourd'hui, ne peut nous faire voir.
+
+⚠️ Le contrôle balaie les films **en salle et à venir** (21 j, même population que `useUpcomingEvents`).
+Restreint à l'affiche, il ratait les deux libellés de *Fjord* — une avant-première précède la sortie,
+donc son film n'est jamais `inTheaters`. Piège attrapé au premier run.
+
+**Ce que le canari ne dit pas, et qu'aucun code ne dira.** Le `robots.txt` ne pose aucune directive
+(vérifié : seul le bloc « content signals » par défaut de Cloudflare), mais l'agrégation
+multi-exploitants **est** le travail de l'auteur, pas une donnée qu'il relaierait comme Allociné.
+Le script se déclare dans son User-Agent, mémoïse tout et espace ses requêtes ; brancher quoi que ce
+soit en production sans lui avoir écrit est un autre débat, et il ne se tranche pas dans un script.
 
 ### Ce qu'on fait à la place : le dire
 
