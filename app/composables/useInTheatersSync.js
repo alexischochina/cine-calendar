@@ -128,7 +128,15 @@ export function useInTheatersSync() {
                     // On n'écrit alors **rien du tout** — appliquer les états sans pouvoir horodater
                     // relancerait le contrôle à chaque chargement, donc une salve de requêtes
                     // Allociné à chaque ouverture de l'app.
-                    if (error.code === '42703') {
+                    //
+                    // ⚠️ Les **deux** codes, et c'est le cœur du garde : une colonne manquante remonte
+                    // `42703` en lecture mais **`PGRST204`** en écriture (PostgREST refuse sur son cache
+                    // de schéma, sans atteindre la base). Or ceci est une écriture. Ne tester que
+                    // `42703` rendait le garde inerte sur le seul cas qu'il vise : `disabled` n'était
+                    // jamais posé, et le contrôle hebdomadaire repartait à chaque chargement de l'app —
+                    // exactement la salve qu'il existe pour éviter. Même piège que `useSeanceEvents`,
+                    // et que la ligne 30 lignes plus bas (`pruneEmptyHorizon`), qui l'évitaient déjà.
+                    if (error.code === '42703' || error.code === 'PGRST204') {
                         disabled.value = true;
                         console.warn('[en salle] Colonne `in_theaters_checked_at` absente — joue _ressources/sql/2608131000-add-in-theaters-check.sql pour activer le contrôle hebdomadaire.');
                         return;
