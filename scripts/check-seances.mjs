@@ -1,8 +1,15 @@
 // Contrôle de santé de la vue Séances (plan 2608121539).
 //
 // Répond à une seule question : « est-ce que la récupération des séances marche encore ? ».
-// Lecture seule, aucune écriture, ~4 requêtes sortantes. À lancer quand un doute survient, ou de
-// temps en temps — typiquement le mercredi, jour où les salles renouvellent leur programmation.
+// À lancer quand un doute survient, ou de temps en temps — typiquement le mercredi, jour où les
+// salles renouvellent leur programmation.
+//
+// ⚠️ Lecture seule **sauf `--mute`**, qui persiste son verdict dans `cinemas.allocine_silent_since`
+// et `allocine_checked_at` — c'est ce qui permet à la vue de dire « cette salle est absente
+// d'Allociné depuis le … » au lieu de la passer sous silence (cf. `2608131800-add-cinema-silence.sql`).
+// L'en-tête a annoncé « aucune écriture » pendant tout le temps où cette famille de contrôles
+// existait : dans un projet dont la documentation interne est le principal support de maintenance,
+// c'est le genre d'écart qui coûte plus cher qu'ailleurs.
 //
 //   node scripts/check-seances.mjs                 # tout
 //   node scripts/check-seances.mjs --drift --mute  # seulement ces contrôles
@@ -25,6 +32,9 @@ import { createClient } from '@supabase/supabase-js';
 // Même source que l'app et le serveur : un contrôle de santé qui daterait ses journées autrement
 // que le code qu'il surveille ne surveillerait plus rien.
 import { isoDay, lastWednesday } from '../shared/utils/cineWeek.js';
+// Même garde que l'app et les routes serveur : c'est ici qu'on a découvert que PostgREST ne rend pas
+// le code qu'on croyait, autant ne pas en garder une copie locale.
+import { isMissingSchema } from '../shared/utils/pgErrors.js';
 
 const loadEnv = () => {
     try {
@@ -39,7 +49,9 @@ loadEnv();
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
-const UA = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+// Même identité que le client (`server/utils/allocine.js`) : un contrôle de santé qui ne se
+// présenterait pas comme l'app ne contrôlerait pas ce que l'app subit.
+const UA = 'cine-calendar/1.0';
 const PARIS = 115755;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -121,7 +133,7 @@ const checkResolution = async () => {
     // Migration du contrôle hebdomadaire pas encore jouée : on continue sans elle plutôt que de
     // perdre les deux autres familles de contrôles.
     let checkColumn = true;
-    if (error?.code === '42703') {
+    if (isMissingSchema(error)) {
         checkColumn = false;
         warn('colonne `in_theaters_checked_at` absente → joue _ressources/sql/2608131000-add-in-theaters-check.sql (le contrôle « en salle » est inactif)');
         ({ data, error } = await supabase
@@ -404,25 +416,38 @@ const checkMuteTheaters = async () => {
     const now = new Date().toISOString();
     const muteCodes = new Set(mute.map(c => c.code));
 
-    // ⚠️ Deux codes pour la même cause. Une **lecture** d'une colonne absente remonte `42703`
-    // (Postgres), mais une **écriture** remonte `PGRST204` : PostgREST refuse en amont, sur son
-    // cache de schéma, sans jamais atteindre la base. Ne tester que le premier laissait le script
-    // échouer en silence — constaté ici même.
-    const missingColumn = (e) => e?.code === '42703' || e?.code === 'PGRST204';
-
     // Muettes : on ne réécrit pas `allocine_silent_since` si elle est déjà posée, sinon la date
     // avancerait à chaque contrôle et « depuis le … » ne voudrait plus rien dire.
-    for (const c of mute) {
-        const { data: row } = await supabase.from('cinemas').select('allocine_silent_since').eq('code', c.code).maybeSingle();
-        const patch = row?.allocine_silent_since
-            ? { allocine_checked_at: now }
-            : { allocine_silent_since: today, allocine_checked_at: now };
-        const { error: upErr } = await supabase.from('cinemas').update(patch).eq('code', c.code);
-        if (missingColumn(upErr)) {
+    //
+    // Une lecture groupée puis deux écritures groupées, là où c'était deux requêtes **par salle** :
+    // les salles muettes arrivent par vagues (la panne du 13/08/2026 en a fait tomber plusieurs d'un
+    // coup), et c'est précisément le jour où le contrôle doit rendre la main vite.
+    if (mute.length) {
+        const muted = mute.map(c => c.code);
+        const { data: rows, error: readErr } = await supabase
+            .from('cinemas').select('code, allocine_silent_since').in('code', muted);
+
+        if (isMissingSchema(readErr)) {
             warn('colonnes de silence absentes → joue _ressources/sql/2608131800-add-cinema-silence.sql (sans elles, la vue ne peut pas signaler cette absence)');
-            break;
+        } else {
+            // Déjà signalées : on ne touche qu'à l'horodatage du contrôle. Nouvelles : on pose la date
+            // du jour, qui est ce que la vue affichera (« absente depuis le 13/08 »).
+            const known = new Set((rows ?? []).filter(r => r.allocine_silent_since).map(r => r.code));
+            const fresh = muted.filter(code => !known.has(code));
+
+            for (const [codes, patch] of [
+                [[...known], { allocine_checked_at: now }],
+                [fresh, { allocine_silent_since: today, allocine_checked_at: now }],
+            ]) {
+                if (!codes.length) continue;
+                const { error: upErr } = await supabase.from('cinemas').update(patch).in('code', codes);
+                if (isMissingSchema(upErr)) {
+                    warn('colonnes de silence absentes → joue _ressources/sql/2608131800-add-cinema-silence.sql (sans elles, la vue ne peut pas signaler cette absence)');
+                    break;
+                }
+                if (upErr) warn(`écriture du silence échouée : ${upErr.message}`);
+            }
         }
-        if (upErr) warn(`écriture du silence échouée pour ${c.code} : ${upErr.message}`);
     }
 
     // Les autres reparlent : on efface.
@@ -431,7 +456,7 @@ const checkMuteTheaters = async () => {
         const { error: clearErr } = await supabase.from('cinemas')
             .update({ allocine_silent_since: null, allocine_checked_at: now })
             .in('code', speaking);
-        if (clearErr && !missingColumn(clearErr)) warn(`remise à zéro du silence échouée : ${clearErr.message}`);
+        if (clearErr && !isMissingSchema(clearErr)) warn(`remise à zéro du silence échouée : ${clearErr.message}`);
     }
 
     if (!mute.length) {
