@@ -11,11 +11,9 @@
 
 // --- Côté séance --------------------------------------------------------------------------------
 
-// ⚠️ Lecture tolérante, et ce n'est pas de la coquetterie : `showtimes_cache` contient encore des
-// payloads écrits avant cette fonctionnalité. Un `events` absent se rend comme un `events` vide
-// (aucun marqueur) et l'entrée se corrige d'elle-même à sa première expiration. Le seul risque est
-// donc de **taire** un événement pendant quelques heures, jamais d'en inventer un — le bon sens de
-// l'erreur pour un badge qui, sinon, enverrait vers une séance qui n'existe pas.
+// Lecture tolérante : `showtimes_cache` contient encore des payloads écrits avant cette
+// fonctionnalité. Un `events` absent se lit comme vide et se corrige à la première expiration — le
+// risque est de taire un événement, jamais d'en inventer un.
 export const showtimeEvents = (showtime) => Array.isArray(showtime?.events) ? showtime.events : [];
 
 export const isEventShowtime = (showtime) => showtimeEvents(showtime).length > 0;
@@ -35,20 +33,16 @@ export const eventCountLabel = (n) => `${n} ÉVÉNEMENT${n > 1 ? 'S' : ''}`;
 
 // Greffe les libellés d'événement sur un payload de séances, **séance par séance**.
 //
-// `events`   : `{ internalId: [libellés] }` — les séances événement rapportées par la passe salle.
-// `seen`     : `Set` des `internalId` que cette passe a réellement observés, événement ou pas.
-// `previews` : `Set` des `internalId` qui sont des avant-premières.
+// `events` : `{ internalId: [libellés] }` · `seen` : les `internalId` réellement observés, événement
+// ou pas · `previews` : ceux qui sont des avant-premières.
 //
-// ⚠️ L'invariant, asymétrique à dessein : on ne réécrit **que** les séances vues. Une séance absente
-// de la réponse n'est pas une séance sans événement, c'est une séance dont on ne sait rien —
-// l'endpoint par salle est creux. Une séance vue est réécrite sans condition, y compris en vide, pour
-// qu'un événement déprogrammé disparaisse.
+// ⚠️ L'invariant, asymétrique à dessein : on ne réécrit **que** les séances vues. L'endpoint par salle
+// est creux, donc une séance absente n'est pas une séance sans événement, c'est une séance dont on ne
+// sait rien. Une séance vue est réécrite sans condition, y compris en vide, pour qu'un événement
+// déprogrammé disparaisse. Mesures et conséquences : README, « Séances événement ».
 //
-// `previews` voyage à part des libellés parce que c'est la seule qualification qui **décide** quelque
-// chose en aval (`isCardEligible`) : un booléen se teste, un texte d'interface se reformule.
-//
-// Le pourquoi du creux, ses mesures et ce qu'il coûte : `_ressources/README-seances.md`, « Séances
-// événement ».
+// `previews` voyage à part parce que c'est la seule qualification qui **décide** quelque chose en aval
+// (`isCardEligible`) : un booléen se teste, un texte d'interface se reformule.
 export const graftEvents = (payload, { events = {}, seen, previews = new Set() }) => ({
     ...payload,
     theaters: (payload?.theaters ?? []).map(theater => ({
@@ -67,14 +61,12 @@ export const graftEvents = (payload, { events = {}, seen, previews = new Set() }
 
 // --- Côté film : les événements datés portés par la ligne `calendar` -----------------------------
 //
-// Une entrée = `{ date, cinema, labels }`, un couple (jour, salle). C'est la granularité que le rail
-// affiche — « lun. 17 août · MK2 Bibliothèque · Avant-première » — et la seule qui permette de trier
-// par imminence. Un simple tableau de libellés ne l'aurait pas permis : « il y a un événement cette
-// semaine » ne dit pas s'il faut y aller ce soir ou samedi.
+// Une entrée = un couple (jour, salle). C'est la granularité que le rail affiche et la seule qui
+// permette de trier par imminence — « un événement cette semaine » ne dit pas s'il faut y aller ce
+// soir ou samedi.
 
-// Entrées d'événement lues dans le payload d'un film pour **une** journée. Une salle qui a plusieurs
-// séances événement le même jour donne une seule entrée, libellés fusionnés : c'est la salle et le
-// jour qu'on va noter dans son agenda, pas chaque horaire.
+// Entrées d'un film pour **une** journée. Plusieurs séances événement dans la même salle le même jour
+// donnent une seule entrée, libellés fusionnés.
 export const dayEventEntries = (payload, date) => {
     const out = [];
     for (const theater of payload?.theaters ?? []) {
@@ -85,29 +77,24 @@ export const dayEventEntries = (payload, date) => {
     return out;
 };
 
-// URL de billetterie des séances, dédoublonnées et bornées. Elles voyagent avec l'entrée parce que
-// **UGC s'y rapproche par identifiant de séance** (`reservationSeances.html?id=…`), là où Dulac et MK2
-// passent par (titre, date, salle). C'est la jointure la plus sûre du lot, autant lui donner ce qu'il
-// lui faut.
-//
-// Bornées à 4 : une entrée couvre un couple (jour, salle), donc une poignée de séances, et la liste
-// finit dans une URL de requête.
+// URL de billetterie, dédoublonnées et bornées à 4 (la liste finit dans une URL de requête). Elles
+// voyagent avec l'entrée parce qu'UGC s'y rapproche par identifiant de séance — la jointure la plus
+// sûre du lot (cf. `server/utils/ugc.js`).
 export const bookingsOf = (showtimes) =>
     [...new Set(showtimes.map(s => s?.booking).filter(Boolean))].slice(0, 4);
 
-const entryKey = (entry) => `${entry.date}|${entry.cinema ?? ''}`;
+// Identité d'une entrée : un couple (journée, salle). Exportée parce que `useSeanceEvents` s'en sert
+// aussi pour retrouver le libellé déjà connu d'une entrée — deux définitions de la même clé, dans deux
+// fichiers qui collaborent, auraient divergé sans que rien ne le signale.
+export const entryKey = (entry) => `${entry.date}|${entry.cinema ?? ''}`;
 
-// Fusionne les entrées connues et celles qu'on vient de trouver, en **élaguant le passé**.
+// Fusionne les entrées connues et celles qu'on vient de trouver, en **élaguant le passé**. On fusionne
+// plutôt qu'on ne remplace parce que chaque passage ne voit qu'une poignée de journées : remplacer
+// ferait clignoter la rubrique au rythme de la navigation. L'élagage par la date rend l'accumulation
+// sûre — une avant-première jouée hier sort d'elle-même.
 //
-// Deux raisons de fusionner plutôt que remplacer. D'abord chaque passage ne voit qu'une poignée de
-// journées (souvent une seule) : remplacer ferait clignoter la rubrique au rythme de la navigation.
-// Ensuite l'élagage par la date rend l'accumulation sûre — une avant-première jouée hier sort d'
-// elle-même, sans dépendre d'un horodatage. C'est plus juste que l'ancienne borne à la semaine ciné :
-// un événement de mardi ne survit plus jusqu'au mercredi suivant.
-//
-// `dates` : les journées que l'appelant vient de **lire**. Les entrées connues qui tombent sur l'une
-// d'elles sont remplacées par ce qu'on vient de voir (un événement déprogrammé disparaît donc) ; les
-// autres sont conservées telles quelles, faute d'information fraîche à leur sujet.
+// `dates` : les journées que l'appelant vient de **lire**, donc les seules dont on remplace les
+// entrées. Ailleurs on n'a rien vu, on ne défait rien.
 export const mergeEventEntries = (known, found, { dates, today }) => {
     const reread = new Set(dates);
     const merged = new Map();
@@ -126,16 +113,10 @@ export const mergeEventEntries = (known, found, { dates, today }) => {
         a.date.localeCompare(b.date) || String(a.cinema).localeCompare(String(b.cinema)));
 };
 
-// Événements retenus pour une ligne `calendar` : à venir, et pas trop vieux dans leur relevé.
-//
-// Deux gardes, qui ne disent pas la même chose :
-//   - `today`      élague les événements **passés**. Une avant-première jouée mise en avant est pire
-//                  qu'une rubrique vide : elle envoie à une séance qui n'existe plus.
-//   - `freshSince` élague les **relevés** périmés. Des entrées écrites avant le renouvellement des
-//                  grilles ne disent plus rien de la programmation, même si leurs dates sont futures.
-//
-// Les deux sont des paramètres et non des appels internes à `isoDay()` / `lastWednesday()` : la
-// fonction reste pure, donc testable sans figer l'horloge.
+// Événements retenus pour une ligne `calendar`. Deux gardes distinctes : `today` élague les événements
+// **passés** (une avant-première jouée envoie à une séance qui n'existe plus), `freshSince` élague les
+// **relevés** périmés (des entrées d'avant le renouvellement des grilles ne disent plus rien, même
+// datées du futur). Paramètres et non appels internes, pour que la fonction reste testable.
 export const movieEvents = (movie, { freshSince, today }) => {
     const entries = movie?.events;
     if (!Array.isArray(entries) || !entries.length) return [];
@@ -152,27 +133,15 @@ export const nextMovieEvent = (movie, bounds) => movieEvents(movie, bounds)[0] ?
 
 // Empreinte comparable de deux lots d'entrées, pour décider s'il y a lieu d'écrire.
 //
-// ⚠️ Explicitement structurelle, et pas un `JSON.stringify` du tableau : celui-ci dépend de **l'ordre
-// des clés**, un invariant que rien n'écrit ni ne garantit. Les entrées viennent de trois chemins
-// différents (relevé du jour, repli par les dates, relecture depuis la base après aller-retour JSON) —
-// il suffirait qu'un seul construise ses objets dans un autre ordre pour que deux lots identiques se
-// déclarent différents, et l'app réécrirait la colonne à chaque chargement sans que rien ne le montre.
+// ⚠️ Structurelle et pas un `JSON.stringify` : celui-ci dépend de l'ordre des clés, que rien ne
+// garantit — les entrées viennent de trois chemins différents, et l'app réécrirait la colonne à chaque
+// chargement sans que rien ne le montre.
 //
-// ⚠️⚠️ `bookings` EN FAIT PARTIE, et l'oublier a coûté cher. Cette empreinte ne sert pas qu'à répondre
-// « y a-t-il lieu d'écrire » : `useSeanceEvents` et `useUpcomingEvents` s'en servent aussi de **clé de
-// regroupement** pour n'émettre qu'un `update … in (ids)` par lot identique. Deux films qui tombent sur
-// la même clé reçoivent donc le **même** patch, entrées comprises.
-//
-// Sans les bookings, deux avant-premières le même soir dans la même salle (mêmes `labels`, `detail`
-// encore `null` au premier passage — le cas normal) se déclaraient identiques : le second film
-// enregistrait les URL de billetterie du premier. Au relevé suivant, `withDetails` interrogeait
-// `/api/events/detail` avec le titre de B et les bookings de A ; `fetchUgcDetail` rapproche par
-// **numéro de séance** (`server/utils/ugc.js`), donc rendait le libellé de A — affiché sur B. C'est
-// exactement le faux rapprochement que `mk2.js` se donne du mal à éviter : « un libellé collé à la
-// mauvaise séance est pire que pas de libellé ».
-//
-// Le coût de la correction est une écriture de plus quand seules les URL ont bougé. C'est le bon
-// échange : une écriture inutile ne se voit pas, un libellé sur le mauvais film se voit et trompe.
+// ⚠️⚠️ `bookings` en fait partie. Cette empreinte sert aussi de **clé de regroupement** des écritures
+// (`update … in (ids)`), donc deux lots confondus reçoivent le même patch. Sans les bookings, deux
+// avant-premières le même soir dans la même salle se déclaraient identiques et le second film héritait
+// des URL du premier — puis, par la jointure UGC sur numéro de séance, du **libellé** du premier. Le
+// coût de la correction est une écriture de plus quand seules les URL ont bougé : bon échange.
 export const entriesKey = (entries) => (entries ?? [])
     .map(e => [
         e.date,
@@ -186,19 +155,11 @@ export const entriesKey = (entries) => (entries ?? [])
 
 // --- Ce qui va dans la pastille ------------------------------------------------------------------
 //
-// Allociné a un vocabulaire fermé de deux entrées (« Avant-première », « Séance unique », cf.
-// `EVENT_LABELS` dans `server/utils/allocine.js`). Affiché tel quel, ça donne une page où **toutes**
-// les pastilles disent « Avant-première » — ce qui est vrai, et parfaitement inutile : ce n'est pas ça
-// qu'on vient lire, on vient lire *ce qu'a cette séance de particulier*.
-//
-// Ce particulier existe, mais il est chez l'exploitant (`detail`), et il arrive sous deux formes :
-//   - un **libellé** — « Avant-première avec équipe », « Séance suivie d'une rencontre ». C'est le mot
-//     d'Allociné en plus précis : il le remplace dans la pastille ;
-//   - une **phrase** — « La séance sera présentée par le réalisateur Cristian Mungiu. » Elle ne tient
-//     pas dans une pastille et n'a pas à y tenir : elle reste sous les pastilles, en toutes lettres.
-//
-// D'où cette fonction, qui tranche entre les deux et **dédoublonne** : une salle qui écrit exactement
-// « Avant-première » ne doit pas produire une pastille et une ligne disant la même chose.
+// Le vocabulaire d'Allociné est fermé : affiché tel quel, il donne une page où toutes les pastilles
+// disent « Avant-première » — vrai, et inutile. Le particulier vient de l'exploitant (`detail`), sous
+// deux formes : un **libellé** (« Avant-première avec équipe »), qui remplace le mot d'Allociné dans la
+// pastille, ou une **phrase**, qui reste en toutes lettres dessous. Cette fonction tranche entre les
+// deux et dédoublonne.
 
 // Au-delà, ce n'est plus un libellé mais une description : elle irait à la ligne dans la pastille et
 // pousserait tout le reste hors de l'écran.
@@ -207,7 +168,7 @@ const CHIP_MAX = 48;
 // Forme de comparaison : accents dépliés, casse et ponctuation neutralisées. Sans ça
 // « Avant-Première » et « avant premiere » se déclareraient différents et la pastille se dédoublerait.
 const fold = (value) => String(value ?? '')
-    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();

@@ -229,7 +229,7 @@ export function useUpcomingEvents() {
         for (const { patch, ids } of byPayload.values()) {
             const { error } = await client.from('calendar').update(patch).in('id', ids);
             if (error) {
-                if (!['42703', 'PGRST204'].includes(error.code)) {
+                if (!isMissingSchema(error)) {
                     console.error('[événements] Avant-première non écrite:', error.message);
                 }
                 continue;

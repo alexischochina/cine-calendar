@@ -34,11 +34,11 @@ export function useCinemas() {
         // donc plus d'`accepts_ugc`, donc une page vide alors que le pré-filtre carte est actif par
         // défaut. Une salle sans favori ni signalement vaut mieux qu'un écran blanc. On dégrade en
         // deux temps pour ne perdre que ce qui manque vraiment.
-        if (dbError?.code === '42703') {
+        if (isMissingSchema(dbError)) {
             console.warn('[seances] Colonnes de silence absentes — joue _ressources/sql/2608131800-add-cinema-silence.sql pour signaler les salles absentes d\'Allociné.');
             ({ data, error: dbError } = await client.from('cinemas').select(`${COLUMNS}, favorite`));
         }
-        if (dbError?.code === '42703') {
+        if (isMissingSchema(dbError)) {
             console.warn('[seances] Colonne `favorite` absente — joue _ressources/sql/2608121820-add-cinema-favorite.sql pour activer les cinémas favoris.');
             ({ data, error: dbError } = await client.from('cinemas').select(COLUMNS));
         }

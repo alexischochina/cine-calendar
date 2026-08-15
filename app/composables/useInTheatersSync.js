@@ -1,27 +1,16 @@
-// « En salle » : l'état vient d'Allociné, plus d'une règle de date.
+// « En salle » : l'état vient d'Allociné, plus d'une règle de date. L'ancienne règle flaggeait tout
+// film cinéma sorti dans l'année et ne retombait jamais — un film de janvier restait « en salle » en
+// décembre, sans une séance à montrer. Le contrôle tranche sur la seule question qui vaille : *ce film
+// a-t-il une séance à Paris dans les 7 jours qui viennent ?*
 //
-// Avant, `applyAutoInTheaters` (useMovieCalendar) flaggeait tout film cinéma sorti dans l'année en
-// cours et le flag ne retombait jamais : un film de janvier restait « en salle » en décembre, dans
-// le rail « Au ciné en ce moment » comme dans la vue Séances, sans la moindre séance à afficher
-// (limite assumée et documentée à l'époque — « `state === 'inTheaters'` est collant »). Le contrôle
-// ci-dessous tranche sur la seule question qui vaille : *ce film a-t-il une séance à Paris dans les
-// 7 jours qui viennent ?*
+// Une fois par semaine ciné, en tâche de fond. Le gate est le mercredi (renouvellement des grilles) et
+// non « il y a 7 jours », comme la fraîcheur du cache. Si la vue Séances a déjà été ouverte
+// aujourd'hui, le contrôle ne sort pas du tout sur le réseau — et inversement, il la préchauffe.
 //
-// Rythme : une fois par semaine ciné, en tâche de fond au chargement de l'app. Le gate est le
-// mercredi (renouvellement des grilles) et non « il y a 7 jours », exactement comme la fraîcheur du
-// cache de séances — un contrôle du mardi soir n'a plus rien à dire de la grille du mercredi matin.
-//
-// Coût : la lecture groupée du cache d'abord, un rafraîchissement par film manquant ensuite. Si la
-// vue Séances a déjà été ouverte aujourd'hui, le contrôle ne sort pas du tout sur le réseau — et
-// inversement, il préchauffe la vue.
+// Les verdicts (`playingWithin`, `horizonVerdict`) sont dans `app/utils/inTheaters.js`, testés.
 
-// Les autres états sont des décisions de l'utilisateur (« vu », « téléchargeable ») : le contrôle
-// n'a pas à les défaire.
+// Les autres états sont des décisions de l'utilisateur : le contrôle n'a pas à les défaire.
 const CHECKABLE_STATES = ['unseen', 'inTheaters'];
-
-// Les verdicts (`playingWithin`, `horizonVerdict`) vivent dans `app/utils/inTheaters.js` : ce sont des
-// fonctions pures, et leurs erreurs sont silencieuses — elles méritaient d'être testables sans monter
-// Nuxt. Auto-importées ici.
 
 export function useInTheatersSync() {
     const client = useSupabaseClient();
@@ -46,13 +35,10 @@ export function useInTheatersSync() {
 
         const todayStr = isoDay(0);
 
-        // Tout film cinéma non vu et déjà sorti, **sans borne d'ancienneté**. Une première version
-        // ne reprenait que les sorties de moins de 120 jours ; elle ratait exactement le cas qui
-        // justifie ce contrôle — le film de février qu'une salle art et essai reprogramme une
-        // semaine en août. Le volume mesuré donne raison à la version large : 91 films dans la
-        // liste au 13/08/2026, soit ~13 requêtes par jour, contre 12 films pour la borne à 120 j.
-        // Un cache de séances déjà chaud les ramène à zéro. Et l'ouverture est un gain en soi : une
-        // ressortie en copie restaurée remonte d'elle-même dans « Au ciné en ce moment ».
+        // Tout film cinéma non vu et déjà sorti, **sans borne d'ancienneté** : une borne à 120 jours
+        // ratait le cas qui justifie ce contrôle — le film de février qu'une salle art et essai
+        // reprogramme une semaine en août. Le volume mesuré lui donne raison (~13 requêtes/jour), et un
+        // cache déjà chaud les ramène à zéro.
         const candidates = movies.value.filter(m =>
             m.media === 'cinema'
             && CHECKABLE_STATES.includes(m.state)
@@ -127,16 +113,9 @@ export function useInTheatersSync() {
                     // Colonne absente : le code peut être déployé avant que la migration soit jouée.
                     // On n'écrit alors **rien du tout** — appliquer les états sans pouvoir horodater
                     // relancerait le contrôle à chaque chargement, donc une salve de requêtes
-                    // Allociné à chaque ouverture de l'app.
-                    //
-                    // ⚠️ Les **deux** codes, et c'est le cœur du garde : une colonne manquante remonte
-                    // `42703` en lecture mais **`PGRST204`** en écriture (PostgREST refuse sur son cache
-                    // de schéma, sans atteindre la base). Or ceci est une écriture. Ne tester que
-                    // `42703` rendait le garde inerte sur le seul cas qu'il vise : `disabled` n'était
-                    // jamais posé, et le contrôle hebdomadaire repartait à chaque chargement de l'app —
-                    // exactement la salve qu'il existe pour éviter. Même piège que `useSeanceEvents`,
-                    // et que la ligne 30 lignes plus bas (`pruneEmptyHorizon`), qui l'évitaient déjà.
-                    if (error.code === '42703' || error.code === 'PGRST204') {
+                    // Allociné à chaque ouverture de l'app. C'est le garde le plus important du
+                    // fichier ; le détail des codes PostgREST vit dans `shared/utils/pgErrors.js`.
+                    if (isMissingSchema(error)) {
                         disabled.value = true;
                         console.warn('[en salle] Colonne `in_theaters_checked_at` absente — joue _ressources/sql/2608131000-add-in-theaters-check.sql pour activer le contrôle hebdomadaire.');
                         return;
@@ -147,21 +126,14 @@ export function useInTheatersSync() {
                 for (const id of ids) applied.set(id, patch);
             }
 
-            // Ménage du cache durable, ici parce que c'est le seul endroit qui passe une fois par
-            // semaine et pas à chaque chargement. Le contrôle écrit ~91 entrées par passage là où
-            // la vue seule en écrivait ~14 : sans ce coup de balai, `showtimes_cache` gagnerait des
-            // dizaines de Mo par an pour des journées révolues que plus rien ne lira jamais (la vue
-            // ne regarde que J → J+6).
-            // Les deux caches de journée sont balayés ici, sur le même critère : ils vieillissent au
-            // même rythme et plus rien ne relit une journée révolue. `theater_events_cache` est le plus
-            // petit des deux (seules les séances événement y sont stockées, ~0 à 1 par salle) mais il
-            // gagne ~25 lignes par jour consulté — autant ne pas laisser deux règles divergentes.
+            // Ménage des deux caches de journée, ici parce que c'est le seul endroit qui passe une
+            // fois par semaine. Sans lui, `showtimes_cache` gagnerait des dizaines de Mo par an pour
+            // des journées révolues que plus rien ne relira (la vue ne regarde que J → J+6).
             for (const [table, what] of [['showtimes_cache', 'séances'], ['theater_events_cache', 'événements']]) {
                 const { error: pruneError } = await client.from(table).delete().lt('date', todayStr);
                 // Table absente (migration pas jouée) : rien à balayer, et `useTheaterEvents` l'a déjà
-                // signalé une fois. Inutile de le redire à chaque passage hebdomadaire. ⚠️ Le code peut
-                // être `PGRST205` et non `42P01` — PostgREST tranche sur son cache de schéma.
-                if (pruneError && !['42P01', 'PGRST205'].includes(pruneError.code)) {
+                // signalé une fois. Inutile de le redire à chaque passage hebdomadaire.
+                if (pruneError && !isMissingSchema(pruneError)) {
                     console.error(`[en salle] Ménage du cache de ${what} échoué:`, pruneError.message);
                 }
             }
@@ -180,22 +152,12 @@ export function useInTheatersSync() {
         }
     };
 
-    // Retire de l'affiche un film dont **l'horizon entier** est vide, sans attendre le mercredi.
+    // Retire un film dont **l'horizon entier** est vide, sans attendre le mercredi : le contrôle
+    // hebdomadaire laisserait sinon jusqu'au mercredi suivant un film parti le jeudi. Ne coûte aucune
+    // requête — la preuve est déjà dans le cache (sept journées chargées, zéro salle intra-muros).
     //
-    // Pourquoi ça manquait. Le contrôle ci-dessus ne tourne qu'une fois par semaine ciné : un film qui
-    // quitte l'affiche le jeudi reste dans le rail jusqu'au mercredi suivant, avec zéro séance à
-    // montrer. Constaté le 14/08/2026 sur *Silent Friend*, *Plus fort que moi* et *The Plague*, tous
-    // trois contrôlés — et légitimement gardés — le 12/08 à 23:10, donc après le mercredi.
-    //
-    // Or la preuve de leur départ était **déjà en cache** : les sept journées chargées, zéro salle
-    // intra-muros partout. Cette fonction ne fait que lire ce qu'on a déjà payé. Aucune requête.
-    //
-    // ⚠️ Elle ne conclut que sur des preuves complètes, et c'est tout l'enjeu — un verdict trop
-    // pressé retirerait un film sur un hoquet réseau, et il ne reviendrait qu'une semaine plus tard :
-    //   - **toutes** les journées de l'horizon doivent être en cache (une seule manquante → on se tait) ;
-    //   - aucune ne doit être en échec (`error`) ni servie depuis du périmé (`stale`) ;
-    //   - les salles reportées (`unconfirmedSince`) ne comptent pas — elles témoignent du passé ;
-    //   - un `nextDate` **dans** l'horizon suffit à garder le film.
+    // ⚠️ Ne conclut que sur des preuves complètes (cf. `horizonVerdict`) : un verdict trop pressé
+    // retirerait un film sur un hoquet réseau, et il ne reviendrait qu'une semaine plus tard.
     const pruneEmptyHorizon = async (list, dates) => {
         if (disabled.value || dates.length < SEANCES_HORIZON_DAYS) return;
 
@@ -222,7 +184,7 @@ export function useInTheatersSync() {
         const patch = { state: 'unseen', in_theaters_checked_at: new Date().toISOString() };
         const { error } = await client.from('calendar').update(patch).in('id', gone);
         if (error) {
-            if (error.code === '42703' || error.code === 'PGRST204') { disabled.value = true; return; }
+            if (isMissingSchema(error)) { disabled.value = true; return; }
             console.error('[en salle] Retrait sur horizon vide échoué:', error.message);
             return;
         }

@@ -1,23 +1,21 @@
 // Outils de texte partagés par les connecteurs d'exploitant (`dulac.js`, `mk2.js`).
 //
-// ⚠️ Import **relatif entre fichiers de `server/utils/`**, jamais vers `shared/`. Un `../../shared/…`
-// est réécrit par Vite depuis le chunk généré et sort du projet (`/Users/shared/utils/…`) — vu deux
-// fois sur ce projet. Un `./` dans le même dossier passe partout : Nitro le bundle, et le script de
-// test le résout tel quel hors de Nuxt.
+// ⚠️ Import relatif **entre fichiers de `server/utils/`**, jamais vers `shared/` : un `../../shared/…`
+// est réécrit par Vite hors du projet (vu deux fois ici), là où un `./` passe partout — Nitro le bundle
+// et le script de test le résout hors de Nuxt.
 
 // Version repliée d'une chaîne, avec une table de correspondance des positions vers l'original.
 //
-// ⚠️ Cette table est indispensable, et son absence a mordu : chercher une aiguille dans une version
-// normalisée puis découper la chaîne d'origine à l'index trouvé donne un décalage, la normalisation
-// supprimant des caractères (accents, apostrophes, parenthèses). Symptôme observé sur *La Fille
-// Condor* : « … de Bolivi » au lieu de « … de Bolivie) », la phrase tronquée à cinq caractères de la fin.
+// ⚠️ La table est indispensable : découper la chaîne d'origine à un index trouvé dans sa version
+// normalisée donne un décalage, celle-ci supprimant des caractères. Symptôme observé, une phrase
+// tronquée cinq caractères trop tôt.
 export const fold = (str) => {
     const source = String(str ?? '');
     let out = '';
     const map = [];
 
     for (let i = 0; i < source.length; i++) {
-        const stripped = source[i].normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+        const stripped = source[i].normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
         // Un caractère d'origine peut se replier en plusieurs (œ → oe) : chacun retient sa position
         // d'origine, sans quoi la table se désynchroniserait sur la suite de la chaîne.
         for (const ch of stripped) {
@@ -88,12 +86,8 @@ export const frenchDates = (text) =>
     [...normalize(text).matchAll(DATE_RE)]
         .map(m => ({ day: Number(m[1]), month: MONTHS.indexOf(m[2]) + 1 }));
 
-// Le texte annonce-t-il **cette** date ?
-//
-// ⚠️ C'est le garde-fou contre le faux rapprochement, et il a été resserré après coup : chercher la
-// date ISO dans la page entière ne suffisait pas — une fiche MK2 porte plusieurs dates dans ses
-// payloads, si bien qu'une séance du 18 se voyait attribuer le libellé de celle du 17. La date
-// annoncée dans la **description** est la seule qui qualifie l'événement.
+// Le texte annonce-t-il **cette** date ? ⚠️ Garde-fou contre le faux rapprochement : la date annoncée
+// dans la description est la seule qui qualifie l'événement (cf. `mk2.js`).
 export const mentionsDate = (text, isoDate) => {
     const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(isoDate ?? ''));
     if (!parts) return false;
@@ -103,11 +97,9 @@ export const mentionsDate = (text, isoDate) => {
     return frenchDates(text).some(d => d.day === day && d.month === month);
 };
 
-// La phrase est-elle l'en-tête figé de l'événement ? Les exploitants ouvrent par une formule qui
-// répète ce qu'on sait déjà — type, film, date, heure, salle. On la reconnaît à ce qu'elle porte une
-// date ou le nom de la salle, plutôt qu'au titre du film : MK2 l'omet parfois (« Avant-première le
-// mardi 8 septembre à 20h00 au mk2 bibliothèque »), et se fier au titre laissait alors passer tout
-// l'en-tête dans le libellé.
+// La phrase est-elle l'en-tête figé de l'événement (type, film, date, heure, salle) ? ⚠️ Reconnu à la
+// date ou au nom de la salle, jamais au titre du film : MK2 l'omet parfois, et s'y fier laissait alors
+// passer tout l'en-tête dans le libellé.
 export const isEventHeadline = (sentence, { title, cinema }) => {
     const folded = normalize(sentence);
     if (frenchDates(sentence).length) return true;

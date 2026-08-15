@@ -1,26 +1,25 @@
 // Texte libre d'un événement, chez l'exploitant :
 // `GET /api/events/detail?title=…&date=YYYY-MM-DD&cinema=…`
 //
-// Allociné ne décrit pas ses événements — son vocabulaire est fermé et rend « Avant-première », jamais
-// « en présence du réalisateur ». Cette route va chercher la phrase là où elle existe : sur le site de
-// la salle. Deux sources branchées (cf. `server/utils/exhibitors.js`) : **Dulac** (5 salles, JSON-LD
-// `schema.org/Event`) et **MK2** (~10 salles, description SEO).
+// Allociné ne décrit pas ses événements : cette route va chercher la phrase sur le site de la salle
+// (cf. `server/utils/exhibitors.js`).
 //
-// Le cache est durable et **mémorise aussi les absences**. C'est essentiel : la plupart des séances
-// événement n'ont aucune source branchée, et sans cache négatif on ressortirait sur le réseau à chaque relevé
-// pour se faire répondre non. Une absence n'est pourtant pas définitive (la fiche peut être publiée
-// après coup), d'où la même règle de fraîcheur que le reste du projet — la semaine ciné.
+// ⚠️ Le cache **mémorise aussi les absences** : la plupart des séances événement n'ont aucune source
+// branchée, et sans cache négatif on ressortirait sur le réseau à chaque relevé pour se faire répondre
+// non. Une absence n'étant pas définitive, elle expire à la semaine ciné comme le reste.
 
 import { serverSupabaseClient } from '#supabase/server';
+// Import relatif intra-`server/` : sûr au bundling, contrairement à un `../../shared/…` (cf. l'en-tête
+// de `server/utils/exhibitorText.js`).
+import { normalize } from '../../utils/exhibitorText.js';
 
 // Clé de cache : la salle et la date suffisent presque, le titre départage deux événements le même soir
 // dans la même salle. Normalisé pour que « L'Arlequin » et « l arlequin » ne fassent pas deux lignes.
-const cacheKey = (value) => String(value ?? '')
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+//
+// La normalisation vient du voisin de palier plutôt que d'une copie locale : c'est **la même** que
+// celle qui compare les noms de salle chez l'exploitant (`dulac.js`, `mk2.js`), et deux formes qui
+// divergeraient produiraient deux lignes de cache pour un seul événement — sans que rien ne le montre.
+const cacheKey = (value) => normalize(value);
 
 export default defineEventHandler(async (event) => {
     // Sort chez l'exploitant (Dulac, MK2, UGC) : garde d'authentification comme les routes Allociné
@@ -58,9 +57,8 @@ export default defineEventHandler(async (event) => {
         .match(key)
         .maybeSingle();
 
-    // ⚠️ `isMissingSchema` et non `code === '42P01'` : PostgREST tranche sur son cache de schéma et
-    // renvoie `PGRST205`. Le garde était donc inerte, la route retentait à chaque relevé et sortait sur
-    // le réseau sans jamais rien mettre en cache — visible seulement en console.
+    // ⚠️ `isMissingSchema` et non `code === '42P01'` (cf. `shared/utils/pgErrors.js`) : le garde était
+    // inerte, la route retentait à chaque relevé sans jamais rien mettre en cache.
     if (isMissingSchema(readError)) {
         console.warn('[événements] Table `event_detail_cache` absente — joue _ressources/sql/2608141200-add-seance-events.sql pour les libellés d\'exploitant.');
         return { detail: null, source: null, unavailable: true };
