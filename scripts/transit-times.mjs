@@ -16,8 +16,17 @@
 //
 // Variables .env requises :
 //   PRIM_TOKEN            jeton PRIM
-//   NUXT_PUBLIC_HOME_LAT  / NUXT_PUBLIC_HOME_LNG   domicile (déjà posés pour la distance)
+//   HOME_LAT / HOME_LNG   domicile
 //   SUPABASE_URL + NUXT_SUPABASE_SECRET_KEY (ou SUPABASE_KEY)
+//
+// ⚠️ Ces deux-là s'appelaient `NUXT_PUBLIC_HOME_LAT` / `NUXT_PUBLIC_HOME_LNG`, et le préfixe était un
+// piège armé : `NUXT_PUBLIC_` est **exactement** ce qui déclenche l'exposition d'une variable au
+// navigateur. Aujourd'hui elles ne partent nulle part (`runtimeConfig.public` de `nuxt.config.ts` ne
+// déclare que `siteUrl`, et Nuxt ne mappe que les clés déclarées), mais il aurait suffi qu'on ajoute
+// un jour `homeLat` sous `runtimeConfig.public` pour que les coordonnées du domicile entrent dans le
+// bundle client — l'inverse exact de ce que `app/utils/travel.js` se donne du mal à éviter.
+// Ces valeurs ne sont lues que par ce script Node, jamais par Nuxt : elles n'ont aucune raison de
+// porter un préfixe Nuxt, encore moins celui-là.
 
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
@@ -37,8 +46,16 @@ loadEnv();
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 const PRIM_TOKEN = process.env.PRIM_TOKEN;
-const HOME_LAT = Number(process.env.NUXT_PUBLIC_HOME_LAT);
-const HOME_LNG = Number(process.env.NUXT_PUBLIC_HOME_LNG);
+// Repli sur les anciens noms pour ne pas casser un `.env` existant, mais signalé : tant qu'ils y
+// traînent, le piège décrit en tête est encore armé.
+const LEGACY_HOME = process.env.NUXT_PUBLIC_HOME_LAT || process.env.NUXT_PUBLIC_HOME_LNG;
+if (LEGACY_HOME) {
+    console.warn('⚠️  NUXT_PUBLIC_HOME_LAT / NUXT_PUBLIC_HOME_LNG sont dépréciés : renomme-les en HOME_LAT / HOME_LNG dans .env.');
+    console.warn('    Le préfixe NUXT_PUBLIC_ expose une variable au navigateur dès qu\'une clé correspondante existe dans runtimeConfig.public.');
+}
+
+const HOME_LAT = Number(process.env.HOME_LAT ?? process.env.NUXT_PUBLIC_HOME_LAT);
+const HOME_LNG = Number(process.env.HOME_LNG ?? process.env.NUXT_PUBLIC_HOME_LNG);
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const FORCE = process.argv.includes('--force');
@@ -66,7 +83,7 @@ if (!PRIM_TOKEN) {
     process.exit(1);
 }
 if (!Number.isFinite(HOME_LAT) || !Number.isFinite(HOME_LNG)) {
-    console.error('NUXT_PUBLIC_HOME_LAT / NUXT_PUBLIC_HOME_LNG manquants dans .env.');
+    console.error('HOME_LAT / HOME_LNG manquants dans .env.');
     process.exit(1);
 }
 

@@ -73,7 +73,7 @@ production et le dev suivant échoue sur `#internal/nuxt/paths`. Nettoyer par
 
 ## Environment Variables
 
-Required in `.env`:
+Required in `.env` (voir `.env.example`) :
 ```
 SUPABASE_URL=
 SUPABASE_KEY=
@@ -82,6 +82,19 @@ NUXT_API_KEY=       # TMDB API key
 NUXT_API_BASE_URL=  # TMDB API base URL
 NUXT_API_IMG_URL=   # TMDB image CDN base URL
 ```
+
+Requis **par les scripts uniquement** (`scripts/`), jamais lus par Nuxt :
+```
+NUXT_SUPABASE_SECRET_KEY=  # clé service-role, contourne RLS — repli : SUPABASE_SERVICE_KEY, SUPABASE_KEY
+PRIM_TOKEN=                # Île-de-France Mobilités, pour scripts/transit-times.mjs
+HOME_LAT=                  # domicile, pour le calcul des temps de trajet
+HOME_LNG=
+```
+
+⚠️ `HOME_LAT` / `HOME_LNG` **ne doivent pas** reprendre le préfixe `NUXT_PUBLIC_` qu'elles portaient
+avant : c'est lui qui expose une variable au navigateur dès qu'une clé correspondante existe dans
+`runtimeConfig.public`. Les coordonnées du domicile ne quittent jamais le serveur — c'est toute la
+raison d'être du `transit_minutes` pré-calculé (cf. `app/utils/travel.js`).
 
 Runtime config is exposed to server-side code via `useRuntimeConfig()` in `nuxt.config.ts`.
 
