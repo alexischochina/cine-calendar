@@ -1,5 +1,6 @@
 <script setup>
-// Deux rubriques, dans cet ordre :
+// Deux rubriques, dans cet ordre — sur `rail` seulement : la bande mobile les fusionne, voir
+// `sections` plus bas.
 //
 //   1. « Événements à venir » — films avec une séance événement devant eux (avant-première, séance
 //      unique, label de programmation). ⚠️ Ces films ne sont pas forcément à l'affiche : une
@@ -10,7 +11,7 @@
 //      Elle ne dit que **le film et le jour** de son prochain événement. 26,4 rem de large ne portent
 //      pas cinq lignes datées de façon lisible, et un rail qui essaie de tout dire ne dit plus rien :
 //      le type d'événement, la salle et les autres dates vivent sur `/evenements`, vers laquelle
-//      l'en-tête renvoie. Seul le badge de l'affiche garde trace du nombre de journées.
+//      l'en-tête du rail renvoie. Seul le badge de l'affiche garde trace du nombre de journées.
 //   2. « Au ciné en ce moment » — films `state === 'inTheaters'`, c'est-à-dire, depuis
 //      `useInTheatersSync`, ceux qui ont une séance à Paris dans les 7 jours qui viennent. Les films
 //      remontés en 1 en sont retirés pour ne pas se lire deux fois (cf. `cinemaNow`).
@@ -105,34 +106,91 @@ const eventRows = computed(() => {
         // quoi le film paraîtrait n'avoir qu'une seule date.
         const others = Math.max(0, days - 1);
 
-        return { movie, days, date: next?.date ?? null, when: eventDayLabel(next?.date), label: itemLabel(movie, next, others) };
+        return {
+            key: `ev-${movie.id}`, movie, event: true, days,
+            date: next?.date ?? null, when: eventDayLabel(next?.date),
+            label: itemLabel(movie, next, others), poster: posterUrl(movie.poster_path),
+        };
     });
 });
+
+// Même forme de ligne que `eventRows`, sans date d'événement : c'est ce qui permet un seul rendu de
+// carte pour les deux rubriques, donc une bande mobile qui les enchaîne sans dupliquer le markup.
+const nowRows = computed(() => props.movies.map((movie) => ({
+    key: `now-${movie.id}`, movie, event: false, days: 0,
+    date: null, when: dateShort(movie.release_date), label: itemLabel(movie),
+    poster: posterUrl(movie.poster_path),
+})));
+
+// L'en-tête de la bande nomme ce qu'elle contient vraiment : « à venir » disparaît les semaines sans
+// événement, sinon il annoncerait une rubrique vide.
+const bandLabel = computed(() => {
+    if (!props.eventMovies.length) return 'Au ciné en ce moment';
+    return props.movies.length ? 'À venir & au ciné' : 'Événements à venir';
+});
+
+// `rail` (desktop) garde les deux rubriques séparées : une colonne verticale a la place de deux
+// en-têtes, et le filet entre elles se lit.
+//
+// `band` (mobile) n'a qu'une ligne de posters : deux bandes empilées mangeaient la moitié de l'écran
+// avant le premier film de la timeline. Les événements passent en tête — c'est la partie périssable —
+// et gardent leur bordure violette et leur badge, qui suffisent à les distinguer sans second en-tête.
+// Le lien vers `/evenements` disparaît avec celui-ci : l'onglet ★ juste au-dessus y mène déjà.
+const sections = computed(() => {
+    if (props.variant === 'band') return [{ key: 'band', rows: [...eventRows.value, ...nowRows.value] }];
+
+    return [
+        { key: 'event', rows: eventRows.value },
+        { key: 'now', rows: nowRows.value },
+    ].filter((s) => s.rows.length);
+});
+
+// Sans lui, `aria-expanded` annonce un état sans dire de quoi. Un seul panneau par page → id constant.
+const BAND_LIST_ID = 'cinema-now-band-list';
 </script>
 
 <template>
     <section class="cinema-now" :class="[`-${variant}`, { scr: variant === 'rail' }]"
              v-if="movies.length || eventMovies.length">
-        <!-- Rubrique événement. Au-dessus de « en ce moment » parce qu'elle est datée et périssable :
-             c'est la seule information du rail qui se perd si on la lit trop tard. -->
-        <template v-if="eventMovies.length">
-            <!-- L'en-tête est un bouton : la rubrique ne montre que le prochain événement par film,
-                 c'est donc elle qui doit ouvrir la liste complète. ⚠️ Le chevron est sa **seule** marque
-                 de clic ; un effet de survol n'en serait pas une sur `band`, qui est le tactile. -->
-            <button class="header -event -clickable" type="button"
+        <template v-for="s in sections" :key="s.key">
+            <!-- Rubrique événement en tête : elle est datée et périssable, c'est la seule information
+                 du panneau qui se perd si on la lit trop tard. Son en-tête est un bouton parce qu'elle
+                 ne montre que le prochain événement par film — la liste complète est sur /evenements. -->
+            <button v-if="s.key === 'event'" class="header -event -clickable" type="button"
                     aria-label="Voir tous les événements de la semaine" @click="goToEvents()">
                 <span class="star" aria-hidden="true"><Svg name="star" /></span>
                 <span class="label">Événements à venir</span>
                 <span class="go" aria-hidden="true"><Svg name="chevron" /></span>
             </button>
 
-            <div class="list -events" :class="{ '-hidden': variant === 'band' && !open }">
+            <!-- Rien à ouvrir : un `<div>` et pas un bouton. -->
+            <div v-else-if="s.key === 'now'" class="header">
+                <span class="pulse" aria-hidden="true" />
+                <span class="label">Au ciné en ce moment</span>
+            </div>
+
+            <!-- Étoile violette dès qu'il y a un événement, puisque c'est par là que la bande commence ;
+                 point rose sinon, quand il ne reste que « en ce moment » à annoncer. -->
+            <button v-else-if="s.key === 'band'" class="header -clickable"
+                    :class="{ '-event': eventMovies.length }" type="button"
+                    :aria-expanded="open" :aria-controls="BAND_LIST_ID" @click="open = !open">
+                <span v-if="eventMovies.length" class="star" aria-hidden="true"><Svg name="star" /></span>
+                <span v-else class="pulse" aria-hidden="true" />
+                <span class="label">{{ bandLabel }}</span>
+                <span class="count">{{ s.rows.length }}</span>
+                <span class="spacer" />
+                <span class="chevron" :class="{ '-collapsed': !open }" aria-hidden="true"><Svg name="chevron" /></span>
+            </button>
+
+            <!-- Seul `-event` porte du style — le filet du rail. Les autres sections n'émettent rien. -->
+            <div class="list" :id="s.key === 'band' ? BAND_LIST_ID : undefined"
+                 :class="[{ '-event': s.key === 'event' }, { '-hidden': variant === 'band' && !open }]">
                 <!-- La date part avec le clic : la carte annonce « dim. 16 août », la vue Séances doit
                      s'ouvrir sur ce jour-là et pas sur aujourd'hui. -->
-                <button v-for="row in eventRows" :key="`ev-${row.movie.id}`" class="item -event" type="button"
-                        :aria-label="row.label"
+                <button v-for="row in s.rows" :key="row.key" class="item" :class="{ '-event': row.event }"
+                        type="button" :aria-label="row.label"
                         @click="emits('select-movie', row.movie.movie_id, row.date)">
-                    <NuxtImg v-if="posterUrl(row.movie.poster_path)" :src="posterUrl(row.movie.poster_path)"
+                    <NuxtImg v-if="row.poster" :src="row.poster"
                              :alt="row.movie.title ? `Affiche du film ${row.movie.title}` : ''" class="poster" loading="lazy" />
                     <span v-else class="poster -placeholder" />
                     <!-- Étoile + compteur sur l'affiche. Décoratif au sens strict — `itemLabel` dit
@@ -143,40 +201,13 @@ const eventRows = computed(() => {
                     </span>
                     <span class="infos">
                         <span class="title">{{ row.movie.title }}</span>
-                        <!-- Le jour d'abord : c'est lui qui décide s'il faut y aller ce soir. -->
-                        <span class="when">{{ row.when }}</span>
+                        <!-- Le jour pour un événement : c'est lui qui décide s'il faut y aller ce soir.
+                             La date de sortie sinon, plus discrète. -->
+                        <span :class="row.event ? 'when' : 'date'">{{ row.when }}</span>
                     </span>
                 </button>
             </div>
         </template>
-
-        <component :is="variant === 'band' ? 'button' : 'div'" class="header"
-                   :class="{ '-clickable': variant === 'band' }"
-                   :type="variant === 'band' ? 'button' : undefined"
-                   :aria-expanded="variant === 'band' ? open : undefined"
-                   @click="variant === 'band' && (open = !open)">
-            <span class="pulse" aria-hidden="true" />
-            <span class="label">Au ciné en ce moment</span>
-            <template v-if="variant === 'band'">
-                <span class="count">{{ movies.length }}</span>
-                <span class="spacer" />
-                <span class="chevron" :class="{ '-collapsed': !open }" aria-hidden="true"><Svg name="chevron" /></span>
-            </template>
-        </component>
-
-        <div class="list" :class="{ '-hidden': variant === 'band' && !open }">
-            <button v-for="m in movies" :key="m.id" class="item" type="button"
-                    :aria-label="itemLabel(m)"
-                    @click="emits('select-movie', m.movie_id)">
-                <NuxtImg v-if="posterUrl(m.poster_path)" :src="posterUrl(m.poster_path)"
-                         :alt="m.title ? `Affiche du film ${m.title}` : ''" class="poster" loading="lazy" />
-                <span v-else class="poster -placeholder" />
-                <span class="infos">
-                    <span class="title">{{ m.title }}</span>
-                    <span class="date">{{ dateShort(m.release_date) }}</span>
-                </span>
-            </button>
-        </div>
     </section>
 </template>
 
@@ -349,7 +380,7 @@ const eventRows = computed(() => {
 
         // La rubrique événement se sépare de « en ce moment » par un filet : deux listes d'affiches
         // à la suite, sans rupture, se liraient comme une seule.
-        > .list.-events {
+        > .list.-event {
             padding-bottom: 2rem;
             margin-bottom: 2rem;
             border-bottom: 1px solid $color-border-2;
@@ -389,11 +420,6 @@ const eventRows = computed(() => {
             &.-hidden { display: none; }
         }
 
-        > .list.-events {
-            margin-bottom: 1.1rem;
-            border-bottom: 1px solid $color-border-2;
-        }
-
         .item {
             flex: none;
             width: 8.6rem;
@@ -410,11 +436,12 @@ const eventRows = computed(() => {
 
             .infos { margin-top: .6rem; }
 
+            // Une ligne, ellipsée : un titre qui passe à deux décale la carte suivante, et la bande
+            // perd sa ligne de base.
             .title {
                 overflow: hidden;
-                display: -webkit-box;
-                -webkit-line-clamp: 2;
-                -webkit-box-orient: vertical;
+                white-space: nowrap;
+                text-overflow: ellipsis;
                 font-size: 1.15rem;
                 color: $color-text-body;
             }
