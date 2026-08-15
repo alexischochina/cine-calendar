@@ -41,7 +41,7 @@ import { mentionsDate, isEventHeadline, metaContent, truncateDetail } from '../s
 import {
     showtimeEvents, isEventShowtime, countEvents, eventLabelsOf, eventCountLabel,
     graftEvents, dayEventEntries, bookingsOf, mergeEventEntries, groupEventsByDay, entriesKey,
-    movieEvents, nextMovieEvent, hasUpcomingEvent,
+    movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips,
 } from '../app/utils/seanceEvents.js';
 
 let pass = 0, fail = 0;
@@ -502,6 +502,46 @@ console.log('\n\x1b[1mseanceEvents — marquer sans jamais inventer\x1b[0m');
 
     t('aucune entrée → aucun groupe', groupEventsByDay([]), []);
 
+    // Ce qui va dans la pastille. Le vocabulaire d'Allociné tient en deux mots : sans cet arbitrage,
+    // la page Événements affiche « Avant-première » sur chaque ligne et ne dit jamais ce que la séance
+    // a de particulier — c'est l'exploitant qui le sait.
+    const chips = (labels, detail, url = null) => eventChips({ labels, detail, url });
+
+    t('pas de texte d\'exploitant → les libellés d\'Allociné, sans lien',
+        chips(['Avant-première'], null),
+        { chips: [{ text: 'Avant-première', url: null }], note: null });
+
+    t('libellé d\'exploitant plus précis → il remplace celui d\'Allociné',
+        chips(['Avant-première'], 'Avant-première avec équipe', 'https://ugc.fr/x'),
+        { chips: [{ text: 'Avant-première avec équipe', url: 'https://ugc.fr/x' }], note: null });
+
+    t('texte d\'exploitant identique → une seule pastille, pas de doublon en dessous',
+        chips(['Avant-première'], 'Avant-première'),
+        { chips: [{ text: 'Avant-première', url: null }], note: null });
+
+    t('    … la comparaison ignore accents, casse et ponctuation',
+        chips(['Avant-première'], 'AVANT PREMIERE').chips.length, 1);
+
+    t('phrase rédigée → elle reste sous les pastilles',
+        chips(['Avant-première'], 'La séance sera présentée par le réalisateur Cristian Mungiu.', 'https://mk2.com/x'),
+        { chips: [{ text: 'Avant-première', url: null }],
+          note: { text: 'La séance sera présentée par le réalisateur Cristian Mungiu.', url: 'https://mk2.com/x' } });
+
+    t('libellé ponctué d\'un point final → toujours un libellé',
+        chips(['Avant-première'], 'Séance unique.').chips[0].text, 'Séance unique');
+
+    t('texte tronqué par la source → jamais promu en pastille',
+        chips(['Avant-première'], 'Une rencontre avec la comédienne et le chef opérateur du…').note?.url, null);
+
+    t('libellé d\'Allociné non couvert par la pastille promue → conservé',
+        chips(['Avant-première', 'Séance unique'], 'Avant-première avec équipe').chips.map(c => c.text),
+        ['Avant-première avec équipe', 'Séance unique']);
+
+    t('aucun libellé, texte d\'exploitant seul → il fait la pastille',
+        chips([], 'Ciné-club').chips.map(c => c.text), ['Ciné-club']);
+
+    t('entrée vide → rien à afficher', eventChips({}), { chips: [], note: null });
+
     t('prochain événement = le plus proche',
         nextMovieEvent({ events: [ev('2026-08-20', 'Z'), ev('2026-08-17', 'A')], events_checked_at: thursday }, B).date,
         '2026-08-17');
@@ -524,6 +564,23 @@ console.log('\n\x1b[1mseanceEvents — marquer sans jamais inventer\x1b[0m');
             !== entriesKey([ev('2026-08-17', 'A')]), true);
     t('salle différente → empreinte différente',
         entriesKey([ev('2026-08-17', 'A')]) !== entriesKey([ev('2026-08-17', 'B')]), true);
+
+    // ⚠️ Le cas qui a motivé l'ajout des bookings à l'empreinte. Celle-ci sert aussi de **clé de
+    // regroupement** des écritures (`useSeanceEvents`, `useUpcomingEvents`) : deux films de même clé
+    // reçoivent le même patch. Deux avant-premières le même soir dans la même salle, mêmes libellés,
+    // `detail` encore null — sans les bookings, le second film héritait des URL de billetterie du
+    // premier, et `fetchUgcDetail` (qui rapproche par numéro de séance) lui collait le libellé de
+    // l'autre film.
+    const withBooking = (url) => ({ ...ev('2026-08-17', 'UGC Les Halles'), bookings: [url] });
+    t('bookings différents → empreinte différente (pas de patch partagé entre deux films)',
+        entriesKey([withBooking('https://ugc.fr/reservationSeances.html?id=1')])
+            !== entriesKey([withBooking('https://ugc.fr/reservationSeances.html?id=2')]), true);
+    t('ordre des bookings indifférent',
+        entriesKey([{ ...ev('2026-08-17', 'A'), bookings: ['b', 'a'] }]),
+        entriesKey([{ ...ev('2026-08-17', 'A'), bookings: ['a', 'b'] }]));
+    t('bookings absents → pas d\'exception',
+        entriesKey([ev('2026-08-17', 'A')]), entriesKey([{ ...ev('2026-08-17', 'A'), bookings: [] }]));
+
     t('lot vide', entriesKey([]), '');
     t('lot absent → pas d\'exception', entriesKey(undefined), '');
 

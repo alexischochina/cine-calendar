@@ -80,9 +80,14 @@ const eventDayLabel = (date) => {
 // lit — la timeline ne sort pas sur le réseau, c'est la règle du projet.
 const nextEvent = (movie) => nextMovieEvent(movie, eventBounds());
 
+// Nombre de journées d'événement d'un film. C'est ce que compte le badge posé sur l'affiche : on
+// compte les **journées** et non les entrées, parce que trois salles le même soir restent une seule
+// occasion d'y aller — c'est aussi la granularité de la liste dépliée juste en dessous.
+const eventCount = (movie) => groupEventsByDay(movieEvents(movie, eventBounds())).length;
+
 // Journées d'événement au-delà de la première. Annoncées et non affichées : c'est ce qui évite de
 // laisser croire que le film n'a qu'une seule date (le défaut de la première version de ce rail).
-const otherDays = (movie) => Math.max(0, groupEventsByDay(movieEvents(movie, eventBounds())).length - 1);
+const otherDays = (movie) => Math.max(0, eventCount(movie) - 1);
 
 // « Avant-première · MK2 Bibliothèque ». La salle est là parce qu'une avant-première n'a lieu que dans
 // une seule salle : sans elle, l'information est incomplète au point d'être inutilisable.
@@ -135,6 +140,12 @@ const itemLabel = (movie) => {
                     <NuxtImg v-if="posterUrl(m.poster_path)" :src="posterUrl(m.poster_path)"
                              :alt="m.title ? `Affiche du film ${m.title}` : ''" class="poster" loading="lazy" />
                     <span v-else class="poster -placeholder" />
+                    <!-- Étoile + compteur sur l'affiche. Décoratif au sens strict — `itemLabel` dit
+                         déjà tout ce que le badge résume — d'où `aria-hidden` : le lire donnerait
+                         « 3 » sans sujet, juste après la phrase qui l'explique. -->
+                    <span v-if="eventCount(m)" class="badge" aria-hidden="true">
+                        <Svg name="star" />{{ eventCount(m) }}
+                    </span>
                     <span class="infos">
                         <span class="title">{{ m.title }}</span>
                         <!-- Le jour d'abord : c'est lui qui décide s'il faut y aller ce soir. -->
@@ -305,6 +316,32 @@ const itemLabel = (movie) => {
             margin-top: .3rem;
             color: $color-event-light;
             font: $semi-bold 1rem/1 $font-body;
+        }
+
+        // Badge d'affiche : violet plein, en haut à gauche. Calé sur `.item` (et non sur l'affiche,
+        // qui n'a pas de conteneur propre) — les deux variantes posant l'affiche en haut à gauche du
+        // bouton, le repère est le même dans le rail et dans la bande.
+        //
+        // Plein et non cerclé comme la pastille des cartes de séances : posé sur une image, un chip
+        // translucide se lit selon ce qu'il y a dessous, c'est-à-dire mal.
+        .badge {
+            position: absolute;
+            top: .5rem;
+            left: .5rem;
+            display: inline-flex;
+            align-items: center;
+            gap: .3rem;
+            padding: .3rem .6rem;
+            border-radius: .6rem;
+            background: rgba($color-event, .94);
+            color: $color-event-ink;
+            font: $bold 1rem/1 $font-mono;
+
+            > :deep(svg) {
+                width: .9rem;
+                height: .9rem;
+                flex: none;
+            }
         }
 
         // Affiche cerclée de violet : sans ça, le film se noierait visuellement dans la liste rose

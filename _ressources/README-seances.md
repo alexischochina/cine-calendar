@@ -558,6 +558,29 @@ Gate hebdomadaire porté par `events_checked_at`, que `syncEvents({ stamp: true 
 passage — **y compris quand il n'a rien trouvé**. Sans cette trace, le balayage repartirait à chaque
 chargement de l'app pour tous les films à venir.
 
+#### La pastille ne dit pas « Avant-première » cinq fois de suite
+
+Le vocabulaire d'Allociné tient en deux entrées. Rendu tel quel, il donne une page où **chaque** ligne
+porte la même pastille : vrai, et sans aucun intérêt — ce qu'on vient lire, c'est ce que cette
+séance-là a de particulier, et ça vit chez l'exploitant. `eventChips` (`app/utils/seanceEvents.js`,
+testé) arbitre entre les deux formes que prend ce texte :
+
+- **un libellé** (≤ 48 caractères, pas de phrase) — « Avant-première avec équipe ». C'est le mot
+  d'Allociné en plus précis : il le **remplace** dans la pastille, et la pastille devient le lien vers
+  la fiche de la salle. Le libellé d'Allociné qu'il contient déjà disparaît (comparaison accents et
+  ponctuation dépliés), sinon la même chose se lit deux fois ;
+- **une phrase** — « La séance sera présentée par le réalisateur Cristian Mungiu. » Elle ne tient pas
+  dans une pastille : celle d'Allociné reste, la phrase se lit dessous en toutes lettres.
+
+> ⚠️ **La page travaille sur les entrées brutes, pas sur `groupEventsByDay`.** Le texte d'exploitant est
+> attaché à une **salle**, et le regroupement par journée n'en garde qu'un (le premier). Une
+> avant-première dans trois UGC affichait donc la précision de l'un des trois sur la ligne des trois, et
+> taisait celle des autres. D'où une ligne par couple (journée, salle) : la journée se répète, chaque
+> salle porte sa pastille. Le rail, lui, continue de regrouper — il n'a la place que d'un compteur.
+
+Le filtre par type, lui, porte toujours sur les libellés **d'Allociné** et pas sur ce qu'affiche la
+pastille : le mot de l'exploitant est propre à une séance, il ferait un filtre à une seule entrée.
+
 ### Le rail a besoin de colonnes, la vue non
 
 La vue Séances marque ses chips directement depuis le payload. Le rail, lui, vit sur la timeline, qui

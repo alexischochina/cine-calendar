@@ -1,67 +1,103 @@
 <script setup>
 // Vue « Événements » : les séances particulières de la semaine — avant-premières, séances uniques,
-// labels de programmation — film par film.
+// labels de programmation.
 //
 // Route à la racine et non sous `/[year]/` : comme `/seances`, la vue ne dépend d'aucune année. Donc
 // pas de middleware `valid-year`, et pas de `key`.
+//
+// Deux regroupements du même lot d'événements, comme la vue Séances :
+//   - « Par film » répond à « qu'est-ce qui se passe autour de ce film » ;
+//   - « Par jour » répond à « qu'est-ce qu'il y a ce soir », la question du samedi après-midi.
+// Aucun des deux ne déclenche de requête : tout est dérivé du relevé déjà fait.
 definePageMeta({ middleware: ['auth'] })
 useHead({ title: 'Événements' })
 
-const { films, nbEvents, scanning, scanned, days, scan } = useEvents()
+const { films, scanning, scanned, days, scan } = useEvents()
 const { goToSeances } = useCalendarNav()
+
+const group = ref('film')
+const kind = ref('all')
+const openCard = ref(null)
+
+// Types d'événement réellement présents cette semaine, et pas une liste figée : le vocabulaire vient
+// d'Allociné (cf. `showtimeEventLabels`), il n'y a aucune raison d'offrir un filtre qui ne trouve
+// rien.
+//
+// Sur les libellés d'Allociné et non sur ce que montre la pastille : celle-ci porte souvent le mot de
+// l'exploitant, qui est unique à une séance (« Avant-première avec équipe ») et ferait un filtre à une
+// seule entrée. On filtre sur la famille, on affiche le détail.
+const kinds = computed(() =>
+    [...new Set(films.value.flatMap(f => f.entries.flatMap(e => e.labels)))].sort((a, b) => a.localeCompare(b))
+)
+
+const filtered = computed(() => {
+    if (kind.value === 'all') return films.value
+
+    return films.value
+        .map(f => ({ ...f, entries: f.entries.filter(e => e.labels.includes(kind.value)) }))
+        .filter(f => f.entries.length)
+})
+
+const nbFiltered = computed(() => filtered.value.reduce((n, f) => n + f.entries.length, 0))
+
+const byFilm = computed(() =>
+    filtered.value.map(f => ({ key: `f${f.movie.id}`, movie: f.movie, entries: f.entries }))
+)
+
+// Même matière, retournée : chaque couple (film, séance événement) est reversé dans sa journée. Les
+// journées sont triées par date — une chaîne `YYYY-MM-DD` se trie comme la date qu'elle décrit — et
+// les films gardent l'ordre d'imminence que `useEvents` leur a donné.
+const byDay = computed(() => {
+    const buckets = new Map()
+
+    for (const { movie, entries } of filtered.value) {
+        for (const entry of entries) {
+            if (!buckets.has(entry.date)) buckets.set(entry.date, { key: `d${entry.date}`, date: entry.date, entries: [] })
+            buckets.get(entry.date).entries.push({ movie, entry })
+        }
+    }
+
+    return [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date))
+})
+
+const buckets = computed(() => group.value === 'film' ? byFilm.value : byDay.value)
 
 const summary = computed(() => {
     if (!films.value.length) return 'Aucun événement repéré cette semaine'
-    const f = films.value.length
-    return `${f} film${f > 1 ? 's' : ''} · ${nbEvents.value} événement${nbEvents.value > 1 ? 's' : ''} dans les 7 jours`
+    if (!nbFiltered.value) return 'Aucun événement de ce type cette semaine'
+
+    return `${nbFiltered.value} événement${nbFiltered.value > 1 ? 's' : ''} · 7 jours`
 })
 
-// « auj. », « demain », puis « lundi 17 août ». Les deux premiers portent l'urgence bien mieux qu'une
-// date à décoder.
-//
-// Dates découpées à la main plutôt que passées à `new Date(chaîne)` : une chaîne `YYYY-MM-DD` est
-// interprétée en UTC, ce qui décale d'un jour sur les fuseaux à offset négatif. Pattern déjà banni
-// ailleurs dans le projet (cf. `parseYMD` dans `useYearStats.js`).
-const parseYMD = (value) => {
-    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? ''))
-    return parts ? new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])) : null
-}
+const toggleCard = (key) => { openCard.value = openCard.value === key ? null : key }
 
-const dayLabel = (date) => {
-    const local = parseYMD(date)
-    if (!local) return '?'
+// La première carte s'ouvre toute seule, et se recale quand le lot change (changement de
+// regroupement, de filtre, ou fin du relevé). Un accordéon entièrement fermé à l'arrivée cacherait
+// la seule chose qu'on vient chercher ; laisser une clé morte (`f12` n'existe pas côté « par jour »)
+// reviendrait au même.
+watch([buckets, group, kind], () => {
+    if (buckets.value.some(b => b.key === openCard.value)) return
+    openCard.value = buckets.value[0]?.key ?? null
+}, { immediate: true })
 
-    const offset = Math.round((local - parseYMD(isoDay(0))) / 86400000)
-    if (offset <= 0) return "Aujourd'hui"
-    if (offset === 1) return 'Demain'
-
-    return new Intl.DateTimeFormat('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }).format(local)
-}
-
-const posterUrl = (path) => path ? `https://image.tmdb.org/t/p/w342${path}` : null
-
-// Sortie du film, pour situer une avant-première (« sortie le 19 août »). C'est ce qui explique
-// pourquoi la séance est un événement, et pourquoi elle ne se rattrape pas.
-const releaseLabel = (movie) => {
-    const local = parseYMD(movie.release_date)
-    if (!local) return null
-
-    const upcoming = movie.release_date > isoDay(0)
-    const when = new Intl.DateTimeFormat('fr-FR', { day: 'numeric', month: 'long' }).format(local)
-    return upcoming ? `Sortie le ${when}` : `Sorti le ${when}`
-}
+// La date part avec le clic : la ligne annonce « dimanche 16 août », la vue Séances doit s'ouvrir sur
+// ce jour-là et pas sur aujourd'hui.
+const openSeances = (movie, date) => goToSeances(movie.movie_id, date)
 
 onMounted(() => scan())
 </script>
 
 <template>
-    <div class="events scr">
+    <div class="events-page scr">
         <div class="head">
-            <h1 class="title">Événements</h1>
+            <h1 class="title">Événements &amp; avant-premières</h1>
             <!-- `aria-live` : le relevé se poursuit après le premier rendu, et ce sous-titre est le
                  résumé de ce qui a changé. -->
             <span class="sub" aria-live="polite">{{ summary }}</span>
         </div>
+
+        <EventsEventFilters v-if="films.length" class="filters" :group="group" :kind="kind" :kinds="kinds"
+                            @update:group="group = $event" @update:kind="kind = $event" />
 
         <!-- Le relevé est long à froid (7 journées) et la page se remplit en cours de route : le taire
              ferait lire une liste incomplète comme une liste complète. -->
@@ -69,45 +105,17 @@ onMounted(() => scan())
             Relevé de la semaine en cours… {{ scanned }}/{{ days.length }} journées
         </p>
 
-        <div v-if="films.length" class="list">
-            <article v-for="{ movie, days: eventDays } in films" :key="movie.id" class="card">
-                <!-- ⚠️ L'affiche est décorative et **hors du flux de tabulation** : elle menait au même
-                     endroit que le titre, ce qui donnait deux arrêts clavier pour une seule action. Un
-                     seul contrôle porte la navigation — le titre, qui la nomme. -->
-                <NuxtImg v-if="posterUrl(movie.poster_path)" :src="posterUrl(movie.poster_path)"
-                         :alt="''" aria-hidden="true" class="poster" loading="lazy" />
-                <span v-else class="poster -placeholder" aria-hidden="true" />
+        <div v-if="buckets.length" class="list">
+            <EventsCard v-for="bucket in buckets" :key="bucket.key" :mode="group" :bucket="bucket"
+                        :open="openCard === bucket.key" @toggle="toggleCard(bucket.key)"
+                        @select="openSeances" />
+        </div>
 
-                <div class="body">
-                    <button class="name" type="button"
-                            :aria-label="`Voir les séances de ${movie.title}`"
-                            @click="goToSeances(movie.movie_id)">
-                        {{ movie.title }}
-                    </button>
-                    <p v-if="releaseLabel(movie)" class="release">{{ releaseLabel(movie) }}</p>
-
-                    <ul class="days">
-                        <!-- Chaque journée est cliquable : elle ouvre la vue Séances sur ce jour-là,
-                             cadrée sur le film. C'est la question qui suit « il y a un événement » —
-                             à quelle heure, et est-ce que je peux y être. -->
-                        <li v-for="day in eventDays" :key="day.date" class="day">
-                            <button class="when" type="button"
-                                    :aria-label="`Voir les séances de ${movie.title} le ${dayLabel(day.date)}`"
-                                    @click="goToSeances(movie.movie_id, day.date)">{{ dayLabel(day.date) }}</button>
-                            <span class="what">{{ day.labels.join(' · ') }}</span>
-                            <span v-if="day.cinemas.length" class="where">{{ day.cinemas.join(' · ') }}</span>
-                            <!-- Texte libre de l'exploitant : « en présence du réalisateur », « suivie
-                                 d'une dégustation… ». Allociné ne le fournit pas — il vient du site de
-                                 la salle (Dulac à ce jour, cf. `server/utils/dulac.js`). Absent la
-                                 plupart du temps, donc jamais un trou dans la mise en page. -->
-                            <a v-if="day.detail && day.url" class="detail" :href="day.url"
-                               target="_blank" rel="noopener noreferrer"
-                               :title="`Fiche de la salle — nouvel onglet`">{{ day.detail }}</a>
-                            <span v-else-if="day.detail" class="detail">{{ day.detail }}</span>
-                        </li>
-                    </ul>
-                </div>
-            </article>
+        <!-- Le filtre a tout mangé : message distinct de la page vide, avec la sortie de secours.
+             Sans ça, « aucun événement » se lirait comme une semaine creuse. -->
+        <div v-else-if="films.length" class="state">
+            <p class="msg">Aucun événement de ce type dans les 7 prochains jours.</p>
+            <button class="action" type="button" @click="kind = 'all'">Voir tous les types</button>
         </div>
 
         <!-- Vide, mais pas forcément vide : tant que le relevé tourne, on ne conclut rien. -->
@@ -130,13 +138,18 @@ onMounted(() => scan())
 </template>
 
 <style lang="scss" scoped>
-.events {
+// Chrome de page repris tel quel de `/seances` — même gouttière, même en-tête, mêmes états vides,
+// même pied de source. Les deux vues sont voisines dans la navigation : une différence de gabarit
+// entre elles se lirait comme un changement d'application.
+.events-page {
     flex: 1;
     min-width: 0;
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 1.6rem 2.4rem 11rem;
+
+    > .filters { margin-bottom: 1.6rem; }
 
     > .scanning {
         margin-bottom: 1.6rem;
@@ -224,114 +237,7 @@ onMounted(() => scan())
     }
 }
 
-// Carte film. Bord violet plutôt que la surface neutre des cartes de séances : la page entière parle
-// d'événements, autant que la couleur le dise une fois pour toutes.
-.card {
-    display: flex;
-    gap: 1.6rem;
-    padding: 1.6rem;
-    background: $color-surface-1;
-    border: 1px solid rgba($color-event, .3);
-    border-radius: 1.6rem;
-
-    > .poster {
-        display: block;
-        width: 6.4rem;
-        height: 9.6rem;
-        flex: none;
-        border-radius: .8rem;
-        object-fit: cover;
-
-        &.-placeholder { background: $color-surface-4; }
-    }
-
-    > .body {
-        flex: 1;
-        min-width: 0;
-
-        > .name {
-            display: block;
-            padding: 0;
-            background: none;
-            border: 0;
-            text-align: left;
-            color: $color-text;
-            font: $bold 1.6rem/1.2 $font-body;
-            cursor: pointer;
-
-            @media (hover: hover) {
-                &:hover { color: $color-event-light; }
-            }
-        }
-
-        > .release {
-            margin-top: .3rem;
-            color: $color-text-quiet;
-            font: $normal 1.15rem/1 $font-body;
-        }
-
-        > .days {
-            display: flex;
-            flex-direction: column;
-            gap: .8rem;
-            margin-top: 1.2rem;
-
-            > .day {
-                padding-left: 1.2rem;
-                border-left: 2px solid rgba($color-event, .45);
-
-                > .when {
-                    display: block;
-                    padding: 0;
-                    background: none;
-                    border: 0;
-                    text-align: left;
-                    color: $color-event-light;
-                    font: $bold 1.2rem/1.2 $font-body;
-                    letter-spacing: .04rem;
-                    text-transform: uppercase;
-                    cursor: pointer;
-
-                    @media (hover: hover) {
-                        &:hover { color: $color-text; text-decoration: underline; }
-                    }
-                }
-
-                > .what {
-                    display: block;
-                    margin-top: .2rem;
-                    color: $color-text-body;
-                    font: $semi-bold 1.3rem/1.3 $font-body;
-                }
-
-                > .where {
-                    display: block;
-                    margin-top: .1rem;
-                    color: $color-text-muted;
-                    font: $normal 1.2rem/1.3 $font-body;
-                }
-
-                > .detail {
-                    display: block;
-                    margin-top: .4rem;
-                    color: $color-event-light;
-                    font: $normal 1.25rem/1.4 $font-body;
-
-                    &[href] {
-                        text-decoration: underline;
-                        text-decoration-color: rgba($color-event, .5);
-
-                        @media (hover: hover) {
-                            &:hover { color: $color-text; }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 @media (max-width: 999px) {
-    .events { padding: 1.4rem 1.4rem 11rem; }
+    .events-page { padding: 1.4rem 1.4rem 11rem; }
 }
 </style>

@@ -20,6 +20,10 @@ $color-status-grey: #3A3F4A;   // à venir / téléchargeable (bord seul)
 // information. Le rose reste l'accent de l'app, le jaune l'avertissement, le vert le « vu ».
 $color-event: #B57BD6;         // bord / fond des marqueurs d'événement
 $color-event-light: #C99AE0;   // texte d'événement — 7,3:1 sur le fond du chip, AA pour du 0,95rem
+// Encre posée **sur** le violet plein (badge d'affiche, option active du sélecteur de regroupement).
+// Une prune très sombre plutôt que du noir : 10,4:1 sur $color-event, et elle reste dans la famille
+// au lieu de trancher comme le ferait un aplat neutre.
+$color-event-ink: #1A0F22;
 
 // Surfaces
 $color-surface-1: #14161C;

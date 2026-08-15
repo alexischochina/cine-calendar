@@ -39,26 +39,16 @@ export const eventCountLabel = (n) => `${n} ÉVÉNEMENT${n > 1 ? 'S' : ''}`;
 // `seen`     : `Set` des `internalId` que cette passe a réellement observés, événement ou pas.
 // `previews` : `Set` des `internalId` qui sont des avant-premières.
 //
-// Pourquoi `previews` en plus des libellés : c'est la seule qualification qui **décide** quelque chose
-// en aval (la carte UGC ne couvre pas les avant-premières, cf. `isCardEligible`). Elle voyage donc en
-// booléen, sur le champ `isPreview` que la source aurait rempli si son endpoint film le sélectionnait.
-// Faire trancher `isCardEligible` sur la chaîne « Avant-première » aurait adossé une règle métier à un
-// texte d'interface — qui se reformule, et casse la règle sans que rien ne le dise.
+// ⚠️ L'invariant, asymétrique à dessein : on ne réécrit **que** les séances vues. Une séance absente
+// de la réponse n'est pas une séance sans événement, c'est une séance dont on ne sait rien —
+// l'endpoint par salle est creux. Une séance vue est réécrite sans condition, y compris en vide, pour
+// qu'un événement déprogrammé disparaisse.
 //
-// ⚠️ `seen` est le cœur de la fonction, pas un garde-fou décoratif. L'endpoint par salle est **creux**
-// (`theater-C0159` rendait 1 jour sur 7 là où l'endpoint film en rendait 6 — mesuré le 13/08/2026, cf.
-// `README-seances.md`). Une séance absente de sa réponse n'est donc pas une séance sans événement :
-// c'est une séance dont on ne sait rien. La marquer « sans événement » serait le même faux positif que
-// celui qui avait fait déclarer Les Halles muette par `check-seances.mjs`.
+// `previews` voyage à part des libellés parce que c'est la seule qualification qui **décide** quelque
+// chose en aval (`isCardEligible`) : un booléen se teste, un texte d'interface se reformule.
 //
-// D'où la règle, et elle est asymétrique à dessein :
-//   - séance **vue** → réécrite sans condition, y compris en vide. C'est ce qui permet à un événement
-//     retiré de la programmation de disparaître, et à une entrée de cache écrite avant cette
-//     fonctionnalité de se corriger d'elle-même.
-//   - séance **non vue** → on n'y touche pas. Elle garde ce qu'elle avait : `[]` si rien ne l'a jamais
-//     qualifiée, ou le libellé greffé plus tôt dans la visite. La réécrire en vide ferait disparaître
-//     un marqueur déjà affiché, ce qui se lirait comme « l'avant-première a été annulée » — une
-//     information qu'on n'a pas.
+// Le pourquoi du creux, ses mesures et ce qu'il coûte : `_ressources/README-seances.md`, « Séances
+// événement ».
 export const graftEvents = (payload, { events = {}, seen, previews = new Set() }) => ({
     ...payload,
     theaters: (payload?.theaters ?? []).map(theater => ({
@@ -167,10 +157,86 @@ export const nextMovieEvent = (movie, bounds) => movieEvents(movie, bounds)[0] ?
 // différents (relevé du jour, repli par les dates, relecture depuis la base après aller-retour JSON) —
 // il suffirait qu'un seul construise ses objets dans un autre ordre pour que deux lots identiques se
 // déclarent différents, et l'app réécrirait la colonne à chaque chargement sans que rien ne le montre.
+//
+// ⚠️⚠️ `bookings` EN FAIT PARTIE, et l'oublier a coûté cher. Cette empreinte ne sert pas qu'à répondre
+// « y a-t-il lieu d'écrire » : `useSeanceEvents` et `useUpcomingEvents` s'en servent aussi de **clé de
+// regroupement** pour n'émettre qu'un `update … in (ids)` par lot identique. Deux films qui tombent sur
+// la même clé reçoivent donc le **même** patch, entrées comprises.
+//
+// Sans les bookings, deux avant-premières le même soir dans la même salle (mêmes `labels`, `detail`
+// encore `null` au premier passage — le cas normal) se déclaraient identiques : le second film
+// enregistrait les URL de billetterie du premier. Au relevé suivant, `withDetails` interrogeait
+// `/api/events/detail` avec le titre de B et les bookings de A ; `fetchUgcDetail` rapproche par
+// **numéro de séance** (`server/utils/ugc.js`), donc rendait le libellé de A — affiché sur B. C'est
+// exactement le faux rapprochement que `mk2.js` se donne du mal à éviter : « un libellé collé à la
+// mauvaise séance est pire que pas de libellé ».
+//
+// Le coût de la correction est une écriture de plus quand seules les URL ont bougé. C'est le bon
+// échange : une écriture inutile ne se voit pas, un libellé sur le mauvais film se voit et trompe.
 export const entriesKey = (entries) => (entries ?? [])
-    .map(e => [e.date, e.cinema ?? '', [...(e.labels ?? [])].sort().join(','), e.detail ?? ''].join('|'))
+    .map(e => [
+        e.date,
+        e.cinema ?? '',
+        [...(e.labels ?? [])].sort().join(','),
+        e.detail ?? '',
+        [...(e.bookings ?? [])].sort().join(','),
+    ].join('|'))
     .sort()
     .join('\n');
+
+// --- Ce qui va dans la pastille ------------------------------------------------------------------
+//
+// Allociné a un vocabulaire fermé de deux entrées (« Avant-première », « Séance unique », cf.
+// `EVENT_LABELS` dans `server/utils/allocine.js`). Affiché tel quel, ça donne une page où **toutes**
+// les pastilles disent « Avant-première » — ce qui est vrai, et parfaitement inutile : ce n'est pas ça
+// qu'on vient lire, on vient lire *ce qu'a cette séance de particulier*.
+//
+// Ce particulier existe, mais il est chez l'exploitant (`detail`), et il arrive sous deux formes :
+//   - un **libellé** — « Avant-première avec équipe », « Séance suivie d'une rencontre ». C'est le mot
+//     d'Allociné en plus précis : il le remplace dans la pastille ;
+//   - une **phrase** — « La séance sera présentée par le réalisateur Cristian Mungiu. » Elle ne tient
+//     pas dans une pastille et n'a pas à y tenir : elle reste sous les pastilles, en toutes lettres.
+//
+// D'où cette fonction, qui tranche entre les deux et **dédoublonne** : une salle qui écrit exactement
+// « Avant-première » ne doit pas produire une pastille et une ligne disant la même chose.
+
+// Au-delà, ce n'est plus un libellé mais une description : elle irait à la ligne dans la pastille et
+// pousserait tout le reste hors de l'écran.
+const CHIP_MAX = 48;
+
+// Forme de comparaison : accents dépliés, casse et ponctuation neutralisées. Sans ça
+// « Avant-Première » et « avant premiere » se déclareraient différents et la pastille se dédoublerait.
+const fold = (value) => String(value ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+// `{ chips, note }` pour une entrée `{ labels, detail, url }`.
+//
+// `chips` : `{ text, url }` — l'URL n'est portée que par une pastille venue de l'exploitant, qui est
+// alors un lien vers la fiche de la salle. Les libellés d'Allociné ne mènent nulle part.
+// `note`  : la phrase de l'exploitant, ou `null` si elle est déjà dans une pastille.
+export const eventChips = ({ labels = [], detail = null, url = null } = {}) => {
+    const raw = String(detail ?? '').trim();
+    // Le point final se retire avant l'arbitrage : « Avant-première. » est un libellé ponctué, pas une
+    // phrase. Un point **suivi d'autre chose**, lui, prouve qu'on a bien un texte rédigé.
+    const text = raw.replace(/\s*[.!?…]+$/, '').trim();
+    const multiSentence = /[.!?]\s/.test(raw);
+    const truncated = /…$/.test(raw);
+
+    const promoted = Boolean(text) && !multiSentence && !truncated && text.length <= CHIP_MAX;
+    if (!promoted) {
+        return { chips: labels.map(text => ({ text, url: null })), note: raw ? { text: raw, url } : null };
+    }
+
+    // Le libellé d'Allociné disparaît quand la pastille promue le contient déjà : « Avant-première
+    // avec équipe » **est** l'avant-première, l'afficher deux fois ne dit rien de plus.
+    const folded = fold(text);
+    const kept = labels.filter(label => !folded.includes(fold(label)));
+
+    return { chips: [{ text, url }, ...kept.map(text => ({ text, url: null }))], note: null };
+};
 
 // Regroupe les entrées par **journée**, pour l'affichage : un film a souvent plusieurs
 // avant-premières, et plusieurs salles le même soir. « dim. 16 août — Avant-première · UGC Maillot,
