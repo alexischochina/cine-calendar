@@ -7,6 +7,10 @@
 //   - elles portent les décisions métier les plus faciles à casser sans s'en rendre compte (le
 //     filtre carte, l'ordre des salles). Ici, elles sont exécutables par un script de test
 //     (`scripts/test-seances-rules.mjs`) sans monter Nuxt.
+//
+// Import explicite et non auto-import : ce fichier doit rester chargeable par le script de test, qui
+// tourne hors de Nuxt. Même raison que `tmdbDates.js` côté serveur.
+import { countEvents, isEventShowtime } from './seanceEvents.js';
 
 // Séances qu'une carte UGC Illimité ne couvre pas, **dans la salle même où elle est acceptée**.
 // Une seule constante, volontairement : ces exclusions sont amenées à s'enrichir à l'usage et
@@ -24,9 +28,20 @@ const CARD_EXCLUDED_FORMATS = [
     'F_3D',      // majoration lunettes
 ];
 
-// `isPreview` : les avant-premières sortent du cadre de la carte. ⚠️ Allociné n'expose pas ce champ
-// aujourd'hui (vérifié le 12/08/2026) — le test est en place et inerte, il se réveillera tout seul
-// si le champ réapparaît, plutôt que d'exclure à tort par un autre biais.
+// `isPreview` : les avant-premières sortent du cadre de la carte.
+//
+// ⚠️ Ce test était **inerte** jusqu'à la seconde passe par salle, et il ne l'est plus : l'endpoint que
+// la production interroge ne sélectionne pas `isPreview` (cf. l'encadré « Deux endpoints, deux jeux de
+// champs » dans `server/utils/allocine.js`), mais `graftEvents` le pose désormais à partir de ce que
+// la passe salle a vu. C'est volontairement un **booléen** et non le libellé « Avant-première » qui
+// arbitre ici : une règle métier adossée à un texte d'interface se casse au premier reformulage, et en
+// silence.
+//
+// ⚠️ Conséquence à connaître, maintenant que le test mord : le pré-filtre carte étant actif par défaut,
+// une avant-première est **masquée** à l'arrivée sur la page. C'est correct — la carte ne la couvre pas
+// — et ce n'est pas silencieux : `hiddenEvents` la compte et la vue le dit en propres termes, avec sa
+// porte de sortie. On ne bricolera pas ce filtre pour faire ressortir les événements, ce serait mentir
+// sur ce que la carte paie.
 export const isCardEligible = (showtime) => {
     if (showtime.isPreview) return false;
     return !(showtime.projection ?? []).some(format => CARD_EXCLUDED_FORMATS.includes(String(format).toUpperCase()));
@@ -148,18 +163,26 @@ export const countShowtimes = (list) => list.reduce((n, e) => n + e.showtimes.le
 // Combien de séances passeraient ces filtres. `countShowtimes(applyFilters(…))` donnait la même
 // réponse, au prix d'une entrée reconstruite et d'un tableau d'horaires alloués **par salle** — pour
 // n'en garder qu'un entier. Les décomptes « ce que le filtre masque » n'ont besoin que du nombre.
-export const countMatching = (list, { card, range = null }) => {
+//
+// `only` restreint le comptage à un sous-ensemble de séances (les séances événement, en pratique).
+// Paramètre plutôt que fonction jumelle : la chaîne de filtres est la même, seul le dénombrement
+// change, et deux copies auraient divergé au premier filtre ajouté.
+export const countMatching = (list, { card, range = null }, only = null) => {
     let n = 0;
     for (const entry of list) {
         if (card && !entry.cinema.acceptsUgc) continue;
         for (const showtime of entry.showtimes) {
             if (!inTimeRange(showtime, range)) continue;
             if (card && !isCardEligible(showtime)) continue;
+            if (only && !only(showtime)) continue;
             n++;
         }
     }
     return n;
 };
+
+// Combien de séances **événement** passeraient ces filtres.
+export const countMatchingEvents = (list, filters) => countMatching(list, filters, isEventShowtime);
 
 // Filtres — purement dérivés, aucun fetch. Le filtre carte agit à deux niveaux : la salle
 // (référentiel curé) et la séance (cf. `isCardEligible`).
@@ -196,6 +219,11 @@ export const groupByFilm = (entries) => {
         ...bucket,
         entries: bucket.entries.sort((a, b) => byFavoriteThenPlace(a.cinema, b.cinema)),
         nbSeances: countShowtimes(bucket.entries),
+        // Compté **après filtrage** (les entrées arrivent déjà filtrées) : la carte annonce les
+        // événements qu'on peut effectivement voir dans la liste dépliée, pas ceux que le pré-filtre
+        // carte ou la plage horaire viennent d'écarter. Un compteur qui promet trois événements pour
+        // n'en montrer qu'un serait pire que pas de compteur.
+        nbEvents: countEvents(bucket.entries),
     }));
 };
 
@@ -207,6 +235,10 @@ export const groupByCinema = (entries) => {
         buckets.get(entry.cinema.code).entries.push(entry);
     }
     return [...buckets.values()]
-        .map(bucket => ({ ...bucket, nbSeances: countShowtimes(bucket.entries) }))
+        .map(bucket => ({
+            ...bucket,
+            nbSeances: countShowtimes(bucket.entries),
+            nbEvents: countEvents(bucket.entries),
+        }))
         .sort((a, b) => byFavoriteThenPlace(a.cinema, b.cinema));
 };

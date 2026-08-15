@@ -15,6 +15,11 @@ $color-primary-warm: #FF7A3D;  // orange, uniquement en fin de dégradé du jour
 $color-green: #2FBF71;         // vu au ciné
 $color-yellow: #F0A935;        // vu en streaming (ambre)
 $color-status-grey: #3A3F4A;   // à venir / téléchargeable (bord seul)
+// Violet — séances événement (avant-première, séance unique, labels de programmation). Une famille à
+// part et pas une nuance de rose : l'événement n'est pas un degré de « en salle », c'est une autre
+// information. Le rose reste l'accent de l'app, le jaune l'avertissement, le vert le « vu ».
+$color-event: #B57BD6;         // bord / fond des marqueurs d'événement
+$color-event-light: #C99AE0;   // texte d'événement — 7,3:1 sur le fond du chip, AA pour du 0,95rem
 
 // Surfaces
 $color-surface-1: #14161C;

@@ -130,11 +130,7 @@ export const resolveAllocineId = async ({ title, releaseDate, director }) => {
     return { allocineId: candidates[0]?.id ?? null, unavailable: false };
 };
 
-// ⚠️ `d-` prend une **date ISO** (`d-2026-08-14`). Les offsets numériques (`d-1`, `d-2`) sont
-// acceptés mais renvoient tous *aujourd'hui* — piège silencieux, ne jamais les utiliser.
-export const fetchShowtimesPage = async (allocineId, date, page = 1) => {
-    const url = `${ALLOCINE_ORIGIN}/_/showtimes/movie-${allocineId}/near-${PARIS_LOCALIZATION}/d-${date}/p-${page}/`;
-
+const fetchJson = async (url, what) => {
     try {
         return await $fetch(url, {
             headers: { 'User-Agent': USER_AGENT },
@@ -142,9 +138,97 @@ export const fetchShowtimesPage = async (allocineId, date, page = 1) => {
             responseType: 'json',
         });
     } catch (e) {
-        console.error('[allocine] Séances indisponibles', url, e?.message ?? e);
+        console.error(`[allocine] ${what} indisponible`, url, e?.message ?? e);
         return null;
     }
+};
+
+// ⚠️ `d-` prend une **date ISO** (`d-2026-08-14`). Les offsets numériques (`d-1`, `d-2`) sont
+// acceptés mais renvoient tous *aujourd'hui* — piège silencieux, ne jamais les utiliser.
+export const fetchShowtimesPage = (allocineId, date, page = 1) =>
+    fetchJson(
+        `${ALLOCINE_ORIGIN}/_/showtimes/movie-${allocineId}/near-${PARIS_LOCALIZATION}/d-${date}/p-${page}/`,
+        'Séances',
+    );
+
+const fetchTheaterPage = (code, date, page = 1) =>
+    fetchJson(`${ALLOCINE_ORIGIN}/_/showtimes/theater-${code}/d-${date}/p-${page}/`, 'Séances de salle');
+
+// Séances événement d'une **salle** pour une date, indexées par `internalId`.
+//
+// Raison d'être : c'est le seul endpoint qui porte les champs d'événement (cf. l'encadré « Deux
+// endpoints, deux jeux de champs »). On l'interroge en second, pour les seules salles qui jouent des
+// films de la liste, et on rapproche séance par séance — l'endpoint film reste la source des horaires,
+// celui-ci ne fait qu'ajouter une qualification.
+//
+// ⚠️⚠️ CET ENDPOINT EST CREUX, et c'est pourquoi on rend `seen` en plus de `events`.
+// Mesuré le 13/08/2026 (cf. `README-seances.md`, spike Cinéfil) : `theater-C0159` rendait *1 jour sur
+// 7* là où `movie-…/near-Paris` en rendait 6. Une réponse vide ne veut donc pas dire « aucun
+// événement » — le plus souvent elle veut dire « cet endpoint n'a rien à dire de cette journée ».
+// Confondre les deux est **exactement** le faux positif qui avait fait déclarer Les Halles muette par
+// `check-seances.mjs`.
+//
+// `seen` = tous les `internalId` réellement observés, événement ou pas. C'est la seule preuve qu'on
+// ait vu une séance et qu'on peut donc se prononcer sur elle. L'appelant ne réécrit que celles-là ;
+// les autres gardent ce qu'elles avaient, faute de savoir. On résout donc **par séance** et non par
+// salle — une salle à moitié rendue est le cas courant ici, pas l'exception.
+//
+// `events` ne porte que ce qui a au moins un libellé : une salle rend ~50 séances par jour dont 0 à 1
+// événement, garder les vides multiplierait par cinquante la taille du cache pour n'y stocker que des
+// tableaux vides. `seen` suffit à distinguer « vue, sans événement » de « pas vue ».
+//
+// `previews` voyage à part des libellés parce que c'est la seule qualification qui **décide** quelque
+// chose en aval : la carte UGC ne couvre pas les avant-premières (`isCardEligible`). Un booléen se
+// teste ; un libellé d'interface se reformule et casse le test en silence.
+//
+// N'échoue jamais : `ok: false` = « on n'a pas joint Allociné ». Sans ce drapeau, la route de cache
+// graverait une panne réseau comme une journée sans événement.
+export const fetchTheaterEvents = async (code, date) => {
+    const first = await fetchTheaterPage(code, date, 1);
+    if (!first) return { ok: false, events: {}, seen: [], previews: [] };
+
+    // `error: true` = « aucune séance à cette date » chez Allociné (cf. `fetchParisShowtimes`), pas
+    // une panne. Ici, c'est aussi la forme que prend le creux : `seen` reste vide, donc l'appelant ne
+    // se prononcera sur aucune séance — la journée est mise en cache sans rien affirmer.
+    if (first.error) return { ok: true, events: {}, seen: [], previews: [] };
+
+    const totalPages = Number(first.pagination?.totalPages) || 1;
+    const rest = totalPages > 1
+        ? await promisePool(
+            Array.from({ length: totalPages - 1 }, (_, i) => () => fetchTheaterPage(code, date, i + 2)),
+            SHOWTIME_CONCURRENCY,
+        )
+        : [];
+
+    // Même prudence que sur les séances : une page perdue, ce sont des films entiers évanouis sans le
+    // moindre signal. L'appelant a besoin de le savoir pour ne pas graver le trou dans le cache.
+    const missedPages = rest.filter(page => !page).length;
+    if (missedPages) console.error(`[allocine] ${missedPages}/${totalPages} page(s) perdues pour la salle ${code} au ${date}`);
+
+    const events = {};
+    const seen = new Set();
+    const previews = new Set();
+
+    for (const result of [first, ...rest].filter(Boolean)) {
+        for (const entry of result.results ?? []) {
+            for (const bucket of Object.values(entry.showtimes ?? {})) {
+                for (const showtime of bucket ?? []) {
+                    const id = showtime?.internalId;
+                    if (id == null) continue;
+
+                    seen.add(id);
+                    const tags = Array.isArray(showtime.tags) ? showtime.tags : [];
+
+                    if (isPreviewShowtime(showtime, tags)) previews.add(id);
+
+                    const labels = showtimeEventLabels(showtime, tags);
+                    if (labels.length) events[id] = labels;
+                }
+            }
+        }
+    }
+
+    return { ok: true, partial: missedPages > 0, events, seen: [...seen], previews: [...previews] };
 };
 
 // Première URL de billetterie exploitable. Les `relay.mvtx.us` (provider `relay`) sont des
@@ -177,6 +261,126 @@ const pickBooking = (ticketing) => {
     return null;
 };
 
+// --- Séances événement --------------------------------------------------------------------------
+//
+// ⚠️ Allociné ne livre **aucun texte libre** décrivant l'événement. Relevé le 14/08/2026 sur
+// 2 293 séances de 49 salles parisiennes réparties sur 7 jours : pas de champ `comment`, pas de
+// `title`, rien qui ressemble à « En présence de l'équipe du film ». Ce qu'on peut afficher est donc
+// borné par un **vocabulaire fermé**, et c'est lui qu'on traduit ici — inutile de chercher mieux
+// ailleurs dans le payload, il n'y a rien.
+//
+// ⚠️⚠️ DEUX ENDPOINTS, DEUX JEUX DE CHAMPS — et c'est le piège central de ce fichier.
+// Le même `Showtime` (comparé à `internalId` égal, 80248550361 le 14/08/2026) n'est pas sélectionné
+// pareil selon la route :
+//
+//   `/_/showtimes/theater-{code}/d-{date}/`   → porte `isPreview`, `isWeeklyMovieOuting`
+//                                               et les tags `Showtime.Event.*`
+//   `/_/showtimes/movie-{id}/near-{loc}/…`    → ne les porte PAS. Ni le booléen, ni les tags.
+//
+// Or c'est la seconde que le projet interroge (`fetchShowtimesPage`), parce qu'elle est film-centrée
+// et coûte ~14 requêtes par journée là où balayer les salles en coûterait ~53. Conséquence directe :
+// **`showtimeEventLabels` rend aujourd'hui `[]` sur toutes les séances de production.** Le code n'est
+// pas mort pour autant — c'est le même arrangement que `isPreview` juste en dessous : il se réveille
+// tout seul le jour où la source enrichit sa sélection, ou le jour où on ajoutera une passe par
+// salle. Voir `_ressources/README-seances.md`, « Séances événement ».
+//
+// Table volontairement explicite : c'est le seul endroit du projet où un tag Allociné devient du
+// texte affiché à l'utilisateur. Elle reste **côté serveur** — l'app ne compare jamais ces chaînes,
+// elle ne fait que les afficher. Ce qu'elle a besoin de *décider* (une avant-première n'est pas
+// couverte par la carte UGC) passe par le booléen `isPreview`, pas par le libellé : un test métier
+// adossé à un texte d'interface se casse au premier reformulage, et en silence.
+const EVENT_LABELS = {
+    'Showtime.Event.Preview': 'Avant-première',
+    'Showtime.Event.OnlySession': 'Séance unique',
+};
+
+// **Le seul namespace d'événements d'Allociné.** `Showtime.Event.*` est le nom qu'il donne lui-même à
+// ce qui qualifie une séance : `Preview`, `OnlySession`. C'est le seul où un membre inconnu peut être
+// affiché de confiance.
+const EVENT_NAMESPACE = /^Showtime\.Event\./;
+
+// ⚠️⚠️ `BoostPos.XpEtLabels.*` N'EST PAS un namespace d'événements, et l'avoir cru a produit des badges
+// absurdes en production. Relevé sur 267 journées-salles réelles le 14/08/2026 : sur 202 libellés
+// enregistrés, **161 étaient du bruit** —
+//
+//   « Artet essai » ×54                        label de salle, sur *chaque* séance d'un art et essai
+//   « Diffusion salle le club / le studio »×45  noms de salles
+//   « Salle infinite », « Salle1 youssef chahine » ×32
+//   « Premier » ×14, « St anglais », « Headline »
+//
+// « XpEtLabels » veut dire « expériences **et labels** » : ça mélange dispositifs de programmation et
+// identités de salles. On n'y accepte donc **que ce qu'on a vérifié**, sans repli — un membre inconnu
+// y est ignoré, pas deviné. C'est exactement la garde qui manquait : le sondage initial n'avait croisé
+// que `JeunePublic` et `LenfanceDeLart`, et j'ai généralisé le namespace entier sur deux exemples.
+//
+// Le reste est écarté depuis le début : `Format.*` et `Auditorium.Experience.*` décrivent la copie et la
+// salle (4DX, Dolby Atmos, laser) ; `Localization.*` la version ; `Showtime.Accessibility.*` et
+// `BoostPos.Accessibilite.*` l'accessibilité ; `BoostPos.Autres.PopCorn` et `BoostPos.Son.*` sont
+// commerciaux. Tout accepter aurait marqué 1 656 séances sur 2 293 — un badge sur presque tout.
+const PROGRAMME_LABELS = {
+    'BoostPos.XpEtLabels.JeunePublic': 'Jeune public',
+    'BoostPos.XpEtLabels.LenfanceDeLart': 'L’enfance de l’art',
+};
+
+// Signalé une fois par instance, pas une fois par séance : sur un blockbuster le même tag reviendrait
+// des dizaines de fois par requête.
+const unknownEventTags = new Set();
+
+// Repli quand Allociné élargit son vocabulaire : `Showtime.Event.CineClub` → « Cine club ». Imparfait
+// (ni accent, ni trait d'union) mais préférable aux deux alternatives — taire l'événement, ou tout
+// coller sous un « Séance événement » générique qui fusionnerait deux événements distincts.
+const humanizeEventTag = (tag) => {
+    const words = tag.slice(tag.lastIndexOf('.') + 1)
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .toLowerCase();
+    return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+// Avant-première ? Deux signaux, pas toujours livrés ensemble : le booléen (5 cas sur le relevé du
+// 14/08/2026) et le tag (1 cas, **sans** le booléen). Exporté parce que c'est la seule qualification
+// d'événement qui porte une conséquence métier — la carte UGC ne couvre pas les avant-premières — et
+// qu'elle voyage donc à part des libellés d'affichage.
+export const isPreviewShowtime = (showtime, tags) =>
+    showtime?.isPreview === true || (tags ?? []).includes('Showtime.Event.Preview');
+
+// Libellés d'événement d'une séance, dédoublonnés. Un tableau vide signifie « séance ordinaire », et
+// c'est l'immense majorité : 6 séances sur 2 293 dans le relevé du 14/08/2026. La rareté est le
+// propos — un marqueur qui apparaît partout ne se remarque plus.
+export const showtimeEventLabels = (showtime, tags) => {
+    const labels = new Set();
+
+    if (isPreviewShowtime(showtime, tags)) labels.add(EVENT_LABELS['Showtime.Event.Preview']);
+
+    for (const tag of tags ?? []) {
+        // Label de programmation : liste blanche stricte, **aucun repli**. Cf. l'encadré ci-dessus —
+        // c'est le namespace qui a produit « Artet essai » sur 54 séances.
+        const programme = PROGRAMME_LABELS[tag];
+        if (programme) {
+            labels.add(programme);
+            continue;
+        }
+
+        // Namespace d'événements d'Allociné : là, un membre inconnu est affiché quand même. Taire un
+        // événement est pire que l'annoncer imparfaitement — et ce namespace-là ne contient que des
+        // événements.
+        if (!EVENT_NAMESPACE.test(String(tag))) continue;
+
+        const known = EVENT_LABELS[tag];
+        if (known) {
+            labels.add(known);
+            continue;
+        }
+
+        if (!unknownEventTags.has(tag)) {
+            unknownEventTags.add(tag);
+            console.warn(`[allocine] Tag d'événement inconnu, à ajouter à EVENT_LABELS : ${tag}`);
+        }
+        labels.add(humanizeEventTag(tag));
+    }
+
+    return [...labels];
+};
+
 const normalizeShowtime = (showtime) => {
     const startsAt = showtime?.startsAt;
     if (typeof startsAt !== 'string' || startsAt.length < 16) return null;
@@ -185,6 +389,11 @@ const normalizeShowtime = (showtime) => {
 
     return {
         startsAt,
+        // Identifiant de la séance chez Allociné. C'est la **clé de jointure** avec la passe par
+        // salle : le même `Showtime` porte le même `internalId` sur les deux endpoints (vérifié le
+        // 14/08/2026 — 80248550361 des deux côtés), alors que rien d'autre ne les rapprocherait de
+        // façon sûre (une salle peut programmer deux séances à la même heure dans deux salles).
+        internalId: showtime.internalId ?? null,
         // ⚠️ `startsAt` est en heure locale **sans offset** (`2026-08-14T10:00:00`). Un `new Date()`
         // le réinterpréterait selon le fuseau du serveur : on découpe la chaîne, point.
         time: startsAt.slice(11, 16),
@@ -193,10 +402,14 @@ const normalizeShowtime = (showtime) => {
         version: showtime.diffusionVersion === 'ORIGINAL' ? 'VO' : 'VF',
         subtitled: tags.includes('Localization.Subtitle.French'),
         accessible: tags.includes('Showtime.Accessibility.Accessible'),
-        // ⚠️ `isPreview` n'est pas systématiquement présent dans le payload (absent sur les films
-        // sondés le 12/08/2026). On le lit s'il est là, avec un repli sur les tags, et on considère
-        // « pas une avant-première » par défaut plutôt que d'exclure à tort.
+        // ⚠️ `isPreview` est absent des séances rendues par `/_/showtimes/movie-…` — non pas « pas
+        // encore vu à `true` », mais **pas dans la réponse du tout** (cf. l'encadré « Deux endpoints,
+        // deux jeux de champs » plus haut). On le lit s'il est là, avec un repli sur les tags, et on
+        // considère « pas une avant-première » par défaut plutôt que d'exclure à tort.
         isPreview: showtime.isPreview === true || tags.some(t => /preview|avantpremiere/i.test(String(t).replace(/[^a-z]/gi, ''))),
+        // Libellés d'événement, résolus **ici et une seule fois** : le front n'a jamais à connaître
+        // le vocabulaire de tags d'Allociné, il ne lit que du texte prêt à afficher.
+        events: showtimeEventLabels(showtime, tags),
         projection: Array.isArray(showtime.projection) ? showtime.projection : [],
         booking: pickBooking(showtime.data?.ticketing),
     };

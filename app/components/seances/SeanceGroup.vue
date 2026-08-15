@@ -54,6 +54,13 @@ const cinemaSubtitle = ({ cinema, nbSeances, entries }) => [
 const subtitle = computed(() =>
     props.mode === 'film' ? filmSubtitle(props.bucket) : cinemaSubtitle(props.bucket));
 
+// Séances événement de la carte, comptées après filtrage (cf. `nbEvents` dans `seancesGrouping.js`).
+// La pastille est sur l'en-tête et pas seulement sur les chips : elle sert à décider si ça vaut le
+// coup de déplier, ce qui n'a d'intérêt que carte fermée.
+const eventLabels = computed(() => eventLabelsOf(props.bucket.entries.flatMap(e => e.showtimes)));
+
+const eventHint = computed(() => eventLabels.value.join(' · '));
+
 const favoriteLabel = (cinema) => cinema.favorite
     ? `Retirer ${cinema.name} des cinémas favoris`
     : `Ajouter ${cinema.name} aux cinémas favoris`;
@@ -110,7 +117,16 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
                         <span v-if="mode === 'cinema' && bucket.cinema.unconfirmedSince" class="unconfirmed"
                               role="note" :title="UNCONFIRMED_HINT">non confirmé<span class="sr">. {{ UNCONFIRMED_HINT }}</span></span>
                     </span>
-                    <span class="sub">{{ subtitle }}</span>
+                    <span class="sub">
+                        {{ subtitle }}
+                        <!-- Le décompte est du texte visible ; les libellés partent dans le `title`
+                             et dans un contenu lu, la place manquant pour les afficher tous ici.
+                             Chaque chip porte le sien, une fois la carte dépliée. -->
+                        <span v-if="bucket.nbEvents" class="events" role="note" :title="eventHint">
+                            <Svg name="star" aria-hidden="true" />
+                            {{ eventCountLabel(bucket.nbEvents) }}<span class="sr">&nbsp;: {{ eventHint }}.</span>
+                        </span>
+                    </span>
                 </span>
 
                 <span class="chevron" :class="{ '-collapsed': !open }" aria-hidden="true"><Svg name="chevron" /></span>
@@ -208,6 +224,29 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
     clip-path: inset(50%);
     white-space: nowrap;
     border: 0;
+}
+
+// Pastille « N ÉVÉNEMENTS » de l'en-tête. Ni pleine ni criarde : elle vit à côté d'un sous-titre gris
+// et doit attirer l'œil sans devenir le sujet de la carte — le sujet reste le film ou la salle.
+@mixin eventTag {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    padding: .2rem .7rem;
+    border: 1px solid rgba($color-event, .4);
+    border-radius: .6rem;
+    background: rgba($color-event, .14);
+    color: $color-event-light;
+    font: $bold .95rem/1.3 $font-body;
+    letter-spacing: .03rem;
+    white-space: nowrap;
+    cursor: help;
+
+    > :deep(svg) {
+        width: .9rem;
+        height: .9rem;
+        flex: none;
+    }
 }
 
 @mixin unconfirmedTag {
@@ -316,10 +355,15 @@ const UNCONFIRMED_HINT = 'Horaires vus lors d\'un relevé précédent : la sourc
                 }
 
                 > .sub {
-                    display: block;
+                    display: flex;
+                    align-items: center;
+                    flex-wrap: wrap;
+                    gap: .8rem;
                     margin-top: .3rem;
                     color: $color-text-muted;
-                    font: $normal 1.2rem/1 $font-body;
+                    font: $normal 1.2rem/1.3 $font-body;
+
+                    > .events { @include eventTag; }
                 }
             }
 
