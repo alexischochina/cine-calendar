@@ -153,26 +153,33 @@ onMounted(() => {
 
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
-// Naviguer d'un film à l'autre depuis le rail ne remonte pas la page (même route) : c'est ce watch
-// qui recadre. La journée en fait partie — cliquer deux événements du même film à des dates
-// différentes ne change que `?jour`.
-watch(() => [route.query.film, route.query.jour].join('|'), focusThenLoad)
-
-// ⚠️ Rechargement direct sur `/seances` : le layout charge `movies` dans SON `onMounted`, qui se
-// déclenche *après* celui de la page (Vue monte les enfants avant les parents). Le `load` ci-dessus
-// tomberait donc sur une liste vide.
+// Deux causes de recadrage, **un seul watch**, et c'est délibéré :
 //
-// On surveille la **composition** de la liste et pas seulement sa longueur : le contrôle « en
-// salle » tourne en tâche de fond et peut aussi bien ajouter un film que remplacer l'un par un
-// autre. `load` ne demande que ce qui manque au cache L1, le relancer est donc quasi gratuit.
-watch(() => films.value.map(m => m.id).join(','), (now, before) => {
-    if (!now || now === before) return
+//   - la route — naviguer d'un film à l'autre depuis le rail ne remonte pas la page (même route),
+//     c'est ce watch qui recadre. La journée en fait partie : cliquer deux événements du même film à
+//     des dates différentes ne change que `?jour` ;
+//   - la composition de `films` — rechargement direct sur `/seances`, où le layout charge `movies`
+//     dans SON `onMounted`, déclenché *après* celui de la page (Vue monte les enfants avant les
+//     parents) : le `load` du montage tomberait sur une liste vide. On surveille la composition et
+//     pas seulement la longueur, le contrôle « en salle » pouvant remplacer un film par un autre.
+//
+// ⚠️ Deux `watch` séparés se déclenchaient **tous les deux** au retour de `useInTheatersSync` quand
+// il ajoute un film alors qu'on arrive avec un `?film` : deux `focusThenLoad` concurrents, donc deux
+// `applyDayFromRoute` et surtout deux `jumpToNextAvailableDay` — celui-ci enchaîne jusqu'à trois
+// `load()` et déplace la journée affichée. Le coût réseau était nul (le L1 absorbe), le saut de jour
+// en double, lui, se voyait. Une source unique règle les deux d'un coup.
+const focusKey = computed(() =>
+    [route.query.film ?? '', route.query.jour ?? '', films.value.map(m => m.id).join(',')].join('|')
+)
+
+watch(focusKey, (now, before) => {
+    if (now === before) return
     focusThenLoad()
 })
 </script>
 
 <template>
-    <div class="seances scr">
+    <div class="seances-page scr">
         <div class="head">
             <h1 class="title">Séances à Paris</h1>
             <!-- `aria-live` ici plutôt que sur la liste : changer de jour ou de filtre remplace tout
@@ -299,7 +306,7 @@ watch(() => films.value.map(m => m.id).join(','), (now, before) => {
 </template>
 
 <style lang="scss" scoped>
-.seances {
+.seances-page {
     flex: 1;
     min-width: 0;
     min-height: 0;
@@ -504,6 +511,6 @@ watch(() => films.value.map(m => m.id).join(','), (now, before) => {
 }
 
 @media (max-width: 999px) {
-    .seances { padding: 1.4rem 1.4rem 11rem; }
+    .seances-page { padding: 1.4rem 1.4rem 11rem; }
 }
 </style>
