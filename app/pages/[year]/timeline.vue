@@ -4,7 +4,7 @@
 definePageMeta({ key: 'timeline', middleware: ['auth', 'valid-year'] })
 useHead({ title: 'Mon calendrier' })
 
-const { sortedMovies, moviesWithoutDate, cinemaNow, handleMovieDeleted, handleReleaseDateUpdated, setCatchup } = useMovieCalendar()
+const { sortedMovies, moviesWithoutDate, cinemaNow, eventSoon, handleMovieDeleted, handleReleaseDateUpdated, setCatchup } = useMovieCalendar()
 const { selectedYear, goToSeances } = useCalendarNav()
 
 // null = section « Sans date ».
@@ -22,7 +22,7 @@ const hasContent = computed(() =>
     <div class="timeline-page">
         <!-- Portée par la page et non par le shell : rendue par le layout, elle disparaîtrait
              dès le début du crossfade et ferait remonter la vue sortante d'un cran. -->
-        <CinemaNowPanel class="band" variant="band" :movies="cinemaNow" @select-movie="goToSeances" />
+        <CinemaNowPanel class="band" variant="band" :movies="cinemaNow" :event-movies="eventSoon" @select-movie="goToSeances" />
 
         <TimelineList :selected-year="selectedYear" :months-of-year="monthsOfYear"
                       :movies-without-date="moviesWithoutDate" :has-content="hasContent"

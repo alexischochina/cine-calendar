@@ -6,9 +6,10 @@ export function useCalendarNav() {
 
     const currentYear = new Date().getFullYear()
 
-    // `/seances` vit à la racine : sémantiquement juste (la vue ne dépend d'aucune année), mais
-    // la route ne porte alors aucun param `year`. Sans mémoire, `selectedYear` retomberait à null
-    // et le shell surlignerait « Sans date » dans le rail comme dans la pastille mobile.
+    // `/seances` et `/evenements` vivent à la racine : sémantiquement juste (ces vues ne dépendent
+    // d'aucune année), mais la route ne porte alors aucun param `year`. Sans mémoire, `selectedYear`
+    // retomberait à null et le shell surlignerait « Sans date » dans le rail comme dans la pastille
+    // mobile.
     const lastSelectedYear = useState('lastSelectedYear', () => currentYear)
 
     // `undefined` = la route ne porte pas d'année (ou une année invalide) ; `null` = « Sans date »,
@@ -22,9 +23,9 @@ export function useCalendarNav() {
         routeYear.value === undefined ? lastSelectedYear.value : routeYear.value
     )
 
-    // Noms de route Nuxt : `year-timeline` / `year-stats` / `seances`. Lecture explicite plutôt
-    // qu'un `endsWith` : à trois vues, deviner la vue par son suffixe devient un piège.
-    const VIEW_BY_ROUTE = { seances: 'seances', 'year-stats': 'stats' }
+    // Noms de route Nuxt : `year-timeline` / `year-stats` / `seances` / `evenements`. Lecture
+    // explicite plutôt qu'un `endsWith` : à quatre vues, deviner la vue par son suffixe est un piège.
+    const VIEW_BY_ROUTE = { seances: 'seances', evenements: 'events', 'year-stats': 'stats' }
     const viewMode = computed(() => VIEW_BY_ROUTE[String(route.name || '')] ?? 'timeline')
 
     // Navigue vers la timeline de l'année du film, puis scrolle jusqu'à lui.
@@ -36,22 +37,37 @@ export function useCalendarNav() {
         scrollToMovie(movieId)
     }
 
-    // « Au ciné en ce moment » → la vue Séances, cadrée sur ce film. L'identifiant passe par l'URL
-    // (et non par un `useState`) pour que le lien soit partageable et surtout survive à un
-    // rechargement : la page relit `?film` au montage.
-    const goToSeances = (movieId) =>
-        navigateTo({ path: '/seances', query: { film: String(movieId) } })
+    // Le rail → la vue Séances, cadrée sur ce film. L'identifiant passe par l'URL (et non par un
+    // `useState`) pour que le lien soit partageable et surtout survive à un rechargement : la page
+    // relit `?film` au montage.
+    //
+    // `date` : la journée à ouvrir, quand on clique un événement daté. Sans elle la vue s'ouvre sur
+    // aujourd'hui et il faudrait retrouver le bon jour à la main — alors que la carte cliquée affichait
+    // « dim. 16 août ». Omise pour un clic ordinaire depuis « Au ciné en ce moment ».
+    const goToSeances = (movieId, date = null) =>
+        navigateTo({
+            path: '/seances',
+            query: { film: String(movieId), ...(date ? { jour: String(date) } : {}) },
+        })
+
+    const goToEvents = () => navigateTo('/evenements')
+
+    // Vues qui vivent hors année, et leur route. C'est la **source unique** de cette liste : la
+    // dupliquer entre `selectYear` et `selectView` les ferait diverger au prochain onglet ajouté, et
+    // le symptôme serait une navigation vers `/2026/evenements`, qui n'existe pas.
+    const YEARLESS_VIEWS = { seances: '/seances', events: '/evenements' }
 
     const selectYear = async (year) => {
-        // `/2026/seances` n'existe pas : choisir une année depuis Séances ramène sur sa timeline.
-        const mode = viewMode.value === 'seances' ? 'timeline' : viewMode.value
+        // `/2026/seances` n'existe pas : choisir une année depuis une vue hors année ramène sur sa
+        // timeline.
+        const mode = YEARLESS_VIEWS[viewMode.value] ? 'timeline' : viewMode.value
         await navigateTo(`/${yearToSlug(year)}/${mode}`)
         await nextTick()
         scrollToTop()
     }
 
-    const selectView = (mode) => mode === 'seances'
-        ? navigateTo('/seances')
+    const selectView = (mode) => YEARLESS_VIEWS[mode]
+        ? navigateTo(YEARLESS_VIEWS[mode])
         : navigateTo(`/${yearToSlug(selectedYear.value)}/${mode}`)
 
     const onScrollToToday = async () => {
@@ -72,6 +88,7 @@ export function useCalendarNav() {
         yearOfMovie,
         goToMovie,
         goToSeances,
+        goToEvents,
         selectYear,
         selectView,
         onScrollToToday,

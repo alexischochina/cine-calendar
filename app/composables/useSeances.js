@@ -1,10 +1,14 @@
 // Vue « Séances » : tout l'état et toute la logique métier de la page.
 //
-// Point de départ : les films `state === 'inTheaters'` (ceux du rail « Au ciné en ce moment »),
-// état lui-même tenu par `useInTheatersSync` — les deux vues montrent donc rigoureusement la même
+// Point de départ : `seanceFilms`, c'est-à-dire **les deux rubriques du rail réunies** — « Événement à
+// venir » puis « Au ciné en ce moment ». La vue et le rail montrent donc rigoureusement la même
 // affiche. Pour chaque film on résout un identifiant Allociné (une fois, persisté en base), puis on
 // charge ses séances parisiennes du jour sélectionné. Les composants ne font que rendre ce qui sort
 // d'ici — aucune logique métier dans les `.vue`.
+//
+// ⚠️ Certains de ces films ne sont **pas** `inTheaters` : une avant-première a lieu avant la sortie. Se
+// limiter à `cinemaNow` les rendait introuvables — le clic depuis le rail ouvrait bien `/seances?film=…`
+// mais n'y cadrait ni ne chargeait rien.
 //
 // La résolution, le chargement d'une journée et le cache L1 vivent dans `useShowtimes`, partagé
 // avec le contrôle « en salle » — c'est son en-tête qui décrit les deux niveaux de cache.
@@ -23,8 +27,11 @@ const pad = (n) => String(n).padStart(2, '0');
 
 export function useSeances() {
     const client = useSupabaseClient();
-    const { cinemaNow } = useMovieCalendar();
+    const { seanceFilms } = useMovieCalendar();
     const { payloadFor, resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore } = useShowtimes();
+    const { loadEvents } = useTheaterEvents();
+    const { syncEvents } = useSeanceEvents();
+    const { pruneEmptyHorizon } = useInTheatersSync();
 
     // --- état de la vue (useState : la page est démontée au passage sur Timeline/Stats) ---
     const dayIndex = useState('seancesDay', () => 0);
@@ -81,8 +88,10 @@ export function useSeances() {
 
     const selectedDay = computed(() => days.value[dayIndex.value] ?? days.value[0]);
 
-    // Films de la liste actuellement en salle, dans l'ordre du rail.
-    const films = computed(() => cinemaNow.value);
+    // Films que la vue doit savoir montrer, dans l'ordre du rail : la rubrique « Événement à venir »
+    // d'abord, puis « Au ciné en ce moment ». Certains ne sont pas encore sortis — une avant-première a
+    // lieu avant la sortie — et c'est justement pour eux qu'on vient ici.
+    const films = computed(() => seanceFilms.value);
 
     // Film mis au premier plan, ou `null`. Un identifiant qui ne correspond à aucun film en salle
     // (lien vieilli, film retiré de l'affiche depuis) vaut absence de focus : mieux vaut la page
@@ -183,6 +192,24 @@ export function useSeances() {
         } finally {
             loading.value = false;
         }
+
+        // Seconde passe : qualifier les séances en séances événement, puis noter ce qu'on a trouvé sur
+        // les lignes `calendar` pour que le rail « Au ciné en ce moment » puisse les mettre en avant.
+        //
+        // **Hors du `try` et sans `await`, volontairement.** La vue s'affiche dès que les horaires sont
+        // là ; les marqueurs apparaissent une fraction de seconde après, sans écran de chargement.
+        // L'ordre importe en revanche : `syncEvents` lit le L1 que `loadEvents` vient d'enrichir, d'où
+        // le chaînage plutôt que deux appels côte à côte.
+        //
+        // `films.value` et non `visibleFilms` : cadré sur un film, le rail continue de parler de tous.
+        // C'est aussi ce qui fait que revenir de `/seances?film=…` ne perd pas les badges des autres.
+        loadEvents(films.value, selectedDay.value.date)
+            .then(() => syncEvents(films.value, [selectedDay.value.date]))
+            // Et, gratuitement : si la navigation a fini par charger les sept journées, un film dont
+            // l'horizon entier est vide sort de l'affiche sans attendre le mercredi. Ne fait rien tant
+            // que la preuve est incomplète — c'est une lecture du cache L1, pas une requête.
+            .then(() => pruneEmptyHorizon(films.value, days.value.map(d => d.date)))
+            .catch(e => console.error('Relevé des séances événement échoué', e));
 
         // Puis, sans bloquer l'affichage : on montre le cache tout de suite, et on va vérifier
         // derrière. La vue se complète toute seule si une salle a ouvert ses ventes entre-temps —
@@ -361,6 +388,7 @@ export function useSeances() {
 
     const nbFilms = computed(() => byFilm.value.length);
     const nbSeances = computed(() => countShowtimes(filtered.value));
+    const nbEvents = computed(() => countEvents(filtered.value));
 
     // Ce que le pré-filtre carte masque, à filtres égaux par ailleurs. Sert à distinguer
     // « il n'y a rien ce jour-là » de « c'est le filtre carte qui a tout mangé » — sans quoi
@@ -380,6 +408,15 @@ export function useSeances() {
         timeRange.value
             ? countMatching(entries.value, { ...filters(ugcOnly.value), range: null }) - nbSeances.value
             : 0
+    );
+
+    // Séances événement que le pré-filtre carte masque. Cas presque systématique et non anecdotique :
+    // une avant-première n'est pas couverte par la carte UGC (cf. `isCardEligible`), et le pré-filtre
+    // est actif par défaut. Sans ce décompte, le badge « ÉVÉNEMENT » du rail enverrait sur une page où
+    // l'événement est introuvable, sans un mot pour l'expliquer — la promesse d'un côté, le silence de
+    // l'autre. On préfère le dire et proposer la porte de sortie.
+    const hiddenEvents = computed(() =>
+        ugcOnly.value ? countMatchingEvents(entries.value, filters(false)) - nbEvents.value : 0
     );
 
     // Salles que le dernier contrôle a trouvées **absentes d'Allociné** (cf. `check-seances.mjs`).
@@ -439,8 +476,8 @@ export function useSeances() {
         days, dayIndex, selectedDay, group, timeSlot, customRange, ugcOnly, openCard,
         focusFilmId, loading, error, stale, silentCinemas, hasUnconfirmed,
         // données
-        films, focusFilm, unresolved, byFilm, byCinema, nbFilms, nbSeances, hiddenByCard, hiddenByTime,
-        nextDate, updatedAt,
+        films, focusFilm, unresolved, byFilm, byCinema, nbFilms, nbSeances, nbEvents,
+        hiddenByCard, hiddenByTime, hiddenEvents, nextDate, updatedAt,
         // actions
         load, retry, refreshDay, selectDay, toggleFavorite, jumpToNextAvailableDay, syncToday, refreshCinemas,
     };

@@ -8,7 +8,7 @@ useHead({ title: 'Séances à Paris' })
 const {
     days, dayIndex, group, timeSlot, customRange, ugcOnly, openCard, focusFilmId,
     loading, error, stale, silentCinemas, hasUnconfirmed, films, focusFilm, unresolved, byFilm, byCinema,
-    nbFilms, nbSeances, hiddenByCard, hiddenByTime, nextDate, updatedAt,
+    nbFilms, nbSeances, nbEvents, hiddenByCard, hiddenByTime, hiddenEvents, nextDate, updatedAt,
     load, retry, refreshDay, selectDay, toggleFavorite, jumpToNextAvailableDay, syncToday, refreshCinemas,
 } = useSeances()
 
@@ -31,6 +31,25 @@ const applyFocusFromRoute = () => {
     const raw = route.query.film
     if (!raw) { focusFilmId.value = null; return }
     focusFilmId.value = films.value.find(m => String(m.movie_id) === String(raw))?.id ?? null
+}
+
+// `?jour=YYYY-MM-DD` → la journée à ouvrir. Posé par un clic sur un événement daté du rail ou de la
+// page Événements : la carte annonçait « dim. 16 août », atterrir sur aujourd'hui obligerait à
+// retrouver le jour à la main.
+//
+// Une date hors des sept jours affichés (lien vieilli, événement passé) est ignorée : mieux vaut
+// aujourd'hui qu'un index invalide. Renvoie `true` si la journée a été appliquée — l'appelant s'en
+// sert pour ne pas la faire corriger par le saut automatique juste après.
+const applyDayFromRoute = () => {
+    const wanted = String(route.query.jour ?? '')
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(wanted)) return false
+
+    const index = days.value.findIndex(d => d.date === wanted)
+    if (index < 0) return false
+
+    dayIndex.value = index
+    openCard.value = null
+    return true
 }
 
 // `replace` et non `push` : le retrait du cadrage n'a pas à créer une entrée d'historique, sinon le
@@ -82,6 +101,9 @@ let jumpedFor = null
 
 const focusThenLoad = async () => {
     applyFocusFromRoute()
+    // Avant le chargement : `load()` ne demande que la journée sélectionnée, la poser après coup
+    // ferait un aller-retour réseau pour rien.
+    const pinnedDay = applyDayFromRoute()
     lastLoadedAt = Date.now()
     await load()
 
@@ -89,7 +111,10 @@ const focusThenLoad = async () => {
     if (jumpedFor === focusFilmId.value) return
 
     jumpedFor = focusFilmId.value
-    await jumpToNextAvailableDay()
+    // Journée demandée explicitement : on n'y touche pas. Le saut automatique existe pour éviter un
+    // mur vide quand on ne sait pas où regarder — ici on sait, et corriger le choix de l'utilisateur
+    // dans son dos est précisément ce que le reste de la vue s'interdit.
+    if (!pinnedDay) await jumpToNextAvailableDay()
 }
 
 // Retour sur l'onglet : la page a pu rester ouverte des heures, voire passer minuit. On recale la
@@ -129,8 +154,9 @@ onMounted(() => {
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onVisible))
 
 // Naviguer d'un film à l'autre depuis le rail ne remonte pas la page (même route) : c'est ce watch
-// qui recadre.
-watch(() => route.query.film, focusThenLoad)
+// qui recadre. La journée en fait partie — cliquer deux événements du même film à des dates
+// différentes ne change que `?jour`.
+watch(() => [route.query.film, route.query.jour].join('|'), focusThenLoad)
 
 // ⚠️ Rechargement direct sur `/seances` : le layout charge `movies` dans SON `onMounted`, qui se
 // déclenche *après* celui de la page (Vue monte les enfants avant les parents). Le `load` ci-dessus
@@ -172,6 +198,15 @@ watch(() => films.value.map(m => m.id).join(','), (now, before) => {
                               @update:group="group = $event" @update:time-slot="timeSlot = $event"
                               @update:custom-range="customRange = $event"
                               @update:ugc-only="ugcOnly = $event" />
+
+        <!-- Séances événement écartées par le pré-filtre carte — le cas d'une avant-première, que la
+             carte UGC ne couvre pas. Dit et non tu : le badge du rail promet un événement, la page
+             doit expliquer pourquoi il n'y est pas et rouvrir d'un clic. -->
+        <p v-if="hiddenEvents" class="warn -event">
+            {{ hiddenEvents }} séance{{ hiddenEvents > 1 ? 's' : '' }} événement hors carte UGC
+            (une avant-première n'est pas couverte) — masquée{{ hiddenEvents > 1 ? 's' : '' }} par le pré-filtre.
+            <button class="link" type="button" @click="ugcOnly = false">Ouvrir à tout Paris</button>
+        </p>
 
         <!-- Horaires servis depuis une entrée périmée : on les montre quand même (mieux qu'une page
              vide) mais on l'annonce, la billetterie restant l'arbitre. -->
@@ -323,6 +358,24 @@ watch(() => films.value.map(m => m.id).join(','), (now, before) => {
         margin-bottom: 1.6rem;
         color: $color-yellow;
         font: $normal 1.2rem/1.4 $font-body;
+
+        // Violet et non ambre : celui-ci ne met pas en garde sur la fraîcheur d'une donnée, il explique
+        // où sont passés les événements. Même famille de couleur que les marqueurs auxquels il renvoie.
+        &.-event { color: $color-event-light; }
+
+        > .link {
+            padding: 0;
+            background: none;
+            border: 0;
+            color: inherit;
+            font: inherit;
+            text-decoration: underline;
+            cursor: pointer;
+
+            @media (hover: hover) {
+                &:hover { color: $color-text; }
+            }
+        }
     }
 
     > .list {

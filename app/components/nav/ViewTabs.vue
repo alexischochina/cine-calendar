@@ -1,10 +1,16 @@
 <script setup>
-// Segmented Timeline|Stats|Séances avec pastille rose glissante. Partagé entre le rail gauche
-// desktop (NavSideNav) et l'en-tête mobile (layouts/default.vue) — une seule source de vérité.
+// Segmented Timeline|Stats|Séances|Événements avec pastille rose glissante. Partagé entre le rail
+// gauche desktop (NavSideNav) et l'en-tête mobile (layouts/default.vue) — une seule source de vérité.
 //
-// Deux dispositions, comme la maquette : le rail **empile** les onglets (22rem de large, trois
-// libellés horizontaux n'y tiennent pas — c'est ce qui débordait), l'en-tête mobile garde le
-// segmented horizontal. La pastille glisse sur l'axe correspondant.
+// Deux dispositions, comme la maquette : le rail **empile** les onglets (22rem de large, des libellés
+// horizontaux n'y tiennent pas — c'est ce qui débordait), l'en-tête mobile garde le segmented
+// horizontal. La pastille glisse sur l'axe correspondant.
+//
+// ⚠️ Le passage à **quatre** onglets a forcé l'en-tête mobile en *icône seule*. Mesuré sur 375 px de
+// large : après les paddings et les gaps il reste ~57 px de texte par onglet, et « Événements » en
+// demande ~10 caractères — le libellé serait coupé, ou tous les onglets réduits à une taille illisible.
+// Un segmented à quatre icônes est un motif standard sur téléphone ; le nom, lui, ne disparaît pas —
+// il vit dans `aria-label` et dans `title`, donc au lecteur d'écran comme à l'appui long.
 defineProps({
     viewMode: {
         type: String,
@@ -23,6 +29,7 @@ const TABS = [
     { mode: 'timeline', icon: 'list', label: 'Timeline' },
     { mode: 'stats', icon: 'chart', label: 'Stats' },
     { mode: 'seances', icon: 'ticket', label: 'Séances' },
+    { mode: 'events', icon: 'star', label: 'Événements' },
 ];
 </script>
 
@@ -30,8 +37,9 @@ const TABS = [
     <div class="view-tabs" :class="[`-${layout}`, `-view-${viewMode}`]">
         <button v-for="tab in TABS" :key="tab.mode" class="tab" type="button"
                 :class="{ '-active': viewMode === tab.mode }" :aria-pressed="viewMode === tab.mode"
+                :aria-label="tab.label" :title="tab.label"
                 @click="emit('select-view', tab.mode)">
-            <Svg :name="tab.icon" class="ico" aria-hidden="true" />{{ tab.label }}
+            <Svg :name="tab.icon" class="ico" aria-hidden="true" /><span class="txt">{{ tab.label }}</span>
         </button>
     </div>
 </template>
@@ -47,8 +55,8 @@ const TABS = [
     padding: .4rem;
 
     // Pastille rose glissante : couvre un onglet, translate vers le suivant au changement de vue.
-    // Sa taille vaut un tiers du conteneur moins sa part des paddings (2 × .4rem) et des gaps
-    // (2 × .4rem), soit (.8 + .8) / 3 = .534rem à retrancher.
+    // Sa taille vaut un quart du conteneur moins sa part des paddings (2 × .4rem) et des gaps
+    // (3 × .4rem), soit (.8 + 1.2) / 4 = .5rem à retrancher.
     &::before {
         content: '';
         position: absolute;
@@ -82,37 +90,41 @@ const TABS = [
 
     // Rail desktop : une colonne, onglets alignés à gauche.
     &.-stack {
-        grid-template-rows: repeat(3, 1fr);
+        grid-template-rows: repeat(4, 1fr);
 
         &::before {
             right: .4rem;
-            height: calc(33.333% - .534rem);
+            height: calc(25% - .5rem);
         }
 
         &.-view-stats::before { transform: translateY(calc(100% + .4rem)); }
         &.-view-seances::before { transform: translateY(calc(200% + .8rem)); }
+        &.-view-events::before { transform: translateY(calc(300% + 1.2rem)); }
     }
 
     // En-tête mobile : segmented horizontal, colonnes strictement égales (calage exact de la
     // pastille), libellés centrés et resserrés.
     &.-row {
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(4, 1fr);
 
         &::before {
             bottom: .4rem;
-            width: calc(33.333% - .534rem);
+            width: calc(25% - .5rem);
         }
 
         &.-view-stats::before { transform: translateX(calc(100% + .4rem)); }
         &.-view-seances::before { transform: translateX(calc(200% + .8rem)); }
+        &.-view-events::before { transform: translateX(calc(300% + 1.2rem)); }
 
         > .tab {
             justify-content: center;
-            gap: .5rem;
-            padding: .8rem .4rem;
-            font-size: 1.2rem;
+            padding: 1rem .4rem;
 
-            > .ico { width: 1.4rem; height: 1.4rem; }
+            > .ico { width: 1.7rem; height: 1.7rem; }
+
+            // Icône seule : quatre libellés ne tiennent pas sur un téléphone (cf. l'en-tête du
+            // fichier). Le nom reste porté par `aria-label` et `title`.
+            > .txt { display: none; }
         }
     }
 }

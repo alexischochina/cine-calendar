@@ -3,7 +3,7 @@
 // de vue et charge le state une fois. Les pages ne rendent que le corps via <slot/>.
 const store = useMoviesStore()
 const {
-    movies, sortedMovies, moviesWithoutDate, cinemaNow,
+    movies, sortedMovies, moviesWithoutDate, cinemaNow, eventSoon,
     getMovies, sortMovies, setCatchup, refreshLetterboxdRatings,
     handleMovieAdded, handleMovieExists,
 } = useMovieCalendar()
@@ -14,6 +14,7 @@ const {
 } = useCalendarNav()
 
 const { syncInTheaters } = useInTheatersSync()
+const { syncUpcomingEvents } = useUpcomingEvents()
 
 const { catchupNotice } = useCatchupFlow()
 const { dispatchMovieAdded, dispatchMovieExists, dispatchScrollToToday, dispatchSearchMovie } = useNavEvents()
@@ -81,7 +82,13 @@ onMounted(async () => {
     // Contrôle « en salle » (Allociné), en tâche de fond et **sans await** : il ne doit jamais
     // retarder le premier rendu. Il ne fait quelque chose qu'une fois par semaine ciné ; les jours
     // où il tourne, la timeline et le rail se réordonnent d'eux-mêmes à son retour.
+    //
+    // Puis, **enchaîné et non lancé en parallèle**, le repérage des avant-premières des films à venir.
+    // Les deux partagent le cache L1 des séances et la file par date de `useShowtimes` : les chaîner
+    // évite que le second redemande ce que le premier vient de rapporter pour aujourd'hui.
     syncInTheaters()
+        .then(() => syncUpcomingEvents())
+        .catch(e => console.error('Contrôle Allociné de fond échoué', e))
 })
 
 onBeforeUnmount(() => {
@@ -112,13 +119,14 @@ onBeforeUnmount(() => {
 
         <!-- `--rail-space` dépend seulement de la présence de films en salle (pas de la vue) → stable
              pendant un switch, donc la vue sortante ne se recomprime pas pendant le crossfade. -->
-        <div class="shell-main" :style="{ '--rail-space': cinemaNow.length ? '26.4rem' : '0px' }">
+        <div class="shell-main" :style="{ '--rail-space': (cinemaNow.length || eventSoon.length) ? '26.4rem' : '0px' }">
             <slot />
         </div>
 
         <!-- Rail droit en overlay (hors flux) → largeur de shell-main constante entre les vues. -->
         <Transition name="rail">
-            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail" :movies="cinemaNow" @select-movie="goToSeances" />
+            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail"
+                            :movies="cinemaNow" :event-movies="eventSoon" @select-movie="goToSeances" />
         </Transition>
 
         <!-- Notice « ajouté à la liste à rattraper de <année> » -->
