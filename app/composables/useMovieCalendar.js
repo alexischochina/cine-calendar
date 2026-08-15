@@ -347,20 +347,68 @@ export function useMovieCalendar() {
         sortMovies(movies.value);
     }
 
-    // Films actuellement en salle (rail droit desktop + bande mobile), triés par date. L'état est
-    // tenu à jour par `useInTheatersSync` : ce sont les films qui ont au moins une séance à Paris
-    // dans les 7 jours qui viennent, donc exactement ceux que la vue Séances sait montrer.
-    const cinemaNow = computed(() =>
-        movies.value
-            .filter(m => m.state === 'inTheaters')
+    // Bornes de lecture des événements datés. ⚠️ Lues à chaque réévaluation et non capturées : elles
+    // suivent donc le jour et la semaine. Elles ne bougent pas d'elles-mêmes si la liste ne change pas
+    // — même limite documentée que `today` dans `useSeances`, et de conséquence plus faible ici (une
+    // rubrique du rail, pas une date affichée dans une grille d'horaires).
+    const eventBounds = () => ({ freshSince: lastWednesday(), today: isoDay(0) })
+
+    // Rubrique « Événement à venir » du rail : les films qui ont une séance événement devant eux —
+    // avant-première, séance unique, label de programmation — triés par imminence.
+    //
+    // ⚠️ Ces films ne sont **pas** forcément `inTheaters`, et c'est tout l'intérêt de la rubrique : une
+    // avant-première a lieu *avant* la sortie (cf. `useUpcomingEvents`). Filtrer sur l'état, comme le
+    // fait `cinemaNow`, les aurait tous manqués.
+    const eventSoon = computed(() => {
+        const bounds = eventBounds()
+        return movies.value
+            .filter(m => hasUpcomingEvent(m, bounds))
+            .sort((a, b) => {
+                const [ea, eb] = [nextMovieEvent(a, bounds), nextMovieEvent(b, bounds)]
+                return String(ea?.date).localeCompare(String(eb?.date))
+                    || String(a.title).localeCompare(String(b.title))
+            })
+    })
+
+    // Films actuellement en salle (rail droit desktop + bande mobile). L'état est tenu à jour par
+    // `useInTheatersSync` : ce sont les films qui ont au moins une séance à Paris dans les 7 jours
+    // qui viennent, donc exactement ceux que la vue Séances sait montrer.
+    //
+    // Ceux que la rubrique « Événement à venir » a pris en charge en sortent : les afficher aux deux
+    // endroits ferait lire deux fois le même film au même endroit de l'écran, et la version datée est
+    // strictement plus informative.
+    const cinemaNow = computed(() => {
+        const featured = new Set(eventSoon.value.map(m => m.id))
+        return movies.value
+            .filter(m => m.state === 'inTheaters' && !featured.has(m.id))
             .sort((a, b) => new Date(a.release_date) - new Date(b.release_date))
-    )
+    })
+
+    // Périmètre de la vue Séances : **les deux rubriques du rail réunies**.
+    //
+    // ⚠️ Et surtout pas `cinemaNow` seul, qui retire les films pris en charge par « Événement à venir »
+    // pour ne pas les afficher deux fois. S'en servir comme périmètre de données avait une conséquence
+    // qu'on ne voyait qu'au clic : le film ouvrait `/seances?film=…`, n'y était pas trouvé, donc ni
+    // cadré ni chargé. Le cas d'une avant-première est pire encore — le film n'est pas `inTheaters`,
+    // il n'a jamais été dans `cinemaNow`.
+    //
+    // Les films à événement passent devant : ils dictent l'ordre des cartes, et c'est bien eux qu'on
+    // vient voir.
+    const seanceFilms = computed(() => {
+        const out = [...eventSoon.value]
+        const seen = new Set(out.map(m => m.id))
+        for (const m of cinemaNow.value) if (!seen.has(m.id)) out.push(m)
+        return out
+    })
 
     return {
         movies,
         sortedMovies,
         moviesWithoutDate,
         cinemaNow,
+        eventSoon,
+        seanceFilms,
+        eventBounds,
         getMovies,
         sortMovies,
         handleMovieAdded,
