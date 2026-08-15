@@ -29,7 +29,7 @@ _ressources/sql/2608141200-add-seance-events.sql
 
 Il crée `theater_events_cache` et ajoute `events` / `events_checked_at` à `calendar`. Idempotent.
 Sans lui, la vue reste juste — il lui manque seulement les marqueurs d'événement et la rubrique
-« Événement à venir » du rail, et le code se tait au lieu de retenter (`42P01` / `PGRST204` détecté une
+« Événements à venir » du rail, et le code se tait au lieu de retenter (`42P01` / `PGRST204` détecté une
 fois, puis silence pour la visite).
 
 Enfin, le resserrage des droits sur le référentiel des salles :
@@ -253,7 +253,7 @@ donc d'accord entre eux.
 ### Le périmètre de la vue, ce n'est pas `cinemaNow`
 
 ⚠️ C'est `seanceFilms` — **les deux rubriques du rail réunies**. Piège introduit puis corrigé : `cinemaNow`
-retire les films pris en charge par « Événement à venir », pour ne pas les afficher deux fois. S'en
+retire les films pris en charge par « Événements à venir », pour ne pas les afficher deux fois. S'en
 servir comme périmètre de **données** avait une conséquence qu'on ne voyait qu'au clic — le film ouvrait
 `/seances?film=…`, n'y était pas trouvé, donc n'était ni cadré ni chargé. Le cas d'une avant-première
 était pire : le film n'est pas `inTheaters`, il n'a jamais été dans `cinemaNow`.
@@ -297,7 +297,7 @@ devant les autres. Trois endroits la portent :
 | chip d'horaire | le chip passe au violet, avec le libellé en clair sous l'heure (« Avant-première ») |
 | en-tête de carte | pastille « 1 ÉVÉNEMENT » / « 3 ÉVÉNEMENTS » à côté du sous-titre |
 | page `/evenements` | la liste complète : un film par carte, toutes ses journées d'événement |
-| rail, rubrique « Événement à venir » | le **prochain** événement de chaque film + « +2 autres dates », et un lien vers la page |
+| rail, rubrique « Événements à venir » | le film et le **jour** de son prochain événement, un badge d'affiche pour le nombre de journées, et un lien vers la page |
 | bandeau de la vue | « N séance(s) événement hors carte UGC — masquée(s) par le pré-filtre » (voir plus bas) |
 
 Violet et non rose : le rose dit déjà « en salle » sur toute la liste, il ne peut pas dire deux choses
@@ -507,7 +507,7 @@ Le payload mis en cache est donc `{ events, seen, previews }` : les libellés, l
 vu, et le drapeau d'avant-première. `graftEvents` pose `events` **et** `isPreview` sur les seules
 séances vues.
 
-### La rubrique « Événement à venir » : le cas que tout le reste manquait
+### La rubrique « Événements à venir » : le cas que tout le reste manquait
 
 ⚠️ **Une avant-première a lieu *avant* la sortie.** Le film n'est donc pas « en salle », et rien ne le
 regardait : `useInTheatersSync` filtre sur `release_date <= aujourd'hui`, le rail sur
@@ -591,8 +591,22 @@ testé) arbitre entre les deux formes que prend ce texte :
 > taisait celle des autres. D'où une ligne par couple (journée, salle) : la journée se répète, chaque
 > salle porte sa pastille. Le rail, lui, continue de regrouper — il n'a la place que d'un compteur.
 
-Le filtre par type, lui, porte toujours sur les libellés **d'Allociné** et pas sur ce qu'affiche la
-pastille : le mot de l'exploitant est propre à une séance, il ferait un filtre à une seule entrée.
+Le menu « Type » propose **exactement ce que les pastilles montrent** — `entryKinds`, dérivée de
+`eventChips`. Filtrer sur les seuls libellés d'Allociné laissait un tag « Avant-première avec équipe »
+visible sur une ligne et introuvable dans le menu.
+
+Deux règles tiennent la cohérence :
+
+- **union et pas substitution** — quand le mot de l'exploitant absorbe celui d'Allociné dans la
+  pastille, la famille reste filtrable. Trié alphabétiquement, le menu se lit alors en hiérarchie :
+  « Avant-première », puis « Avant-première avec équipe » juste dessous ;
+- **la phrase rédigée n'est pas un type** — elle décrit une séance au lieu de la qualifier, et ferait
+  autant de filtres que de séances. Elle reste en note sous les pastilles.
+
+Le dédoublonnage se fait sur la forme repliée, et la forme accentuée d'Allociné gagne. Côté barre, le
+libellé du bouton est tronqué : un type d'exploitant monte à 48 caractères (`CHIP_MAX`). Un type peut
+aussi **disparaître** d'un relevé à l'autre quand un connecteur échoue — la page retombe alors sur
+« tous » plutôt que de filtrer sur une valeur qui n'existe plus.
 
 ### Le rail a besoin de colonnes, la vue non
 

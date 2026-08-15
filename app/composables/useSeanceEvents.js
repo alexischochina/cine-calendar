@@ -1,4 +1,4 @@
-// Persistance des séances événement sur la ligne `calendar`, pour la rubrique « Événement à venir ».
+// Persistance des séances événement sur la ligne `calendar`, pour la rubrique « Événements à venir ».
 //
 // Pourquoi persister plutôt que dériver : le rail vit sur la timeline, qui ne lit que Supabase (un
 // chargement de page normale ne sort pas sur le réseau). Une rubrique dérivée du cache de la vue
@@ -148,7 +148,7 @@ export function useSeanceEvents() {
                 // Le détail des codes PostgREST vit dans `shared/utils/pgErrors.js`.
                 if (isMissingSchema(error)) {
                     disabled.value = true;
-                    console.warn('[événements] Colonnes `events` / `events_checked_at` absentes — joue _ressources/sql/2608141200-add-seance-events.sql pour la rubrique « Événement à venir ».');
+                    console.warn('[événements] Colonnes `events` / `events_checked_at` absentes — joue _ressources/sql/2608141200-add-seance-events.sql pour la rubrique « Événements à venir ».');
                     return;
                 }
                 console.error('[événements] Mise à jour échouée:', error.message);

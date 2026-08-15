@@ -350,7 +350,7 @@ export function useMovieCalendar() {
     // change pas.
     const eventBounds = () => ({ freshSince: lastWednesday(), today: isoDay(0) })
 
-    // Rubrique « Événement à venir » du rail : les films qui ont une séance événement devant eux —
+    // Rubrique « Événements à venir » du rail : les films qui ont une séance événement devant eux —
     // avant-première, séance unique, label de programmation — triés par imminence.
     //
     // ⚠️ Ces films ne sont **pas** forcément `inTheaters`, et c'est tout l'intérêt de la rubrique : une
@@ -371,7 +371,7 @@ export function useMovieCalendar() {
     // `useInTheatersSync` : ce sont les films qui ont au moins une séance à Paris dans les 7 jours
     // qui viennent, donc exactement ceux que la vue Séances sait montrer.
     //
-    // Ceux que la rubrique « Événement à venir » a pris en charge en sortent : les afficher aux deux
+    // Ceux que la rubrique « Événements à venir » a pris en charge en sortent : les afficher aux deux
     // endroits ferait lire deux fois le même film au même endroit de l'écran, et la version datée est
     // strictement plus informative.
     const cinemaNow = computed(() => {
@@ -383,7 +383,7 @@ export function useMovieCalendar() {
 
     // Périmètre de la vue Séances : **les deux rubriques du rail réunies**, celles à événement devant.
     //
-    // ⚠️ Et surtout pas `cinemaNow` seul, qui retire les films pris en charge par « Événement à venir »
+    // ⚠️ Et surtout pas `cinemaNow` seul, qui retire les films pris en charge par « Événements à venir »
     // pour ne pas les afficher deux fois : le film ouvrait alors `/seances?film=…` sans y être trouvé,
     // donc ni cadré ni chargé.
     const seanceFilms = computed(() => {
