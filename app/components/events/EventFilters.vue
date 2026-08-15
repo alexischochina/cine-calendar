@@ -13,8 +13,7 @@ import { onClickOutside } from '@vueuse/core';
 const props = defineProps({
     group: { type: String, default: 'film' },
     kind: { type: String, default: 'all' },
-    // Types réellement présents cette semaine. Le vocabulaire vient d'Allociné, pas d'une liste
-    // figée : offrir un filtre qui ne trouve rien serait pire que ne pas l'offrir.
+    // Dérivés des pastilles réellement affichées cette semaine, jamais figés (cf. `entryKinds`).
     kinds: { type: Array, default: () => [] },
 });
 
@@ -28,7 +27,8 @@ const menuEl = ref(null);
 onClickOutside(menuEl, () => { menuOpen.value = false; });
 
 // Le libellé du bouton fermé porte la valeur courante : afficher « Type » tout court obligerait à
-// rouvrir le menu pour savoir ce qu'on filtre.
+// rouvrir le menu pour savoir ce qu'on filtre. ⚠️ Tronqué en CSS et doublé d'un `title` — depuis
+// `entryKinds`, un type peut être une précision d'exploitant, jusqu'à 48 caractères (`CHIP_MAX`).
 const kindLabel = computed(() => props.kind === 'all' ? 'Tous' : props.kind);
 
 const pickKind = (value) => {
@@ -49,7 +49,8 @@ const pickKind = (value) => {
             <!-- Pas d'`aria-haspopup` : la valeur `true` équivaut par spec à « menu », alors que le
                  panneau n'a volontairement pas les rôles `menu`/`menuitem` (cf. plus bas). -->
             <button type="button" class="trigger" :class="{ '-on': kind !== 'all' }"
-                    :aria-expanded="menuOpen" @click="menuOpen = !menuOpen">
+                    :aria-expanded="menuOpen" :title="kind === 'all' ? undefined : kind"
+                    @click="menuOpen = !menuOpen">
                 <span class="lbl">Type : <strong>{{ kindLabel }}</strong></span>
                 <span class="chev" :class="{ '-up': menuOpen }" aria-hidden="true"><Svg name="chevron" /></span>
             </button>
@@ -123,11 +124,22 @@ const pickKind = (value) => {
 
 .kind {
     position: relative;
+    // `min-width: auto` par défaut sur un élément flex : sans ça, la coupe ne se déclenche jamais.
+    min-width: 0;
 
     > .trigger {
         @include pill;
         @include focusRing;
         gap: .8rem;
+        max-width: 100%;
+
+        // Sans coupe, un type de 48 caractères enfle la pilule et pousse la barre hors de l'écran.
+        > .lbl {
+            min-width: 0;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
 
         > .lbl > strong { color: $color-text; font-weight: $semi-bold; }
 

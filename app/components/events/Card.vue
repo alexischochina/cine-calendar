@@ -159,7 +159,10 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                     <!-- Une pastille par qualification, à la place de la rangée d'horaires. Le mot de
                          l'exploitant passe devant celui d'Allociné quand il tient en un libellé —
                          c'est la même information, en plus précis (cf. `eventChips`). Quand il porte
-                         une URL, la pastille **est** le lien vers la fiche de la salle. -->
+                         une URL, la pastille **est** le lien vers la fiche de la salle.
+
+                         ⚠️ Chacune se retrouve dans le menu « Type » de la page, qui dérive de la même
+                         règle (`entryKinds`). -->
                     <span class="labels">
                         <component :is="chip.url ? 'a' : 'span'" v-for="chip in row.chips" :key="chip.text"
                                    class="chip" :class="{ '-link': chip.url }" :href="chip.url || undefined"

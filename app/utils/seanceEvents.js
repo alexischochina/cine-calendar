@@ -1,6 +1,6 @@
 // Séances événement — règles pures, des deux côtés du même sujet :
 //   - côté **séance** : la vue Séances marque les horaires événement et les compte par carte ;
-//   - côté **film**   : le rail « Au ciné en ce moment » ouvre une rubrique « Événement à venir ».
+//   - côté **film**   : le rail « Au ciné en ce moment » ouvre une rubrique « Événements à venir ».
 //
 // Les libellés ne sont pas fabriqués ici. Ils viennent d'Allociné, traduits **une seule fois** côté
 // serveur (`showtimeEventLabels` dans `server/utils/allocine.js`) et transportés dans le payload de
@@ -198,6 +198,30 @@ export const eventChips = ({ labels = [], detail = null, url = null } = {}) => {
     return { chips: [{ text, url }, ...kept.map(text => ({ text, url: null }))], note: null };
 };
 
+// Valeurs sur lesquelles une entrée est **filtrable**, dans la vue Événements.
+//
+// ⚠️ Dérivée de `eventChips` : une pastille affichée sans filtre correspondant est une incohérence que
+// rien ne signale. Une seule fonction décide ce qui s'affiche, les filtres en découlent.
+//
+// L'union et non les seules pastilles : quand le mot de l'exploitant absorbe celui d'Allociné, la
+// **famille** doit rester filtrable. La phrase rédigée (`note`) en est exclue — elle décrit une séance
+// au lieu de la qualifier, et ferait autant de filtres que de séances.
+//
+// Dédoublonnage sur `fold` : « Avant-première » et « AVANT PREMIERE » sont le même type. La première
+// forme gagne, donc celle d'Allociné, proprement accentuée.
+export const entryKinds = (entry) => {
+    const seen = new Set();
+    const out = [];
+
+    for (const text of [...(entry?.labels ?? []), ...eventChips(entry).chips.map(chip => chip.text)]) {
+        const key = fold(text);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(text);
+    }
+    return out;
+};
+
 // Regroupe les entrées par **journée**, pour l'affichage : un film a souvent plusieurs
 // avant-premières, et plusieurs salles le même soir. « dim. 16 août — Avant-première · UGC Maillot,
 // UGC Gobelins » se lit d'un coup d'œil là où trois lignes séparées pour le même jour se répètent.
@@ -226,7 +250,7 @@ export const groupEventsByDay = (entries) => {
     return [...byDay.values()];
 };
 
-// Film à faire remonter dans la rubrique « Événement à venir » : un événement devant lui, et un film
+// Film à faire remonter dans la rubrique « Événements à venir » : un événement devant lui, et un film
 // pas encore vu. ⚠️ Le test sur `state` n'est pas redondant : la rubrique couvre aussi des films qui
 // ne sont pas `inTheaters` du tout (une avant-première a lieu *avant* la sortie), donc rien ne
 // garantit que l'état exclue `'seen'`.

@@ -43,7 +43,7 @@ import { mentionsDate, isEventHeadline, metaContent, truncateDetail } from '../s
 import {
     showtimeEvents, isEventShowtime, countEvents, eventLabelsOf, eventCountLabel,
     graftEvents, dayEventEntries, bookingsOf, mergeEventEntries, groupEventsByDay, entriesKey,
-    movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips, entryKey,
+    movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips, entryKinds, entryKey,
 } from '../app/utils/seanceEvents.js';
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
@@ -545,6 +545,35 @@ console.log('\n\x1b[1mseanceEvents — marquer sans jamais inventer\x1b[0m');
         chips([], 'Ciné-club').chips.map(c => c.text), ['Ciné-club']);
 
     t('entrée vide → rien à afficher', eventChips({}), { chips: [], note: null });
+
+    // ⚠️ L'invariant de la page Événements : tout ce qu'une pastille montre, le menu « Type » le
+    // propose. Il s'était rompu en silence, les deux listes étant calculées séparément.
+    const kindsOf = (labels, detail) => entryKinds({ labels, detail });
+
+    t('la précision de l\'exploitant est filtrable, sa famille aussi',
+        kindsOf(['Avant-première'], 'Avant-première avec équipe'),
+        ['Avant-première', 'Avant-première avec équipe']);
+
+    t('    … donc filtrer la famille garde la séance précisée',
+        kindsOf(['Avant-première'], 'Avant-première avec équipe').includes('Avant-première'), true);
+
+    t('pas de texte d\'exploitant → les seuls libellés d\'Allociné',
+        kindsOf(['Avant-première', 'Jeune public'], null), ['Avant-première', 'Jeune public']);
+
+    t('texte d\'exploitant identique à la casse près → un seul type, bien accentué',
+        kindsOf(['Avant-première'], 'AVANT PREMIERE'), ['Avant-première']);
+
+    t('phrase rédigée → jamais un type : elle ferait un filtre par séance',
+        kindsOf(['Avant-première'], 'La séance sera présentée par le réalisateur Cristian Mungiu.'),
+        ['Avant-première']);
+
+    // ⚠️ Un compte et pas un `every`, qui passe sur un tableau vide : le test resterait vert le jour où
+    // `eventChips` cesserait de rendre la moindre pastille.
+    t('toute pastille affichée est un type proposé',
+        eventChips({ labels: ['Séance unique'], detail: 'Ciné-club' }).chips
+            .filter(c => kindsOf(['Séance unique'], 'Ciné-club').includes(c.text)).length, 2);
+
+    t('entrée vide → aucun type', entryKinds({}), []);
 
     t('prochain événement = le plus proche',
         nextMovieEvent({ events: [ev('2026-08-20', 'Z'), ev('2026-08-17', 'A')], events_checked_at: thursday }, B).date,

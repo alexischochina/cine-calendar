@@ -19,22 +19,28 @@ const group = ref('film')
 const kind = ref('all')
 const openCard = ref(null)
 
-// Types d'événement réellement présents cette semaine, et pas une liste figée : le vocabulaire vient
-// d'Allociné (cf. `showtimeEventLabels`), il n'y a aucune raison d'offrir un filtre qui ne trouve
-// rien.
+// Types réellement présents cette semaine, et pas une liste figée : offrir un filtre qui ne trouve
+// rien serait pire que ne pas l'offrir.
 //
-// Sur les libellés d'Allociné et non sur ce que montre la pastille : celle-ci porte souvent le mot de
-// l'exploitant, qui est unique à une séance (« Avant-première avec équipe ») et ferait un filtre à une
-// seule entrée. On filtre sur la famille, on affiche le détail.
+// ⚠️ Sur `entryKinds`, donc sur **tout ce que les pastilles montrent**, précisions d'exploitant
+// comprises. Le tri alphabétique range chaque précision sous sa famille (« Avant-première », puis
+// « Avant-première avec équipe »), et filtrer la famille garde bien les deux.
 const kinds = computed(() =>
-    [...new Set(films.value.flatMap(f => f.entries.flatMap(e => e.labels)))].sort((a, b) => a.localeCompare(b))
+    [...new Set(films.value.flatMap(f => f.entries.flatMap(entryKinds)))].sort((a, b) => a.localeCompare(b))
 )
+
+// ⚠️ Un type peut **disparaître** en cours de relevé : ceux des exploitants tiennent à un connecteur
+// qui peut échouer ou ne répondre qu'en partie (cf. `fetchUgcLabels`), là où ceux d'Allociné sont
+// stables. Rester dessus donnait une page vide et un menu affichant une valeur qui n'existe plus.
+watch(kinds, (list) => {
+    if (kind.value !== 'all' && !list.includes(kind.value)) kind.value = 'all'
+})
 
 const filtered = computed(() => {
     if (kind.value === 'all') return films.value
 
     return films.value
-        .map(f => ({ ...f, entries: f.entries.filter(e => e.labels.includes(kind.value)) }))
+        .map(f => ({ ...f, entries: f.entries.filter(e => entryKinds(e).includes(kind.value)) }))
         .filter(f => f.entries.length)
 })
 
