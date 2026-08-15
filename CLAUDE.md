@@ -22,9 +22,18 @@ npm run dev       # Start dev server at http://localhost:3000
 npm run build     # Build for production
 npm run generate  # Generate static site
 npm run preview   # Preview production build
+npm test          # Règles pures des vues Séances / Événements (scripts/test-seances-rules.mjs)
 ```
 
-No test suite is configured.
+**Tests** — `npm test` couvre les règles **pures** des vues Séances et Événements : filtres et
+regroupements, semaine ciné, report des salles disparues, vocabulaire d'événement, connecteurs
+d'exploitant, verdicts « en salle ». Aucun framework — un script Node qui sort en code 1 au premier
+échec. Les composables (état, réseau, écritures) ne sont **pas** couverts : c'est là que se sont logés
+les défauts trouvés en revue, à garder en tête avant d'y toucher.
+
+⚠️ Ne pas lancer `npm run build` pendant qu'un serveur de dev tourne : il écrit dans `.nuxt` au format
+production et le dev suivant échoue sur `#internal/nuxt/paths`. Nettoyer par
+`rm -rf .nuxt .output .nitro && npx nuxt prepare`.
 
 ## Architecture
 
@@ -41,8 +50,22 @@ No test suite is configured.
 - One-shot backfill of pre-existing rows: `scripts/backfill-movies.mjs` (throttled to 8 concurrent via `app/utils/promisePool.js`). Migration SQL in `_ressources/sql/`.
 - Pinia store at `app/stores/movies.js` manages filters / movies list state.
 
+**Séances & Événements (Allociné + exploitants) :**
+- Horaires parisiens depuis Allociné (`server/utils/allocine.js`), deux caches durables
+  (`showtimes_cache`, `theater_events_cache`) et un cache L1 de visite (`useShowtimes`).
+- ⚠️ **Deux endpoints Allociné, deux jeux de champs** : celui par film porte les horaires mais aucun
+  marqueur d'événement ; celui par salle les porte. D'où une seconde passe ciblée (`useTheaterEvents`),
+  qui rapproche les séances par `internalId`.
+- Le **texte libre** d'un événement (« en présence du réalisateur ») n'existe pas chez Allociné : il
+  vient des exploitants — UGC, Dulac, MK2 — via `server/utils/exhibitors.js` et ses modules frères.
+- Les règles pures vivent dans `app/utils/{seancesGrouping,seanceEvents,inTheaters}.js` et
+  `shared/utils/` (dépendance-free, importable app / serveur / scripts).
+- Mode d'emploi complet et pièges documentés : `_ressources/README-seances.md`.
+
 **Key pages:**
 - `/` — Calendar home, movies grouped by year → month → day
+- `/seances` — Séances parisiennes des films de la liste
+- `/evenements` — Avant-premières et séances spéciales de la semaine
 - `/search` — TMDB movie search with debounce
 - `/movies/[id]` — Movie detail page
 

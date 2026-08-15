@@ -21,6 +21,17 @@ _ressources/sql/2608121539-add-allocine-showtimes.sql
 Il ajoute `allocine_id` / `allocine_checked_at` à `calendar`, et crée `cinemas` +
 `showtimes_cache` avec leurs politiques RLS. Idempotent.
 
+Puis, pour les séances événement (cf. la section dédiée plus bas) :
+
+```
+_ressources/sql/2608141200-add-seance-events.sql
+```
+
+Il crée `theater_events_cache` et ajoute `events` / `events_checked_at` à `calendar`. Idempotent.
+Sans lui, la vue reste juste — il lui manque seulement les marqueurs d'événement et la rubrique
+« Événement à venir » du rail, et le code se tait au lieu de retenter (`42P01` / `PGRST204` détecté une
+fois, puis silence pour la visite).
+
 ### 2. Premier passage sur la vue
 
 Ouvrir `/seances`. C'est ce passage qui :
@@ -134,6 +145,27 @@ serait re-flaggé au chargement suivant, puis re-retiré : un va-et-vient perpé
 > moitié — appliquer les états sans pouvoir horodater relancerait une salve de requêtes à chaque
 > ouverture de l'app. `node scripts/check-seances.mjs` le signale aussi.
 
+### Le trou du gate hebdomadaire, et ce qui le bouche
+
+⚠️ Le contrôle ne tourne qu'**une fois par semaine ciné**. Un film qui quitte l'affiche le jeudi reste
+donc dans le rail jusqu'au mercredi suivant, avec zéro séance à montrer. Constaté le 14/08/2026 sur
+quatre films — *Silent Friend*, *Plus fort que moi*, *The Plague*, *L'Inconnu de la Grande Arche* — tous
+contrôlés le **12/08 à 23:10**, donc *après* le mercredi qui sert de gate : le contrôle les avait
+légitimement gardés, et ne devait plus repasser avant le 19.
+
+Or la preuve de leur départ était **déjà en cache** : les sept journées chargées, zéro salle
+intra-muros partout. `horizonVerdict` (`app/utils/inTheaters.js`) la lit, et `pruneEmptyHorizon` retire
+le film sans attendre le mercredi. Aucune requête — que du cache déjà payé.
+
+Appelé depuis les deux endroits qui peuvent avoir l'horizon complet : le balayage de la page Événements
+(qui charge les 7 journées par construction) et la vue Séances (dès que la navigation les a toutes
+chargées ; sans effet avant).
+
+> Le verdict n'est rendu que sur des preuves **complètes** : une seule journée manquante, en échec
+> (`error`) ou servie depuis du périmé (`stale`), et on se tait. Garder un film de trop quelques jours
+> vaut mieux que d'en retirer un sur une lacune — c'est la même discipline que les trois issues de
+> `playingWithin`, où `null` signifie « on ne sait pas ».
+
 ### Pourquoi aucune borne d'ancienneté
 
 Une première version ne reprenait que les sorties de moins de 120 jours, pour ne pas « interroger
@@ -189,7 +221,7 @@ Contrôlé en conditions réelles le 13/08/2026 sur les 14 films flaggés : 11 c
 `nextDate` au 04/09 pour le dernier), et *Bait* conservé alors qu'il n'a aucune séance aujourd'hui,
 sa reprise du 16/08 tombant dans la fenêtre. Une requête par film, pas sept.
 
-## « Au ciné en ce moment » ouvre la vue Séances
+## Le rail ouvre la vue Séances
 
 Cliquer un film du rail (ou de la bande mobile) mène à `/seances?film=<tmdbId>`, **cadré sur ce
 film** : la question qui suit « il est en salle » est toujours *où et quand*, jamais « où est-il dans
@@ -205,6 +237,24 @@ Le cadrage est appliqué **à la source** (`visibleFilms`) et non en bout de cha
 « prochaine séance le … » et les décomptes masqués par les filtres en découlent tous, et restent
 donc d'accord entre eux.
 
+### Le périmètre de la vue, ce n'est pas `cinemaNow`
+
+⚠️ C'est `seanceFilms` — **les deux rubriques du rail réunies**. Piège introduit puis corrigé : `cinemaNow`
+retire les films pris en charge par « Événement à venir », pour ne pas les afficher deux fois. S'en
+servir comme périmètre de **données** avait une conséquence qu'on ne voyait qu'au clic — le film ouvrait
+`/seances?film=…`, n'y était pas trouvé, donc n'était ni cadré ni chargé. Le cas d'une avant-première
+était pire : le film n'est pas `inTheaters`, il n'a jamais été dans `cinemaNow`.
+
+### Un événement daté ouvre **sa** journée
+
+Cliquer « dim. 16 août » sur une carte ajoute `?jour=2026-08-16`, et la vue s'ouvre sur ce jour-là. Sans
+ça il faudrait retrouver la date à la main dans la bande, alors qu'on venait de la lire.
+
+Une date hors des sept jours affichés est ignorée — mieux vaut aujourd'hui qu'un index invalide. Et
+quand la journée est demandée explicitement, le **saut automatique** vers le premier jour avec séances
+(ci-dessous) est désactivé : corriger dans le dos un choix que l'utilisateur vient de faire est
+exactement ce que le reste de la vue s'interdit.
+
 ### Arrivée sur le premier jour qui a des séances
 
 Un film cadré sans séance aujourd'hui fait avancer la vue jusqu'au premier jour qui en a : arriver
@@ -218,6 +268,346 @@ couronne*, il peut désigner un jour où le film ne joue qu'en banlieue, donc vi
 base sur les séances **existantes** et non filtrées (une journée vidée par le pré-filtre carte a son
 propre message et sa propre porte de sortie, l'enjamber la masquerait) ; et il n'a lieu **qu'à
 l'arrivée** sur un film — un jour choisi à la main n'est jamais corrigé dans le dos.
+
+## Séances événement
+
+```
+_ressources/sql/2608141200-add-seance-events.sql   → éditeur SQL Supabase
+```
+
+Une avant-première, une séance unique, une séance jeune public ne se rattrapent pas la semaine
+suivante. C'est la seule information de la vue qui **périme**, donc la seule qui mérite de passer
+devant les autres. Trois endroits la portent :
+
+| où | ce qu'on voit |
+|---|---|
+| chip d'horaire | le chip passe au violet, avec le libellé en clair sous l'heure (« Avant-première ») |
+| en-tête de carte | pastille « 1 ÉVÉNEMENT » / « 3 ÉVÉNEMENTS » à côté du sous-titre |
+| page `/evenements` | la liste complète : un film par carte, toutes ses journées d'événement |
+| rail, rubrique « Événement à venir » | le **prochain** événement de chaque film + « +2 autres dates », et un lien vers la page |
+| bandeau de la vue | « N séance(s) événement hors carte UGC — masquée(s) par le pré-filtre » (voir plus bas) |
+
+Violet et non rose : le rose dit déjà « en salle » sur toute la liste, il ne peut pas dire deux choses
+à la fois. Le décompte de la carte est calculé **après filtrage** — il promet ce que le dépliage
+montrera, pas ce que le pré-filtre carte vient d'écarter.
+
+Vérifié de bout en bout le 14/08/2026 sur *Fjord* (`188280`, sortie le 19/08), qui a **trois** journées
+d'avant-première : 3 salles le 16, MK2 Bibliothèque le 17, UGC Les Halles le 18. Les cinq séances sont
+marquées, aux bonnes dates et aux bonnes salles.
+
+### Le libellé exact vient d'un vocabulaire fermé, pas d'un texte libre
+
+Allociné ne livre **aucune description d'événement**. Relevé le 14/08/2026 sur 2 293 séances de
+49 salles parisiennes sur 7 jours : ni champ `comment`, ni `title`, rien. Le HTML public de la fiche
+film n'en porte pas davantage (`/seance/film-188280/`, 253 Ko, zéro occurrence de « en présence »).
+
+Ce qui existe est une table de correspondance, tenue dans `showtimeEventLabels`
+(`server/utils/allocine.js`) — le seul endroit du projet où un tag Allociné devient du texte affiché :
+
+| signal Allociné | libellé |
+|---|---|
+| `isPreview: true` ou `Showtime.Event.Preview` | Avant-première |
+| `Showtime.Event.OnlySession` | Séance unique |
+| `BoostPos.XpEtLabels.JeunePublic` | Jeune public |
+| `BoostPos.XpEtLabels.LenfanceDeLart` | L'enfance de l'art |
+
+Un membre inconnu de **`Showtime.Event.*`** est affiché quand même, sous une forme dégradée
+(`Showtime.Event.CineClub` → « Cine club ») et signalé en console : taire un événement est pire que
+l'annoncer imparfaitement. C'est le namespace d'événements d'Allociné, on peut lui faire confiance.
+
+> ⚠️⚠️ **`BoostPos.XpEtLabels.*` n'en est pas un, et l'avoir cru a mis des badges absurdes en
+> production.** « XpEtLabels » veut dire « expériences **et labels** » : ça mélange dispositifs de
+> programmation et **identités de salles**. Relevé sur 267 journées-salles réelles le 14/08/2026, sur
+> 202 libellés enregistrés **161 étaient du bruit** — « Artet essai » ×54 (label posé sur *chaque*
+> séance d'un art et essai), « Diffusion salle le club / le studio / laudito » ×60, « Salle infinite »
+> et « Salle1 youssef chahine » ×32, « Premier » ×14, « St anglais », « Headline ». Ne restaient de
+> vrais que « Avant-première » ×16, « Jeune public » ×11, « L'enfance de l'art » ×11, « Séance unique »
+> ×3.
+>
+> Ce namespace n'accepte donc plus que sa **liste blanche**, sans aucun repli : un membre inconnu y est
+> ignoré, pas deviné. L'erreur d'origine était une généralisation sur deux exemples — le sondage initial
+> n'avait croisé que `JeunePublic` et `LenfanceDeLart`, et j'en ai conclu que le namespace entier
+> qualifiait des séances.
+
+⚠️ Cette table reste **côté serveur**, et l'app ne compare jamais ces chaînes — elle ne fait que les
+afficher. L'avant-première, qui est la seule qualification à porter une **conséquence métier** (la
+carte UGC ne la couvre pas), voyage donc à part, en booléen sur `isPreview`, via `isPreviewShowtime` et
+`previews`. Faire trancher `isCardEligible` sur le texte « Avant-première » aurait adossé une règle
+métier à un libellé d'interface : le premier reformulage aurait cassé la règle sans un mot.
+
+### Le texte libre, lui, vient de l'exploitant
+
+```
+server/utils/exhibitors.js       registre des sources
+server/utils/ugc.js              numéro de séance ← jointure exacte
+server/utils/dulac.js            JSON-LD schema.org/Event
+server/utils/mk2.js              description SEO
+server/utils/exhibitorText.js    helpers de texte communs
+server/api/events/detail.js      route + cache durable
+shared/utils/exhibitorVenues.js  quelles salles sont couvertes (pré-filtre app)
+```
+
+Allociné dit « Avant-première ». Les salles disent la suite :
+
+| source | exemple |
+|---|---|
+| UGC · Les Halles | « Avant-première avec équipe » |
+| Dulac · L'Arlequin | « Séance en présence du réalisateur, suivie d'une dégustation de produits boliviens (assurée par l'Ambassade de Bolivie) » |
+| MK2 · Bibliothèque | « La séance sera présentée par le réalisateur Cristian Mungiu. » |
+
+**Trois réseaux, trois niveaux de confiance — dans l'ordre où le registre les interroge :**
+
+**UGC** (11 salles parisiennes) est le plus sûr, et pas grâce à la qualité de son HTML : il publie le
+**numéro de séance de sa billetterie** dans chaque tuile
+(`reservationSeances.html?id=330171840281`), et Allociné nous donne *le même numéro* dans l'URL de
+réservation. La jointure est une **égalité d'identifiants** — ni titre à normaliser, ni date à
+interpréter, ni salle à comparer. Rien ne peut dériver.
+
+⚠️ Le paramètre qui débloque tout : **`cinemaId`**. Sans lui,
+`actusAjaxAction!getActusAndFilters.action` rend une grille d'affiches sans date ni libellé — c'est ce
+qui m'avait fait conclure à tort qu'UGC ne publiait rien. Avec lui, il rend les sections « Séances
+Spéciales » et « Avant-Premières » de la salle demandée. Aucune session, aucun cookie, aucun compte.
+Les 11 `cinemaId` parisiens viennent de leur propre liste
+(`cinemasQuickFilterAjaxAction!getAllList.action`).
+
+⚠️ Et sur le `robots.txt` : `Disallow: /AjaxAction!` est un **préfixe**, il ne couvre pas
+`/actusAjaxAction!…`. Ce chemin est autorisé. J'avais d'abord affirmé le contraire — c'était un artefact
+d'une regex qui avalait le préfixe. Ce qui reste fermé, c'est `/AjaxAction!` tout court, l'endpoint des
+horaires, auquel on ne touche pas (les horaires viennent d'Allociné).
+
+**Dulac** (5 salles) publie un `application/ld+json` au format `schema.org/Event` — donnée structurée,
+donc ce n'est **pas** du parsing HTML, ce que le projet s'était justement interdit. **MK2** (~10 salles)
+n'expose pas de JSON-LD exploitable : on y lit l'`og:description`. Moins sûr, mais une balise `og:` ne se
+remanie pas à la légère — le référencement en dépend — et si la rédaction change, le connecteur se tait,
+il ne ment pas. Les deux se rapprochent par (titre, date, salle).
+
+Ajouter une source = une entrée dans `exhibitors.js` + un module frère. Chaque connecteur décide
+lui-même s'il couvre une salle, plutôt qu'une carte centrale qui divergerait des modules.
+
+Trois économies, dans cet ordre :
+
+1. **`isKnownExhibitorVenue` avant tout appel.** Vit dans `shared/utils/` parce que c'est **l'app** qui
+   s'en sert le plus : sans ce test, on ferait un aller-retour HTTP par séance événement de Paris pour
+   se faire répondre non la plupart du temps. MK2 se reconnaît à son préfixe (aucun autre cinéma
+   parisien ne porte « mk2 ») plutôt qu'à une liste en dur qui vieillirait à chaque ouverture de salle.
+2. **On part du titre, pas du sitemap.** On connaît déjà le film, la salle et la date par Allociné : on
+   ne lit que les fiches dont le **slug** contient le titre normalisé. Une requête de sitemap (mise en
+   cache 10 min en mémoire d'instance) plus une ou deux fiches, au lieu des 111 du sitemap.
+3. **Cache durable qui mémorise les absences** (`event_detail_cache`, `detail is null`). La plupart des
+   séances événement ne sont pas chez Dulac ; sans cache négatif on ressortirait sur le réseau à chaque
+   relevé. L'absence est relue à chaque nouvelle semaine ciné — une fiche peut être publiée après coup.
+
+⚠️ **Rapprochement sur date + salle, jamais sur l'heure.** Les exploitants horodatent l'**événement** et
+non la projection : la fiche Dulac de *La Fille Condor* annonce `18:00` pour une séance à 20:00. Le titre
+sert à trouver la fiche, la date et la salle à la valider. Ça évite au passage le problème de
+rapprochement de titres qui plafonnait à 83 % dans le spike Cinéfil : ici l'espace de recherche est un
+jour et une salle.
+
+#### Trois bugs attrapés en construisant ça, tous du même genre : faux en silence
+
+> **1. Indices croisés.** L'extraction Dulac coupait la phrase à un index calculé sur la chaîne
+> *normalisée* puis appliqué à la chaîne *d'origine*. La normalisation retirant accents, apostrophes et
+> parenthèses, la phrase perdait ses cinq derniers caractères : « … de Bolivi » au lieu de
+> « … de Bolivie) ». D'où `fold()`, qui replie en conservant une table de correspondance des positions.
+
+> **2. Date trop lâche.** La validation MK2 cherchait la date ISO dans la **page entière**. Une fiche en
+> porte plusieurs dans ses payloads : la séance du 18 héritait du libellé de celle du 17. On valide
+> désormais sur la date annoncée dans la **description** (`mentionsDate`, « le 17 août »), la seule qui
+> qualifie l'événement. Sans preuve de date, on ne qualifie pas.
+
+> **3. En-tête reconnu au mauvais signe.** On écartait la formule d'ouverture en cherchant le titre du
+> film dedans. MK2 l'omet parfois (« Avant-première le mardi 8 septembre à 20h00 au mk2 bibliothèque »),
+> et tout l'en-tête passait alors dans le libellé. `isEventHeadline` se fie maintenant à la **date** ou
+> à la **salle**, présentes dans tous les cas observés.
+
+**Ce que ça ne couvre pas.** Les autres salles gardent le vocabulaire d'Allociné : Studio Galande
+(« Séance animée par les Time Slips »), Studio des Ursulines, Saint-André des Arts, Le Louxor,
+L'Entrepôt, Les 7 Parnassiens… chacune demanderait son connecteur. Les cycles et rétrospectives
+échappent aussi au rapprochement chez Dulac : leur `startDate` est celle du cycle, pas de chaque séance.
+
+⚠️ **Limite structurelle des libellés d'exploitant : ils *enrichissent*, ils ne *détectent* pas.** Un
+libellé n'est cherché que pour une séance qu'Allociné (ou la déduction par dates) a **déjà** qualifiée
+d'événement. Or UGC annonce aussi des « Concert » et des « Rencontre » sur des films **déjà sortis**,
+qu'Allociné ne marque pas et que la déduction par dates ne peut pas trouver — ceux-là restent invisibles.
+Les retourner demanderait de faire d'UGC une **source d'événements** à part entière : parcourir sa carte
+`numéro de séance → libellé` et marquer toute séance qui s'y trouve, au lieu d'interroger séance par
+séance. C'est la suite naturelle, et elle est peu coûteuse — la carte est déjà construite en un bloc
+(11 requêtes, mises en cache 10 min).
+
+> ⚠️ **Le piège PostgREST, troisième variante.** Le projet savait déjà qu'une **colonne** absente remonte
+> `42703` en lecture mais `PGRST204` en écriture. Une **table** absente ne remonte pas `42P01` du tout
+> quand PostgREST tranche sur son cache de schéma : c'est `PGRST205`, message « Could not find the table
+> … in the schema cache ». Les gardes ne testaient que `42P01` : ils étaient donc **inertes**, la route
+> retentait à chaque relevé et sortait chez l'exploitant sans jamais rien mettre en cache — visible
+> uniquement en console. D'où `server/utils/pgErrors.js` et son `isMissingSchema`, utilisé partout.
+
+Le tri est délibérément étroit. `Format.*`, `Auditorium.Experience.*` (4DX, Dolby Atmos),
+`Localization.*`, `Showtime.Accessibility.*`, `BoostPos.Autres.PopCorn`, `BoostPos.Son.*` décrivent la
+copie, la salle ou l'accessibilité — pas la séance. Les accepter aurait marqué **1 656 séances sur
+2 293** : un badge sur presque tout, donc un badge qui ne dit plus rien. Les événements sont rares, et
+c'est le propos : 6 sur 2 293 dans le relevé.
+
+> **Ce que paris-cine.info a et qu'on n'a pas.** Son onglet Événements affiche « Avant-première en
+> présence du réalisateur », « … de l'équipe du film ». Ce texte n'est **nulle part** chez Allociné :
+> il agrège chez les exploitants (cf. « Pourquoi paris-cine.info l'a et pas nous » plus bas), et cette
+> porte est fermée pour nous — `ugc.fr` sert ses horaires par un `/AjaxAction!` que son `robots.txt`
+> interdit, motif qui avait déjà fait écarter MK2. On affiche donc « Avant-première », pas la raison de
+> l'avant-première. Y accéder voudrait dire ouvrir le chantier « seconde source de listes ».
+
+### Pourquoi une seconde passe par salle — et pourquoi elle est partielle
+
+⚠️ **Piège central.** Le même `Showtime` n'est pas sélectionné pareil selon la route Allociné, à
+`internalId` égal (vérifié le 14/08/2026, id `80248550361` des deux côtés) :
+
+| endpoint | porte les champs d'événement ? |
+|---|---|
+| `/_/showtimes/theater-{code}/d-{date}/` | **oui** — `isPreview`, `isWeeklyMovieOuting`, tags `Showtime.Event.*` |
+| `/_/showtimes/movie-{id}/near-{loc}/d-{date}/` ← **production** | **non**. Ni le booléen, ni les tags. |
+
+D'où le montage : les horaires continuent de venir de l'endpoint film — film-centré, ~14 requêtes par
+journée contre ~53 pour balayer Paris —, et une **seconde passe ciblée** interroge l'endpoint salle
+pour les seules salles qui jouent des films de la liste (~25 un jour ordinaire). Le rapprochement se
+fait sur `internalId`, jamais sur l'heure : une salle peut programmer deux séances à la même minute
+dans deux de ses salles.
+
+Coût : +~25 requêtes la **première** fois qu'une journée est affichée, ~0 ensuite — `theater_events_cache`
+est le jumeau de `showtimes_cache` (même clé composite, même règle de fraîcheur, même ménage
+hebdomadaire). La passe est lancée **hors du chemin d'affichage** : la vue apparaît dès que les
+horaires sont là, les marqueurs se posent une fraction de seconde après, sans écran de chargement.
+
+⚠️ **La couverture est partielle, et c'est structurel.** L'endpoint par salle est **creux** — mesuré le
+13/08/2026 (cf. le spike Cinéfil plus bas) : `theater-C0159` rendait *1 jour sur 7* là où
+`movie-…/near-Paris` en rendait 6. Confondre « pas rendu » avec « pas d'événement » est **exactement**
+le faux positif qui avait fait déclarer Les Halles muette par `check-seances.mjs`. La passe rend donc
+`seen` — la liste des `internalId` réellement observés — et `graftEvents` ne se prononce que sur
+ceux-là :
+
+- séance **vue et marquée** → libellé posé ;
+- séance **vue sans libellé** → remise à vide (l'événement a quitté la programmation) ;
+- séance **non vue** → intouchée. Elle garde ce qu'elle avait, faute de savoir.
+
+Conséquence assumée : des événements seront manqués. Le montage est bâti pour ne jamais se tromper
+dans l'autre sens — un événement manqué est un badge en moins, un faux badge envoie quelqu'un à une
+séance qui n'existe pas.
+
+Le payload mis en cache est donc `{ events, seen, previews }` : les libellés, la preuve de ce qu'on a
+vu, et le drapeau d'avant-première. `graftEvents` pose `events` **et** `isPreview` sur les seules
+séances vues.
+
+### La rubrique « Événement à venir » : le cas que tout le reste manquait
+
+⚠️ **Une avant-première a lieu *avant* la sortie.** Le film n'est donc pas « en salle », et rien ne le
+regardait : `useInTheatersSync` filtre sur `release_date <= aujourd'hui`, le rail sur
+`state === 'inTheaters'`. *Fjord* le 14/08/2026 — sortie le 19, avant-premières les 16, 17 et 18 — était
+invisible de bout en bout, alors que c'est **exactement** la séance qu'on ne veut pas manquer, puisqu'
+elle ne se rattrape pas.
+
+D'où `useUpcomingEvents`, un balayage hebdomadaire des films **à venir** (cinéma, pas vus, sortie dans
+les 21 jours). Il coûte peu, parce qu'il ne sonde presque rien :
+
+1. **Une requête par film**, sur aujourd'hui. On ne veut que `nextDate` — Allociné le livre justement
+   quand le film n'a aucune séance à la date demandée, ce qui est le cas normal d'un film à venir.
+2. `nextDate` dans l'horizon **et avant la sortie** → c'est une avant-première. Les autres films sortent
+   du cache mémoire sans rien coûter de plus.
+3. On sonde alors les journées de `nextDate` jusqu'à la veille de la sortie (bornées à 3). ⚠️ On les
+   **énumère** : `nextDate` n'existe que sur une journée *vide*, donc dès qu'on atterrit sur un jour qui
+   a des séances il vaut `null` et il n'y a plus de piste à suivre.
+4. La passe salle tourne sur ces journées pour le libellé exact.
+
+Mesuré sur *Fjord* : **4 requêtes** à l'endpoint film pour les trois journées, plus la passe salle.
+
+> **Le repli qui rend la rubrique fiable.** Une séance antérieure à la sortie **est** une
+> avant-première — c'est une tautologie, pas une heuristique. Quand la passe salle ne rend rien pour une
+> journée (elle est creuse, cf. plus haut), on nomme quand même l'événement à partir des dates. C'est ce
+> qui empêche la rubrique de dépendre du point faible de la chaîne : la date, elle, est certaine.
+
+Le tri est par **imminence** et l'affichage dit « auj. » / « demain » / « lun. 17 août » — un
+« 17 AOÛ » demanderait de compter. Les films de la rubrique sont **retirés** de « Au ciné en ce
+moment » (cf. `cinemaNow`) : les lire deux fois au même endroit de l'écran n'apporte rien, et la version
+datée est strictement plus informative.
+
+⚠️ Le rail ne montre que **le prochain** événement par film, et annonce le reste (« +2 autres dates »).
+26,4 rem de large ne portent pas cinq lignes datées lisiblement — un rail qui essaie de tout dire ne dit
+plus rien. La liste complète vit sur la page dédiée, vers laquelle l'en-tête de la rubrique renvoie.
+
+### La page `/evenements`
+
+Quatrième onglet, à côté de Timeline / Stats / Séances. Un film par carte, ses journées d'événement
+listées dedans, triées par imminence — la forme qu'a aussi retenue paris-cine.info, et la seule qui
+tienne quand un film a trois avant-premières dans trois salles différentes. La sortie du film est
+rappelée (« Sortie le 19 août ») : c'est ce qui explique *pourquoi* la séance est un événement.
+
+> ⚠️ **Le passage à quatre onglets a forcé l'en-tête mobile en icône seule.** Mesuré sur 375 px : après
+> paddings et gaps il reste ~57 px de texte par onglet, et « Événements » en demande ~10 caractères. Le
+> nom ne disparaît pas pour autant — il vit dans `aria-label` et `title`. Le rail desktop, lui, garde
+> ses libellés (il empile).
+
+**C'est le seul endroit qui balaie les 7 journées.** Les deux contrôles hebdomadaires ne regardent
+qu'une journée chacun : `useInTheatersSync` aujourd'hui, `useUpcomingEvents` les jours d'avant-première
+d'un film à venir. Un film déjà à l'affiche qui a un ciné-club samedi n'était donc repéré que si on
+ouvrait le samedi dans la vue Séances. Cette page a précisément pour objet de ne rien manquer sur la
+semaine, donc le balayage complet s'y justifie — et nulle part ailleurs.
+
+Coût à froid : 7 journées × (~12 films + ~25 salles), soit l'équivalent exact de cliquer les sept jours
+de la vue Séances. Le cache L2 le rend gratuit ensuite (même règle de fraîcheur), et un retour sur
+l'onglet le même jour ne rebalaie pas. Le relevé est **séquentiel**, hors du chemin d'affichage, et la
+page se remplit au fur et à mesure en annonçant son avancement (« 3/7 journées ») — un écran vide
+pendant une minute se lirait comme « aucun événement », ce qui serait faux.
+
+Gate hebdomadaire porté par `events_checked_at`, que `syncEvents({ stamp: true })` réécrit à chaque
+passage — **y compris quand il n'a rien trouvé**. Sans cette trace, le balayage repartirait à chaque
+chargement de l'app pour tous les films à venir.
+
+### Le rail a besoin de colonnes, la vue non
+
+La vue Séances marque ses chips directement depuis le payload. Le rail, lui, vit sur la timeline, qui
+**ne lit que Supabase** et ne sort jamais sur le réseau (règle posée par
+`README-persist-movie-metadata`). Un badge calculé sur le cache mémoire de la vue Séances
+n'apparaîtrait donc qu'après un passage par la vue Séances — jamais au moment où il sert, puisque
+c'est lui qui doit y envoyer. D'où `calendar.event_labels` + `events_checked_at`, écrits par
+`useSeanceEvents` depuis les journées déjà chargées, sans une requête réseau de plus.
+
+Les entrées sont **datées** : `[{ date, cinema, labels }]`, un couple (jour, salle). C'est ce qui permet
+de trier par imminence et d'écrire « demain » — un simple tableau de libellés ne disait pas s'il fallait
+y aller ce soir ou samedi.
+
+Trois règles s'y jouent :
+
+- **Union, jamais remplacement.** Chaque passage ne voit que les journées chargées — souvent une seule.
+  Remplacer ferait clignoter la rubrique au rythme de la navigation : l'avant-première repérée samedi
+  disparaîtrait en revenant sur aujourd'hui, puis reviendrait. Seules les journées **relues** voient
+  leurs entrées remplacées, ce qui laisse un événement déprogrammé disparaître.
+- **Élagage par la date.** Une entrée dont le jour est passé sort d'elle-même, sans dépendre d'aucun
+  horodatage. Plus juste que l'ancienne borne à la semaine ciné : un événement de mardi ne survit plus
+  jusqu'au mercredi suivant.
+- **Élagage par l'horodatage.** `events_checked_at` antérieur au dernier mercredi → entrées ignorées à
+  la lecture, même si leurs dates sont futures : un relevé d'avant le renouvellement des grilles ne dit
+  plus rien de la programmation. Les deux gardes ne disent pas la même chose et il faut les deux.
+
+Le rail vérifie enfin que le film n'est pas déjà vu (`hasUpcomingEvent`). Cette condition n'est **pas**
+redondante : la rubrique contient désormais des films qui ne sont pas `inTheaters` du tout, donc rien ne
+garantit plus que l'état exclue `'seen'`.
+
+### Le paradoxe de l'avant-première, et ce qu'on en fait
+
+Une avant-première est **hors carte UGC** (`isCardEligible`), et le pré-filtre carte est actif par
+défaut. C'est donc l'événement le plus fréquent — 5 des 6 relevés — qui est **masqué à l'arrivée sur la
+page**. Sur *Fjord*, les trois séances marquées sont écartées par le filtre.
+
+On ne bricole pas le filtre pour autant : ce serait mentir sur ce que la carte paie. Mais on ne peut pas
+non plus laisser le badge du rail promettre un événement et la page rester muette sur son absence. D'où
+`hiddenEvents`, et son bandeau :
+
+> *3 séances événement hors carte UGC (une avant-première n'est pas couverte) — masquées par le
+> pré-filtre.* **[Ouvrir à tout Paris]**
+
+C'est la règle générale de la vue appliquée à un cas de plus : rien ne disparaît en silence.
+`hiddenByCard` compte les séances, `hiddenByTime` celles hors créneau, `hiddenEvents` les événements —
+même chaîne de filtres (`countMatching` avec un prédicat), donc aucun risque de divergence.
+
+⚠️ Ce test n'était **inerte** que faute de donnée : l'endpoint de production ne livrant pas `isPreview`,
+rien ne pouvait l'exclure. Depuis la seconde passe, il mord — et seulement sur les séances qu'elle a
+vues.
 
 ## Barre de filtres : la plage horaire à la place de VO/VF et de l'arrondissement
 
@@ -614,7 +1004,9 @@ ligne d'un bloc à l'autre suffit à l'amender, puis on rejoue le `.sql`.
 
 | Limite | Détail |
 |---|---|
-| **`isPreview` n'existe pas** | Contrairement à ce qu'annonçait le plan, le payload Allociné ne porte aucun marqueur d'avant-première (ni champ, ni tag). Le test est écrit et **inerte** : il se réveillera seul si le champ réapparaît. L'exclusion des avant-premières du filtre carte est donc aujourd'hui sans effet. |
+| ~~**`isPreview` n'existe pas**~~ | **Résolu le 14/08/2026, et le diagnostic d'origine était mal cadré.** Le champ existe chez Allociné — mais seulement sur l'endpoint *par salle*, jamais sur l'endpoint *par film* qu'utilise la production (même séance, même `internalId`, jeu de champs différent). Ce n'était donc pas « le payload ne porte rien », c'était « cette route ne le sélectionne pas ». La seconde passe par salle le récupère, `graftEvents` le pose, et l'exclusion des avant-premières du filtre carte **mord désormais** — cf. « Séances événement ». |
+| **Les libellés d'événement sont pauvres hors Dulac** | Allociné n'a **aucun** texte libre (2 293 séances JSON, pages `salle_gen_csalle=` et `/seance/film-`). Enquête du 14/08/2026 : paris-cine.info le sert dans le champ `com` de son `get_showtimes.php`, avec `srcs: "AO"` ou `"AB"` — **deux** sources d'une lettre chacune (son UI affiche « vérifié par 2 sources »), donc un connecteur par exploitant. **Dulac est branché** (5 salles, JSON-LD, cf. « Le texte libre »). Les autres gardent « Avant-première ». ⚠️ **Correction au Step 13** : `mk2.com/robots.txt` dit `Allow: /` et n'interdit que `/panier`, `/mon-compte`, `/_next/static` — sa page salle est donc autorisée, contrairement à ce qui avait été conclu. C'est UGC qui ferme la porte (`/AjaxAction!`). MK2 est le prochain candidat le plus accessible. |
+| **La détection d'événement est partielle** | L'endpoint par salle est creux : les événements des journées qu'il ne rend pas ne sont pas vus. Le montage ne se trompe jamais dans l'autre sens (aucun faux marqueur), mais il en manquera. |
 | **Exclusions carte approximatives** | Le filtre est juste sur le gros (salle acceptante + formats majorés listés dans `CARD_EXCLUDED_FORMATS`), approximatif sur les cas exotiques. **Le lien billetterie reste l'arbitre.** |
 | **`robots.txt` Allociné** | `Disallow: /_/` couvre l'endpoint des séances. Compromis assumé et documenté en tête de `server/utils/allocine.js` : volume dérisoire, cache durable, User-Agent identifiable, concurrence bornée à 4, aucun contournement anti-bot. Les voies conformes ont été explorées et ne tiennent pas. |
 | **Une salle peut disparaître d'Allociné** | Constaté sur UGC Ciné Cité Les Halles le 13/08/2026 : absente de *toutes* les réponses pendant que le site de la salle affichait ses séances. Indétectable dans la vue (une salle qui manque ne fait pas de bruit), et irrattrapable sans seconde source. Le contrôle des salles muettes est là pour ça. |
