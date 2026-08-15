@@ -41,8 +41,10 @@ import { mentionsDate, isEventHeadline, metaContent, truncateDetail } from '../s
 import {
     showtimeEvents, isEventShowtime, countEvents, eventLabelsOf, eventCountLabel,
     graftEvents, dayEventEntries, bookingsOf, mergeEventEntries, groupEventsByDay, entriesKey,
-    movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips,
+    movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips, entryKey,
 } from '../app/utils/seanceEvents.js';
+import { isMissingSchema } from '../shared/utils/pgErrors.js';
+import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 
 let pass = 0, fail = 0;
 
@@ -812,6 +814,52 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
     t('   … une salle non confirmée ne suffit pas à prouver que la source répond',
         sourceLooksAlive([seven(() => day({ theaters: [{ code: 'C1', unconfirmedSince: 'x' }] }))]), false);
     t('aucun film du tout → rien à corroborer', sourceLooksAlive([]), false);
+}
+
+// --- 8. Gardes de schéma et dates locales -------------------------------------------------------
+//
+// Deux règles qui vivaient chacune en plusieurs copies divergentes, et dont chaque copie ratait un
+// cas. Elles ont désormais une seule définition — autant la tenir par des tests.
+{
+    console.log("\n\x1b[1mGardes de schéma — PostgREST ne rend pas le code qu'on croit\x1b[0m");
+
+    // ⚠️ Le cœur du sujet : la **même** cause remonte un code différent selon qu'on lit ou qu'on
+    // écrit, parce que PostgREST tranche sur son cache de schéma sans atteindre la base.
+    t('colonne absente en lecture (42703)', isMissingSchema({ code: '42703' }), true);
+    t('colonne absente en écriture (PGRST204)', isMissingSchema({ code: 'PGRST204' }), true);
+    t('table absente côté Postgres (42P01)', isMissingSchema({ code: '42P01' }), true);
+    t('table absente côté cache de schéma (PGRST205)', isMissingSchema({ code: 'PGRST205' }), true);
+    t('reconnue au message, même sans code connu',
+        isMissingSchema({ code: 'PGRST999', message: "Could not find the table 'public.x' in the schema cache" }), true);
+
+    // Et l'inverse : un garde trop large avalerait des pannes qui méritent d'être signalées.
+    t('erreur de droits → ce n\'est pas un schéma absent', isMissingSchema({ code: '42501' }), false);
+    t('violation de contrainte → non plus', isMissingSchema({ code: '23505' }), false);
+    t('pas d\'erreur du tout → non', isMissingSchema(null), false);
+
+    console.log('\n\x1b[1mDates locales — jamais new Date("YYYY-MM-DD")\x1b[0m');
+
+    // ⚠️ Le piège que `parseLocalDate` ferme : la spec lit une chaîne `YYYY-MM-DD` en **UTC**, si bien
+    // qu'un fuseau à offset négatif retombe la veille et affiche « 16 août » pour un événement du 17.
+    t('lue en heure locale, pas en UTC', (() => {
+        const d = parseLocalDate('2026-08-17');
+        return [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+    })(), [2026, 8, 17]);
+    t('chaîne qui n\'est pas une date → null', parseLocalDate('demain'), null);
+    t('valeur absente → null', parseLocalDate(null), null);
+
+    t('écart en jours pleins', daysBetween('2026-08-15', '2026-08-17'), 2);
+    t('le jour même → 0', daysBetween('2026-08-15', '2026-08-15'), 0);
+    // Le passage à l'heure d'hiver (25/10/2026) : compté sur des millisecondes brutes, cet écart
+    // rendrait 30,04 jours — l'arrondi le rattrape ici, mais pas sur toutes les paires de dates.
+    t('traverse un changement d\'heure sans déraper', daysBetween('2026-10-10', '2026-11-09'), 30);
+    t('date illisible → null', daysBetween('2026-08-15', ''), null);
+
+    // `entryKey` sert aussi de clé de regroupement des écritures : deux entrées confondues, et deux
+    // films reçoivent le même patch (cf. `entriesKey`).
+    t('identité d\'une entrée = journée + salle',
+        entryKey({ date: '2026-08-17', cinema: 'MK2 Bibliothèque' }), '2026-08-17|MK2 Bibliothèque');
+    t('salle absente → la journée suffit', entryKey({ date: '2026-08-17' }), '2026-08-17|');
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);
