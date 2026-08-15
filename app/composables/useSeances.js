@@ -15,26 +15,24 @@
 // Les filtres (film, plage horaire, carte, regroupement) sont purement dérivés : en changer ne
 // déclenche jamais de requête.
 
-const DAYS_AHEAD = SEANCES_HORIZON_DAYS;
-const DAY_NAMES = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-const MSHORT = ['JAN', 'FÉV', 'MAR', 'AVR', 'MAI', 'JUN', 'JUL', 'AOÛ', 'SEP', 'OCT', 'NOV', 'DÉC'];
-
-// Les règles de filtrage, de tri et de regroupement vivent dans `app/utils/seancesGrouping.js` :
-// fonctions pures, donc testables sans monter Nuxt (`scripts/test-seances-rules.mjs`). Ce fichier
-// ne garde que ce qui a besoin d'état, de réactivité ou du réseau.
+// Ce fichier ne garde que ce qui a besoin d'état, de réactivité ou du réseau. Trois voisins portent
+// le reste, et chacun est lisible seul :
+//   `app/utils/seancesGrouping.js`  filtres, tri, regroupements — fonctions pures, testées ;
+//   `useSeanceDays`                 la bande de sept jours et son recalage à minuit ;
+//   `useCinemas`                    le référentiel des salles, les favoris, les salles muettes.
 
 const pad = (n) => String(n).padStart(2, '0');
 
 export function useSeances() {
-    const client = useSupabaseClient();
     const { seanceFilms } = useMovieCalendar();
     const { payloadFor, resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore } = useShowtimes();
     const { loadEvents } = useTheaterEvents();
     const { syncEvents } = useSeanceEvents();
     const { pruneEmptyHorizon } = useInTheatersSync();
+    const { days, dayIndex, selectedDay, rollToToday } = useSeanceDays();
+    const { cinemas, loadCinemas, refreshCinemas, toggleFavorite, silentCinemas } = useCinemas();
 
     // --- état de la vue (useState : la page est démontée au passage sur Timeline/Stats) ---
-    const dayIndex = useState('seancesDay', () => 0);
     const group = useState('seancesGroup', () => 'film');       // 'film' | 'cinema'
     // Créneau horaire : 'all' | 'morning' | 'afternoon' | 'evening' | 'custom'. La plage libre est
     // tenue à part (`[depuis, jusqu'à]` en minutes) pour qu'un aller-retour par « Matin » ne la
@@ -50,43 +48,8 @@ export function useSeances() {
     const focusFilmId = useState('seancesFocusFilm', () => null);
 
     // --- données ---
-    const cinemas = useState('seancesCinemas', () => null);      // référentiel, chargé une fois
     const loading = useState('seancesLoading', () => false);
     const error = useState('seancesError', () => null);
-
-    // Jour de référence de la bande de dates. **Réactif**, et c'est tout l'enjeu : construit
-    // directement sur `new Date()`, `days` se figeait au montage. `new Date()` n'est pas une
-    // dépendance réactive — une visite laissée ouverte à travers minuit continuerait donc d'appeler
-    // « Auj. » la veille et de servir ses séances. L'app mentirait sur le jour, ce qui est pire que
-    // de manquer une salle.
-    //
-    // ⚠️ Défaut trouvé par lecture du code, **pas** observé en conditions réelles : il demande de
-    // laisser un onglet ouvert plus de 24 h. Ne pas le confondre avec le cache mémoire de la visite,
-    // qui lui se voit tout de suite (une page ouverte quelques heures ressert le jour tel qu'il était
-    // au chargement tant qu'on ne recharge pas — c'est ce que corrige `onVisible` côté page).
-    const today = useState('seancesToday', () => isoDay(0));
-
-    const days = computed(() => {
-        // Midi et non minuit : ajouter des jours à partir de midi traverse les changements d'heure
-        // sans jamais retomber sur la veille.
-        const [y, m, d] = today.value.split('-').map(Number);
-        const base = new Date(y, m - 1, d, 12, 0, 0, 0);
-
-        return Array.from({ length: DAYS_AHEAD }, (_, i) => {
-            const d = new Date(base);
-            d.setDate(base.getDate() + i);
-            return {
-                index: i,
-                date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-                dow: i === 0 ? 'Auj.' : DAY_NAMES[d.getDay()],
-                dd: pad(d.getDate()),
-                month: MSHORT[d.getMonth()],
-                today: i === 0,
-            };
-        });
-    });
-
-    const selectedDay = computed(() => days.value[dayIndex.value] ?? days.value[0]);
 
     // Films que la vue doit savoir montrer, dans l'ordre du rail : la rubrique « Événement à venir »
     // d'abord, puis « Au ciné en ce moment ». Certains ne sont pas encore sortis — une avant-première a
@@ -113,48 +76,6 @@ export function useSeances() {
     );
 
     // --- chargement ---
-
-    // Référentiel des salles : une lecture par session, il ne bouge qu'au rythme du seed carte
-    // et du script de géocodage.
-    const loadCinemas = async () => {
-        if (cinemas.value) return;
-        // `lat` / `lng` servent l'itinéraire (cf. `utils/maps.js`) : une salle géocodée s'ouvre sur
-        // ses coordonnées exactes plutôt que sur une adresse Allociné approximative.
-        const COLUMNS = 'code, name, arrondissement, accepts_ugc, transit_minutes, lat, lng';
-        const SILENCE = 'allocine_silent_since, allocine_checked_at';
-
-        let { data, error: dbError } = await client.from('cinemas').select(`${COLUMNS}, favorite, ${SILENCE}`);
-
-        // Repli si une colonne récente n'existe pas encore en base : le code peut être déployé avant
-        // que la migration soit jouée, et sans ce filet **tout** le référentiel devient illisible —
-        // donc plus d'`accepts_ugc`, donc une page vide alors que le pré-filtre carte est actif par
-        // défaut. Une salle sans favori ni signalement vaut mieux qu'un écran blanc. On dégrade en
-        // deux temps pour ne perdre que ce qui manque vraiment.
-        if (dbError?.code === '42703') {
-            console.warn('[seances] Colonnes de silence absentes — joue _ressources/sql/2608131800-add-cinema-silence.sql pour signaler les salles absentes d\'Allociné.');
-            ({ data, error: dbError } = await client.from('cinemas').select(`${COLUMNS}, favorite`));
-        }
-        if (dbError?.code === '42703') {
-            console.warn('[seances] Colonne `favorite` absente — joue _ressources/sql/2608121820-add-cinema-favorite.sql pour activer les cinémas favoris.');
-            ({ data, error: dbError } = await client.from('cinemas').select(COLUMNS));
-        }
-
-        if (dbError) {
-            console.error('Référentiel cinemas illisible:', dbError.message);
-            cinemas.value = {};
-            return;
-        }
-        cinemas.value = Object.fromEntries((data ?? []).map(c => [c.code, c]));
-    };
-
-    // Relit le référentiel malgré le cache de session. Il bouge rarement, mais pas jamais : une
-    // étoile posée sur un autre appareil, une salle nouvellement géocodée, ou surtout un
-    // signalement d'absence écrit par `check-seances.mjs` pendant que la page est ouverte — sans
-    // relecture, l'avertissement n'apparaîtrait qu'au prochain rechargement complet.
-    const refreshCinemas = async () => {
-        cinemas.value = null;
-        await loadCinemas();
-    };
 
     // Fenêtre d'ouverture des ventes : c'est là que la grille d'un jour se remplit **pendant** la
     // journée, et donc là qu'un cache, même récent, ment. Les exploitants mettent en vente à J-3 /
@@ -228,18 +149,15 @@ export function useSeances() {
         await load();
     };
 
-    // La date a-t-elle changé depuis que la page est ouverte ? Si oui, on repart d'une semaine juste :
-    // nouvelle bande de jours, retour sur « aujourd'hui », et purge du cache mémoire des journées
-    // désormais derrière nous. Appelé au retour sur l'onglet — c'est le moment où l'utilisateur
-    // relit l'écran, donc le moment où un décalage se verrait.
+    // La bande de jours a-t-elle changé de semaine ? `rollToToday` tranche (cf. `useSeanceDays`) ; ce
+    // qui suit est la part qui regarde les séances — purge du cache mémoire des journées désormais
+    // derrière nous, puis rechargement. Appelé au retour sur l'onglet : c'est le moment où
+    // l'utilisateur relit l'écran, donc le moment où un décalage se verrait.
     const syncToday = async () => {
-        const now = isoDay(0);
-        if (now === today.value) return false;
+        if (!rollToToday()) return false;
 
-        today.value = now;
-        dayIndex.value = 0;
         openCard.value = null;
-        forgetBefore(now);
+        forgetBefore(isoDay(0));
         await load();
         return true;
     };
@@ -301,27 +219,6 @@ export function useSeances() {
             dayIndex.value = index;
             openCard.value = null;
             await load();
-        }
-    };
-
-    // Épingle / désépingle une salle. Bascule optimiste : le tri se réordonne immédiatement, et on
-    // revient en arrière si l'écriture échoue — sur un simple clic d'étoile, attendre l'aller-retour
-    // réseau pour voir la carte bouger serait pénible.
-    const toggleFavorite = async (code) => {
-        const current = cinemas.value?.[code];
-        if (!current) return;
-
-        const next = !current.favorite;
-        cinemas.value = { ...cinemas.value, [code]: { ...current, favorite: next } };
-
-        const { error: dbError } = await client
-            .from('cinemas')
-            .update({ favorite: next, updated_at: new Date().toISOString() })
-            .eq('code', code);
-
-        if (dbError) {
-            console.error('Bascule favori échouée pour', code, dbError.message);
-            cinemas.value = { ...cinemas.value, [code]: { ...current } };
         }
     };
 
@@ -418,25 +315,6 @@ export function useSeances() {
     const hiddenEvents = computed(() =>
         ugcOnly.value ? countMatchingEvents(entries.value, filters(false)) - nbEvents.value : 0
     );
-
-    // Salles que le dernier contrôle a trouvées **absentes d'Allociné** (cf. `check-seances.mjs`).
-    // Leurs séances existent peut-être — elles ne sont simplement pas dans la source. Une salle qui
-    // manque ne fait aucun bruit dans la vue : sans ce signalement, l'absence se lit comme « ce
-    // cinéma ne joue rien », ce qui est faux et détruit la confiance dans tout le reste.
-    //
-    // On se tait si le contrôle n'a pas tourné depuis une semaine : mieux vaut ne rien dire qu'un
-    // avertissement périmé sur une salle qui a peut-être reparlé depuis.
-    const SILENCE_NOTICE_MAX_AGE = 7 * 24 * 60 * 60 * 1000;
-
-    const silentCinemas = computed(() => {
-        const fresh = Date.now() - SILENCE_NOTICE_MAX_AGE;
-        return Object.values(cinemas.value ?? {})
-            .filter(c => c.allocine_silent_since
-                && c.accepts_ugc
-                && Date.parse(c.allocine_checked_at) > fresh)
-            .map(c => ({ name: c.name, since: c.allocine_silent_since }))
-            .sort((a, b) => String(a.name).localeCompare(String(b.name)));
-    });
 
     // Au moins une salle affichée n'est plus confirmée par la source. Signalé une fois pour la page
     // plutôt que salle par salle : le message explique le *pourquoi*, le badge sur la ligne dit *où*.
