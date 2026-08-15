@@ -15,15 +15,9 @@ const pad = (n) => String(n).padStart(2, '0');
 export function useSeanceDays() {
     const dayIndex = useState('seancesDay', () => 0);
 
-    // Jour de référence de la bande. **Réactif**, et c'est tout l'enjeu : construit directement sur
-    // `new Date()`, `days` se figeait au montage. `new Date()` n'est pas une dépendance réactive —
-    // une visite laissée ouverte à travers minuit continuerait donc d'appeler « Auj. » la veille et
-    // de servir ses séances. L'app mentirait sur le jour, ce qui est pire que de manquer une salle.
-    //
-    // ⚠️ Défaut trouvé par lecture du code, **pas** observé en conditions réelles : il demande de
-    // laisser un onglet ouvert plus de 24 h. Ne pas le confondre avec le cache mémoire de la visite,
-    // qui lui se voit tout de suite (une page ouverte quelques heures ressert le jour tel qu'il était
-    // au chargement tant qu'on ne recharge pas — c'est ce que corrige `onVisible` côté page).
+    // Jour de référence de la bande. **Réactif**, et c'est tout l'enjeu : `new Date()` n'est pas une
+    // dépendance réactive, donc `days` se figeait au montage et une visite ouverte à travers minuit
+    // continuait d'appeler « Auj. » la veille.
     const today = useState('seancesToday', () => isoDay(0));
 
     const days = computed(() => {

@@ -1,33 +1,25 @@
 // Rafraîchissement d'un film pour une date :
 // `GET /api/allocine/refresh?id={allocineId}&date=YYYY-MM-DD`
 //
-// C'est la seule route qui sort sur le réseau. Appelée uniquement pour les films que la lecture
-// groupée (`/api/allocine/showtimes`) a déclarés absents ou périmés, un par appel — le client les
-// parallélise, ce qui garde chaque invocation courte.
+// Appelée uniquement pour les films que la lecture groupée a déclarés absents ou périmés, un par appel
+// — le client les parallélise, ce qui garde chaque invocation courte.
 //
-// Cycle : relire le cache → décider → rafraîchir → réécrire. Un fetch en échec ne remplace jamais
-// une entrée existante : on renvoie le périmé avec `stale: true` (des horaires un peu vieux valent
-// mieux qu'une page vide, et le lien billetterie reste l'arbitre).
+// Cycle : relire le cache → décider → rafraîchir → réécrire. ⚠️ Un fetch en échec ne remplace jamais
+// une entrée existante : on renvoie le périmé avec `stale: true`, des horaires un peu vieux valant
+// mieux qu'une page vide.
 //
-// Le cache vit en base et non dans le cache mémoire Nitro : sur Vercel ce dernier vit dans
-// l'instance et meurt au cold start, donc chaque réveil retaperait Allociné pour rien. Une table le
-// rend durable, partagé entre instances et inspectable — l'architecture décrite par le développeur
-// de paris-cine.info.
+// Le cache vit en base et non en mémoire Nitro, qui meurt au cold start : chaque réveil retaperait
+// Allociné pour rien.
 
 import { serverSupabaseClient } from '#supabase/server';
 
-// Toute salle croisée dans une réponse et absente du référentiel y entre — ça évite d'avoir à
-// deviner la liste des salles parisiennes à l'avance, `scripts/geocode-cinemas.mjs` et le seed
-// carte UGC travaillant ensuite sur des lignes existantes.
+// Toute salle croisée dans une réponse et absente du référentiel y entre : les scripts de géocodage et
+// de curation travaillent ensuite sur des lignes existantes.
 //
-// `ignoreDuplicates` (→ `on conflict do nothing`) est essentiel : une salle déjà connue ne doit
-// **jamais** être réécrite, sinon chaque rafraîchissement effacerait le travail de curation
-// d'`accepts_ugc` et le géocodage.
-//
-// `accepts_ugc` prend à la création ce qu'Allociné annonce, et seulement là. Le mettre à `false`
-// d'office faisait disparaître toute salle découverte après le seed de la vue filtrée — sans le
-// moindre signal, puisque le filtre est actif par défaut. La liste reste curée : cette valeur n'est
-// qu'un point de départ, corrigeable par `scripts/set-cinema-ugc.mjs`.
+// ⚠️ `ignoreDuplicates` (→ `on conflict do nothing`) est essentiel : réécrire une salle connue
+// effacerait la curation d'`accepts_ugc` et le géocodage. Cette valeur n'est qu'un point de départ à la
+// création — la mettre à `false` d'office faisait disparaître de la vue filtrée toute salle découverte
+// après le seed, sans le moindre signal.
 const rememberTheaters = async (client, theaters) => {
     if (!theaters.length) return;
 
@@ -98,13 +90,9 @@ export default defineEventHandler(async (event) => {
     const payload = { nextDate: fresh.nextDate, theaters };
     const fetchedAt = new Date().toISOString();
 
-    // Une journée sans séance est un résultat, pas un échec : elle est mise en cache comme les
-    // autres, sinon on retaperait Allociné à chaque affichage de ce jour-là.
-    //
-    // Un résultat **amputé d'une page**, lui, ne rentre pas : on l'affiche (mieux que rien) mais on
-    // ne le fige pas. Le graver reviendrait à masquer jusqu'à 15 salles jusqu'à expiration, sans
-    // que rien ne le laisse voir — un cache vide se rattrape au prochain affichage, un cache faux
-    // ne se rattrape pas.
+    // Une journée sans séance est un résultat, pas un échec : elle est mise en cache comme les autres.
+    // Un résultat **amputé d'une page**, lui, ne rentre pas — on l'affiche, on ne le fige pas : un cache
+    // vide se rattrape au prochain affichage, un cache faux ne se rattrape pas.
     if (fresh.partial) {
         console.warn(`[allocine] Résultat partiel pour ${allocineId} au ${date} — non mis en cache`);
         return { ...payload, stale: false, fetchedAt };

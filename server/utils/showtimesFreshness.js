@@ -6,38 +6,21 @@
 const HOUR = 60 * 60 * 1000;
 const FRESH_NEAR = 2 * HOUR;   // aujourd'hui et demain : ça bouge encore (séances ajoutées, complets)
 
-// ⚠️ « Au-delà, la programmation est posée » : c'était faux, et 12 h de TTL l'ont fait payer. Cas
-// constaté le 13/08/2026 sur *La fin d'Oak Street* au dimanche 16 — l'entrée écrite à 09 h 20
-// portait 23 salles parisiennes, sans UGC Ciné Cité Les Halles, qu'Allociné servait pourtant
-// l'après-midi même (7 séances). Les exploitants n'ouvrent pas leurs ventes d'un bloc : elles
-// arrivent par vagues sur les jours à venir, UGC en tête. Un cache d'une demi-journée fige donc un
-// état incomplet et fait mentir la vue face au site de la salle.
-//
-// 3 h est le compromis : la fenêtre de décalage devient une vraie fenêtre de consultation, pour un
-// surcoût borné (un jour re-demandé au plus 4 à 5 fois par journée d'usage réel, contre 1 avant).
-// Le bouton « Actualiser » de la vue reste là pour ne jamais rester coincé entre deux.
+// ⚠️ Pas 12 h : les exploitants n'ouvrent pas leurs ventes d'un bloc, elles arrivent par vagues sur les
+// jours à venir. Un cache d'une demi-journée fige donc un état incomplet et fait mentir la vue face au
+// site de la salle (constaté le 13/08/2026, cf. README). 3 h, plus le bouton « Actualiser ».
 const FRESH_FAR = 3 * HOUR;
 
-// `isoDay` et `lastWednesday` viennent de `shared/utils/cineWeek.js` : la règle du mercredi vaut
-// des deux côtés de la barrière app/serveur, et deux copies jumelles finiraient par diverger sans
-// que rien ne le signale — le cache déclarerait « frais » ce que le contrôle « en salle » juge
-// périmé, et les deux tourneraient en rond.
-
-// Combien de temps on continue de montrer une salle qu'Allociné ne rend plus. Assez pour traverser
-// une panne de la source — celle du 13/08/2026 a fait disparaître UGC Ciné Cité Les Halles de
-// toutes les réponses **en 29 secondes**, entre deux de nos écritures —, assez court pour qu'une
-// vraie déprogrammation ne traîne pas la semaine entière.
+// Combien de temps on continue de montrer une salle qu'Allociné ne rend plus : assez pour traverser une
+// panne de la source, assez court pour qu'une vraie déprogrammation ne traîne pas la semaine.
 const CARRY_OVER_MS = 48 * 60 * 60 * 1000;
 
-// Une lecture fraîche ne doit **jamais** appauvrir ce qu'on avait sans le dire. Ce jour-là, nos
-// entrées des 13-16 contenaient Les Halles et celles des 17-18 non : à la première expiration, les
-// premières auraient perdu la salle en silence, remplacées par une vérité plus pauvre. Rien, ni
-// dans la vue ni dans les logs, ne l'aurait signalé.
+// Une lecture fraîche ne doit **jamais** appauvrir ce qu'on avait sans le dire : une entrée plus pauvre
+// aurait remplacé la précédente en silence, sans trace ni dans la vue ni dans les logs.
 //
-// Les salles disparues sont donc **reportées**, marquées `unconfirmedSince` : la vue les affiche
-// comme non confirmées, et le contrôle « en salle » les ignore — elles témoignent du passé, elles
-// ne décident de rien. Elles s'effacent seules au bout de `CARRY_OVER_MS`, ou dès que la source les
-// rend à nouveau (la version fraîche gagne toujours).
+// Les salles disparues sont donc reportées, marquées `unconfirmedSince` : affichées comme non
+// confirmées, ignorées par le contrôle « en salle ». Elles s'effacent au bout de `CARRY_OVER_MS`, ou
+// dès que la source les rend à nouveau.
 //
 // ⚠️ `unconfirmedSince` n'est jamais rafraîchi : le renouveler à chaque passage ferait d'une salle
 // disparue une fois pour toutes un fantôme éternel.

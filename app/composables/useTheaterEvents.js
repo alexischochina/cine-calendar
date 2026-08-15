@@ -1,26 +1,17 @@
 // Seconde passe : qualifier les séances déjà chargées en séances événement.
 //
-// Pourquoi une passe séparée. L'endpoint film d'Allociné — celui qui porte les horaires, film-centré
-// et ~4× moins coûteux qu'un balayage de salles — **ne sélectionne aucun champ d'événement**. Seul
-// l'endpoint salle les a (cf. l'encadré « Deux endpoints, deux jeux de champs » dans
-// `server/utils/allocine.js`). On garde donc le premier pour les horaires, et on interroge le second
-// pour les seules salles qui jouent des films de la liste — ~25 un jour ordinaire, contre ~53 si on
-// balayait tout Paris.
+// L'endpoint film porte les horaires mais **aucun champ d'événement** ; seul l'endpoint salle les a
+// (cf. `server/utils/allocine.js`). On garde donc le premier pour les horaires et on interroge le
+// second pour les seules salles qui jouent des films de la liste — ~25 un jour ordinaire contre ~53
+// pour tout Paris. Rapprochement sur `internalId`, jamais sur l'heure (une salle peut programmer deux
+// séances à la même minute dans deux de ses salles).
 //
-// Le rapprochement se fait sur `internalId`, l'identifiant de séance d'Allociné : le même `Showtime`
-// le porte à l'identique des deux côtés (vérifié le 14/08/2026). Aucune heuristique sur l'heure — une
-// salle peut programmer deux séances à la même minute dans deux de ses salles.
+// Le résultat est **greffé dans le cache L1 des séances** : tout l'aval lit `showtime.events` sans
+// savoir que cette passe existe.
 //
-// Le résultat est **greffé dans le cache L1 des séances**, et c'est le choix central de ce fichier :
-// tout l'aval (chips, décomptes par carte, badge du rail) lit `showtime.events` sans savoir que cette
-// passe existe. Une carte réactive à part aurait obligé chaque consommateur à connaître la jointure.
-//
-// ⚠️ COUVERTURE PARTIELLE, ASSUMÉE. L'endpoint par salle est creux — `theater-C0159` rendait 1 jour
-// sur 7 là où l'endpoint film en rendait 6 (mesuré le 13/08/2026, cf. `README-seances.md`). Cette
-// passe ne marquera donc pas tous les événements. Elle est bâtie pour ne jamais se tromper dans
-// l'autre sens : on ne se prononce que sur les séances que l'endpoint a réellement rendues (`seen`),
-// jamais sur les autres. Un événement manqué est un badge en moins ; un faux badge enverrait
-// l'utilisateur à une séance qui n'existe pas.
+// ⚠️ Couverture partielle assumée — l'endpoint salle est creux. La passe est bâtie pour ne jamais se
+// tromper dans l'autre sens : on ne se prononce que sur les séances réellement rendues (`seen`). Un
+// événement manqué est un badge en moins, un faux badge envoie à une séance qui n'existe pas.
 
 const REFRESH_CONCURRENCY = 4;
 

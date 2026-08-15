@@ -32,6 +32,19 @@ Sans lui, la vue reste juste — il lui manque seulement les marqueurs d'événe
 « Événement à venir » du rail, et le code se tait au lieu de retenter (`42P01` / `PGRST204` détecté une
 fois, puis silence pour la visite).
 
+Enfin, le resserrage des droits sur le référentiel des salles :
+
+```
+_ressources/sql/2608151000-tighten-cinemas-rls.sql
+```
+
+La policy d'origine ouvrait `cinemas` **en écriture à tout compte authentifié** — donc la curation
+`accepts_ugc`, le géocodage et les temps de trajet, tous posés par des scripts qui tournent en
+service-role. Celle-ci sépare les trois usages : lecture pour tous les authentifiés, `insert` pour la
+découverte de salle par `/api/allocine/refresh`, `update` pour la bascule de favori, et rien d'autre.
+Le fichier dit aussi ce qu'il ne fait pas — Postgres n'a pas de granularité par colonne dans une
+policy. Idempotent, et sans effet visible sur l'usage.
+
 ### 2. Premier passage sur la vue
 
 Ouvrir `/seances`. C'est ce passage qui :

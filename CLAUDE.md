@@ -103,7 +103,17 @@ handlers Nitro. Toute route `server/api/` qui **sort sur le réseau** doit appel
 (`server/utils/requireUser.js`) : sans elle, n'importe qui peut faire émettre des requêtes vers
 Allociné ou les exploitants depuis l'IP du déploiement. Les routes qui ne font que lire un cache
 (`showtimes`, `events`) s'en passent — RLS suffit, et la garde coûterait un aller-retour sur le chemin
-le plus chaud du projet.
+le plus chaud du projet — mais elles appellent `rateLimit(event)`
+(`server/utils/rateLimit.js`) : ce qui restait ouvert n'était pas la donnée, c'était la dépense en
+invocations serverless. Compteur en mémoire d'instance, donc écrêtage de l'abus trivial, pas un WAF.
+
+**Règles partagées entre l'app, le serveur et les scripts** — `shared/utils/` est auto-importé des
+deux côtés depuis Nuxt 3.14 et sans dépendance, donc importable aussi par un script Node nu. Trois
+invariants y vivent, chacun parce qu'une copie divergente y avait déjà causé un bug silencieux :
+`cineWeek.js` (la semaine ciné), `exhibitorVenues.js` (quelles salles ont une source de libellés),
+`pgErrors.js` (`isMissingSchema` — ⚠️ une colonne absente remonte `42703` en **lecture** mais
+`PGRST204` en **écriture**, une table absente `PGRST205` et non `42P01`). Ne pas réécrire ces tests à
+la main : c'est exactement ce qui avait rendu cinq gardes inertes.
 
 ## Styling
 

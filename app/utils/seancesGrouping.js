@@ -1,15 +1,8 @@
-// Règles de filtrage, de tri et de regroupement de la vue « Séances ».
+// Règles de filtrage, de tri et de regroupement de la vue « Séances » — fonctions pures, testées par
+// `scripts/test-seances-rules.mjs`. Ce sont les décisions métier les plus faciles à casser sans s'en
+// rendre compte (le filtre carte, l'ordre des salles), d'où leur sortie du composable.
 //
-// Extraites de `useSeances` pour deux raisons :
-//   - ce sont des **fonctions pures** — mêmes entrées, mêmes sorties, aucune réactivité, aucun
-//     accès réseau. Elles n'avaient rien à faire au milieu d'un composable qui gère de l'état, du
-//     chargement et des effets ;
-//   - elles portent les décisions métier les plus faciles à casser sans s'en rendre compte (le
-//     filtre carte, l'ordre des salles). Ici, elles sont exécutables par un script de test
-//     (`scripts/test-seances-rules.mjs`) sans monter Nuxt.
-//
-// Import explicite et non auto-import : ce fichier doit rester chargeable par le script de test, qui
-// tourne hors de Nuxt. Même raison que `tmdbDates.js` côté serveur.
+// ⚠️ Import explicite et non auto-import : le script de test charge ce fichier hors de Nuxt.
 import { countEvents, isEventShowtime } from './seanceEvents.js';
 
 // Séances qu'une carte UGC Illimité ne couvre pas, **dans la salle même où elle est acceptée**.
@@ -28,20 +21,12 @@ const CARD_EXCLUDED_FORMATS = [
     'F_3D',      // majoration lunettes
 ];
 
-// `isPreview` : les avant-premières sortent du cadre de la carte.
+// `isPreview` : les avant-premières sortent du cadre de la carte. Posé par `graftEvents` depuis la
+// passe salle, l'endpoint film ne le sélectionnant pas. ⚠️ Un **booléen** et non le libellé
+// « Avant-première » : une règle métier adossée à un texte d'interface se casse au premier reformulage.
 //
-// ⚠️ Ce test était **inerte** jusqu'à la seconde passe par salle, et il ne l'est plus : l'endpoint que
-// la production interroge ne sélectionne pas `isPreview` (cf. l'encadré « Deux endpoints, deux jeux de
-// champs » dans `server/utils/allocine.js`), mais `graftEvents` le pose désormais à partir de ce que
-// la passe salle a vu. C'est volontairement un **booléen** et non le libellé « Avant-première » qui
-// arbitre ici : une règle métier adossée à un texte d'interface se casse au premier reformulage, et en
-// silence.
-//
-// ⚠️ Conséquence à connaître, maintenant que le test mord : le pré-filtre carte étant actif par défaut,
-// une avant-première est **masquée** à l'arrivée sur la page. C'est correct — la carte ne la couvre pas
-// — et ce n'est pas silencieux : `hiddenEvents` la compte et la vue le dit en propres termes, avec sa
-// porte de sortie. On ne bricolera pas ce filtre pour faire ressortir les événements, ce serait mentir
-// sur ce que la carte paie.
+// ⚠️ Conséquence : le pré-filtre carte étant actif par défaut, une avant-première est masquée à
+// l'arrivée. C'est correct et ce n'est pas silencieux — `hiddenEvents` la compte et la vue le dit.
 export const isCardEligible = (showtime) => {
     if (showtime.isPreview) return false;
     return !(showtime.projection ?? []).some(format => CARD_EXCLUDED_FORMATS.includes(String(format).toUpperCase()));
@@ -87,11 +72,8 @@ export const rangeLabel = (range) => range ? `${timeLabel(range[0])} – ${timeL
 // Créneaux proposés dans le menu. `hint` est le libellé secondaire (« 8h – 12h »), affiché à côté de
 // l'option pour que le découpage soit lisible sans l'avoir appris.
 //
-// ⚠️ « Matin » part de **minuit** et non de 8 h, alors que son libellé annonce 8 h. Les trois
-// créneaux doivent partitionner la journée entière : avec une borne à 8 h, une séance à 07:30 ne
-// tombait dans **aucun** créneau nommé et ne réapparaissait que sous « Toutes » — une disparition
-// silencieuse, exactement ce que le reste de la vue s'interdit. Le libellé reste « 8h – 12h » : il
-// décrit ce qu'on y trouve en pratique, la borne technique couvre ce qu'on n'a pas prévu.
+// ⚠️ « Matin » part de **minuit** malgré son libellé : les trois créneaux doivent partitionner la
+// journée, sinon une séance à 07:30 ne tombe dans aucun d'eux et disparaît en silence.
 export const TIME_SLOTS = [
     { value: 'all', label: 'Toutes', hint: null, range: null },
     { value: 'morning', label: 'Matin', hint: '8h – 12h', range: [0, 12 * 60] },
@@ -105,11 +87,9 @@ export const RANGE_MIN = 8 * 60;
 export const RANGE_MAX = DAY_END;
 export const RANGE_STEP = 30;
 
-// Une plage libre est la **seule** entrée de forme libre de la chaîne de filtres : elle survit en
-// `useState` à travers la navigation, donc rien ne garantit au moment de l'appliquer qu'elle a
-// encore la forme qu'on lui a donnée. Un `NaN` glissé dedans désactiverait le filtre en silence
-// (toute comparaison devenant fausse), un couple inversé viderait la page sans explication. On la
-// valide donc au seuil, une fois, plutôt que de faire confiance à chaque lecture.
+// Seule entrée de forme libre de la chaîne de filtres, et elle survit en `useState` à travers la
+// navigation : un `NaN` y désactiverait le filtre en silence, un couple inversé viderait la page.
+// Validée au seuil, une fois.
 export const sanitizeRange = (range) => {
     if (!Array.isArray(range) || range.length !== 2) return null;
 
@@ -160,13 +140,9 @@ export const arrondissementFromZip = (zip) => {
 
 export const countShowtimes = (list) => list.reduce((n, e) => n + e.showtimes.length, 0);
 
-// Combien de séances passeraient ces filtres. `countShowtimes(applyFilters(…))` donnait la même
-// réponse, au prix d'une entrée reconstruite et d'un tableau d'horaires alloués **par salle** — pour
-// n'en garder qu'un entier. Les décomptes « ce que le filtre masque » n'ont besoin que du nombre.
-//
-// `only` restreint le comptage à un sous-ensemble de séances (les séances événement, en pratique).
-// Paramètre plutôt que fonction jumelle : la chaîne de filtres est la même, seul le dénombrement
-// change, et deux copies auraient divergé au premier filtre ajouté.
+// Combien de séances passeraient ces filtres, sans allouer les entrées filtrées — les décomptes « ce
+// que le filtre masque » n'ont besoin que du nombre. `only` restreint à un sous-ensemble (les séances
+// événement) : un paramètre plutôt qu'une fonction jumelle, qui aurait divergé au premier filtre ajouté.
 export const countMatching = (list, { card, range = null }, only = null) => {
     let n = 0;
     for (const entry of list) {

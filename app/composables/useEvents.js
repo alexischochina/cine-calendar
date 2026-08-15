@@ -5,16 +5,12 @@
 //     réseau. La page s'affiche avec ce qu'on sait déjà, comme la timeline ;
 //   - le **relevé** complète ce qu'on sait, journée par journée, en tâche de fond.
 //
-// Pourquoi un relevé complet ici et nulle part ailleurs. Les deux balayages hebdomadaires ne regardent
-// qu'une journée chacun : `useInTheatersSync` aujourd'hui, `useUpcomingEvents` les jours d'avant-première
-// d'un film à venir. Un film déjà à l'affiche qui a un ciné-club samedi n'est donc repéré que si on
-// ouvre le samedi dans la vue Séances. Cette page-ci a précisément pour objet de ne rien manquer sur la
-// semaine : c'est le seul endroit où balayer les 7 journées se justifie.
+// Pourquoi un relevé complet ici et nulle part ailleurs : les deux balayages hebdomadaires ne regardent
+// qu'une journée chacun, si bien qu'un film à l'affiche qui a un ciné-club samedi n'est repéré que si on
+// ouvre le samedi. Cette page a pour objet de ne rien manquer sur la semaine.
 //
-// ⚠️ Ce que ça coûte, à froid : 7 journées × (~12 films + ~25 salles). C'est l'équivalent exact de
-// cliquer les sept jours de la vue Séances, et le cache L2 le rend gratuit ensuite (même règle de
-// fraîcheur). Le relevé est **séquentiel** et la page se remplit au fur et à mesure — un jour rendu est
-// un jour affiché — plutôt que de tout retenir derrière un écran de chargement.
+// ⚠️ Coût à froid : 7 journées × (~12 films + ~25 salles) — l'équivalent de cliquer les sept jours de la
+// vue Séances, gratuit ensuite grâce au L2. Relevé **séquentiel**, la page se remplit au fur et à mesure.
 
 export function useEvents() {
     const { movies, eventBounds } = useMovieCalendar();
