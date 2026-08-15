@@ -42,6 +42,10 @@ const rememberTheaters = async (client, theaters) => {
 };
 
 export default defineEventHandler(async (event) => {
+    // Seule route de la vue Séances qui sort sur le réseau : elle ne s'ouvre pas aux anonymes
+    // (cf. `server/utils/requireUser.js`).
+    await requireUser(event);
+
     const { id, date, force } = getQuery(event);
 
     if (!/^\d+$/.test(String(id ?? ''))) {

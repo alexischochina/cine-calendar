@@ -31,14 +31,21 @@ export default defineEventHandler(async (event) => {
     const { codes, date } = getQuery(event);
 
     const wanted = [...new Set(String(codes ?? '').split(',').filter(Boolean))];
-    if (!wanted.length || !wanted.every(code => CODE.test(code))) {
+
+    // Gardes du moins cher au plus cher, et le décompte d'abord : valider le format de 5 000 codes
+    // avant de constater qu'il y en a 5 000 fait payer l'entrée hostile au prix de l'entrée légitime.
+    // C'est aussi le message le plus juste pour un appelant qui envoie beaucoup de codes valides.
+    if (!wanted.length) {
         throw createError({ statusCode: 400, statusMessage: 'Invalid theater codes' });
+    }
+    if (wanted.length > MAX_CODES) {
+        throw createError({ statusCode: 400, statusMessage: 'Too many codes' });
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date ?? ''))) {
         throw createError({ statusCode: 400, statusMessage: 'Invalid date' });
     }
-    if (wanted.length > MAX_CODES) {
-        throw createError({ statusCode: 400, statusMessage: 'Too many codes' });
+    if (!wanted.every(code => CODE.test(code))) {
+        throw createError({ statusCode: 400, statusMessage: 'Invalid theater codes' });
     }
 
     const client = await serverSupabaseClient(event);

@@ -85,6 +85,13 @@ NUXT_API_IMG_URL=   # TMDB image CDN base URL
 
 Runtime config is exposed to server-side code via `useRuntimeConfig()` in `nuxt.config.ts`.
 
+**Routes serveur & authentification** — `app/middleware/auth.js` protège les *pages*, pas les
+handlers Nitro. Toute route `server/api/` qui **sort sur le réseau** doit appeler `requireUser(event)`
+(`server/utils/requireUser.js`) : sans elle, n'importe qui peut faire émettre des requêtes vers
+Allociné ou les exploitants depuis l'IP du déploiement. Les routes qui ne font que lire un cache
+(`showtimes`, `events`) s'en passent — RLS suffit, et la garde coûterait un aller-retour sur le chemin
+le plus chaud du projet.
+
 ## Styling
 
 SCSS with global styles in `app/assets/styles/`. Variables (colors, fonts, breakpoints) are auto-injected via `additionalData` in `nuxt.config.ts` — no need to import `_variables.scss` manually in components.

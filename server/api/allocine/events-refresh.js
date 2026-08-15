@@ -15,6 +15,9 @@ import { serverSupabaseClient } from '#supabase/server';
 const CODE = /^[A-Z]\d{3,6}$/;
 
 export default defineEventHandler(async (event) => {
+    // Sort chez Allociné : même garde que sa jumelle `refresh.js` (cf. `server/utils/requireUser.js`).
+    await requireUser(event);
+
     const { code, date } = getQuery(event);
 
     if (!CODE.test(String(code ?? ''))) {

@@ -23,6 +23,11 @@ const cacheKey = (value) => String(value ?? '')
     .trim();
 
 export default defineEventHandler(async (event) => {
+    // Sort chez l'exploitant (Dulac, MK2, UGC) : garde d'authentification comme les routes Allociné
+    // qui sortent (cf. `server/utils/requireUser.js`). Ces sites-là sont encore moins nos hôtes
+    // qu'Allociné — on n'y envoie que notre propre trafic.
+    await requireUser(event);
+
     const { title, date, cinema, bookings } = getQuery(event);
 
     // Bornées comme partout ailleurs (`MAX_IDS`, `MAX_CODES`) : ces deux valeurs composent la clé

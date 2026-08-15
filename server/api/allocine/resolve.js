@@ -12,11 +12,23 @@
 // persistée dans `calendar.allocine_id`, donc un cache ne servirait qu'à ré-servir… un échec. Or
 // mettre en cache 12 h un « pas trouvé » dû à une coupure réseau est exactement ce qu'on cherche à
 // éviter. Le coût est d'une requête sortante par film, une seule fois dans la vie de la ligne.
+// Au-delà, ce n'est plus un titre de film. Même borne que `server/api/events/detail.js` : la valeur
+// part dans une URL sortante, une chaîne démesurée la ferait grossir sans borne.
+const MAX_LEN = 200;
+
 export default defineEventHandler(async (event) => {
+    // ⚠️ Cette route est la plus exposée du lot : aucune lecture en base, un `title` de forme libre,
+    // et une sortie chez Allociné **garantie** à chaque appel. La garde passe donc avant tout le reste
+    // (cf. `server/utils/requireUser.js`).
+    await requireUser(event);
+
     const { title, release_date: releaseDate, director } = getQuery(event);
 
     if (typeof title !== 'string' || !title.trim()) {
         throw createError({ statusCode: 400, statusMessage: 'Missing title' });
+    }
+    if (title.length > MAX_LEN) {
+        throw createError({ statusCode: 400, statusMessage: 'Title too long' });
     }
 
     const { allocineId, unavailable } = await resolveAllocineId({
