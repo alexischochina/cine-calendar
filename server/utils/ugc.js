@@ -1,31 +1,23 @@
-// Libellés d'événement des salles UGC parisiennes. Troisième source d'exploitant, et **la plus fiable
-// des trois** — pour une raison qui n'a rien à voir avec la qualité de son HTML.
-//
-// Dulac et MK2 se rapprochent par (titre, date, salle) : trois heuristiques, trois occasions de se
-// tromper. UGC, lui, publie le **numéro de séance de sa billetterie** dans chaque tuile :
-//
-//     <a href="reservationSeances.html?id=330171840281">19h15</a>
-//
-// Et Allociné nous donne exactement ce numéro dans l'URL de réservation de la même séance :
-//
-//     https://www.ugc.fr/reservationSeances.html?id=330171840281&part=all&mtm_source=allocine…
-//
-// Le rapprochement est donc une **égalité d'identifiants**. Pas de titre à normaliser, pas de date à
-// interpréter, pas de nom de salle à comparer. Rien ne peut dériver.
+// Libellés d'événement des salles UGC parisiennes, et **la plus fiable des trois sources** : là où
+// Dulac et MK2 se rapprochent par (titre, date, salle), UGC publie le numéro de séance de sa
+// billetterie dans chaque tuile (`reservationSeances.html?id=330171840281`) — le même qu'Allociné livre
+// dans l'URL de réservation. Le rapprochement est une **égalité d'identifiants** : rien ne peut dériver.
 //
 // ⚠️ Le paramètre qui change tout : `cinemaId`. Sans lui, l'endpoint rend une grille d'affiches sans
-// date ni libellé — c'est ce qui m'a fait conclure à tort qu'UGC ne publiait rien. Avec lui, il rend
-// les sections « Séances Spéciales » et « Avant-Premières » de la salle demandée. Aucune session,
-// aucun cookie, aucun compte : le paramètre suffit.
+// date ni libellé, ce qui fait conclure à tort qu'UGC ne publie rien. Aucune session ni cookie requis.
 //
-// robots.txt : `Disallow: /AjaxAction!` est un **préfixe** et ne couvre pas `/actusAjaxAction!…`.
-// Ce chemin est donc autorisé. (C'est `/AjaxAction!` tout court — les horaires — qui est fermé, et on
-// n'y touche pas : les horaires viennent d'Allociné.)
+// robots.txt : `Disallow: /AjaxAction!` est un **préfixe** et ne couvre pas `/actusAjaxAction!…`, qui
+// est donc autorisé. Les horaires (`/AjaxAction!` tout court) sont fermés — on n'y touche pas.
 
 import { normalize } from './exhibitorText.js';
 
 const UGC_ORIGIN = 'https://www.ugc.fr';
-const USER_AGENT = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+// ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
+// plus haut ne tient que si l'on est identifiable — se présenter comme un navigateur serait la
+// première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
+// UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
+// même charge utile à l'octet près).
+const USER_AGENT = 'cine-calendar/1.0';
 const TIMEOUT = 8000;
 
 // Les 11 salles UGC de Paris intra-muros, relevées dans leur propre liste
@@ -64,15 +56,12 @@ const decode = (str) => String(str ?? '')
     .replace(/\s+/g, ' ')
     .trim();
 
-// Tuiles événement d'une page de salle → `{ sessionId, label }`.
+// Tuiles événement d'une page de salle → `{ sessionId, label }`. Découpage sur le marqueur de tuile
+// plutôt qu'un parseur d'arbre : un changement de gabarit fait rendre zéro tuile, donc le connecteur se
+// tait au lieu de mentir.
 //
-// On découpe sur `<!-- Component: tile -->` plutôt que de parser l'arbre : chaque tuile est un bloc
-// autonome, et on ne lit que deux choses dedans. Un changement de gabarit fait rendre zéro tuile — le
-// connecteur se tait, il ne ment pas.
-//
-// ⚠️ Seules les tuiles qui portent **les deux** sont retenues. Une tuile sans `film-tag` est un film
-// ordinaire de la rubrique « En ce moment » ; une tuile sans lien de réservation (un cycle, un
-// festival) n'a pas de séance à laquelle s'accrocher.
+// ⚠️ Seules les tuiles qui portent **les deux** sont retenues : sans `film-tag` c'est un film ordinaire,
+// sans lien de réservation il n'y a aucune séance à laquelle s'accrocher.
 export const parseUgcTiles = (html) => {
     const out = [];
 
@@ -108,13 +97,9 @@ const fetchCinemaTiles = async (cinemaId) => {
     }
 };
 
-// ⚠️ Cache **mémoire d'instance**, donc partagé entre toutes les requêtes d'un serveur Nitro — le motif
-// que `useShowtimes` a jugé assez risqué pour y ajouter une garde `import.meta.server`. Inoffensif ici,
-// et il faut dire pourquoi : donnée **publique, en lecture**, identique pour tous les visiteurs, et
-// aucune promesse partagée. Le pire qu'une course produise, c'est deux relevés au lieu d'un.
-//
-// Opportuniste : il meurt au cold start (c'est pourquoi le cache qui compte vit en base, cf.
-// `server/api/events/detail.js`). Le perdre coûte 11 requêtes, pas davantage.
+// Cache mémoire d'instance, opportuniste : donnée publique en lecture, aucune promesse partagée — le
+// pire qu'une course produise, c'est deux relevés au lieu d'un. Meurt au cold start, d'où le cache
+// durable en base (`server/api/events/detail.js`).
 const LABELS_TTL = 10 * 60 * 1000;
 let labelsCache = { at: 0, labels: null };
 
@@ -145,11 +130,8 @@ export const fetchUgcLabels = async () => {
     return result;
 };
 
-// Texte libre d'un événement UGC, à partir des URL de billetterie de la séance.
-//
-// `bookings` : les URL de réservation qu'Allociné a livrées pour cette séance. On en extrait le numéro
-// et on interroge la carte. Aucun autre critère — ni titre, ni date, ni salle : l'identifiant les
-// remplace tous les trois.
+// Texte libre d'un événement UGC : on extrait le numéro de séance des URL de billetterie livrées par
+// Allociné et on interroge la carte. Aucun autre critère — l'identifiant remplace titre, date et salle.
 export const fetchUgcDetail = async ({ cinema, bookings }) => {
     // Salle hors réseau : on ne sort pas. `isUgcVenue` est auto-importé depuis
     // `shared/utils/exhibitorVenues.js`.

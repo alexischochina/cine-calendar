@@ -17,11 +17,15 @@
 import { normalize, sentences, truncateDetail, metaContent, mentionsDate, isEventHeadline } from './exhibitorText.js';
 
 const MK2_ORIGIN = 'https://www.mk2.com';
-const USER_AGENT = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+// ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
+// plus haut ne tient que si l'on est identifiable — se présenter comme un navigateur serait la
+// première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
+// UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
+// même charge utile à l'octet près).
+const USER_AGENT = 'cine-calendar/1.0';
 const TIMEOUT = 8000;
 
-// Cache mémoire d'instance, opportuniste : il meurt au cold start sur Vercel (c'est pourquoi les
-// caches qui comptent vivent en base). Le perdre coûte une requête de sitemap, pas une salve.
+// Cache mémoire d'instance, opportuniste (cf. `dulac.js`).
 const SLUGS_TTL = 10 * 60 * 1000;
 let slugsCache = { at: 0, slugs: null };
 
@@ -104,11 +108,9 @@ export const fetchMk2Detail = async ({ title, date, cinema }) => {
         const description = metaContent(html, 'og:description') ?? metaContent(html, 'description');
         if (!description) continue;
 
-        // ⚠️ La date se vérifie sur la **description**, qui annonce celle de l'événement (« le 17 août »),
-        // et non sur la page entière. Première version : `html.includes(date)` — trop lâche, une fiche
-        // MK2 porte plusieurs dates ISO dans ses payloads, si bien qu'une séance du 18 héritait du
-        // libellé de celle du 17. Sans preuve de date, on ne qualifie pas : un libellé collé à la
-        // mauvaise séance est pire que pas de libellé.
+        // ⚠️ Sur la **description**, jamais sur la page entière : une fiche MK2 porte plusieurs dates
+        // ISO dans ses payloads, et une séance du 18 héritait du libellé de celle du 17. Sans preuve
+        // de date, on ne qualifie pas — un libellé sur la mauvaise séance est pire que pas de libellé.
         if (!mentionsDate(description, date)) continue;
 
         // Salle : MK2 l'écrit en minuscules dans sa description (« au mk2 bibliothèque »), Allociné en

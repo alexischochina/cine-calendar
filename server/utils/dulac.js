@@ -20,31 +20,22 @@
 
 import { normalize, escapeRe, fold, truncateDetail, isEventHeadline } from './exhibitorText.js';
 
-// ⚠️ **Aucun import vers `shared/` ici, et c'est volontaire.** Deux contraintes se contredisaient :
-//   - `scripts/test-seances-rules.mjs` charge ce fichier hors de Nuxt, donc sans les auto-imports ;
-//   - un import relatif qui traverse `shared/` (`../../shared/utils/…`) **casse au bundling** — Vite
-//     réécrit le chemin depuis le chunk généré et sort du projet (`/Users/shared/utils/…`). Déjà
-//     rencontré sur `app/utils/seancesGrouping.js`.
-//
-// La sortie : les helpers de texte vivent dans `./exhibitorText.js`, voisin de palier, importable des
-// deux côtés. `isDulacVenue`, utilisé seulement par la fonction réseau, vient de l'auto-import Nitro
-// (`shared/utils/exhibitorVenues.js`) — le test ne l'atteint jamais.
+// ⚠️ Aucun import vers `shared/` : le test charge ce fichier hors de Nuxt, et un `../../shared/…`
+// casse au bundling (Vite le réécrit hors du projet). D'où les helpers de texte dans
+// `./exhibitorText.js`, voisin de palier. `isDulacVenue` vient de l'auto-import Nitro, que seule la
+// fonction réseau atteint.
 
 const DULAC_ORIGIN = 'https://www.dulaccinemas.com';
-const USER_AGENT = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+// ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
+// plus haut ne tient que si l'on est identifiable — se présenter comme un navigateur serait la
+// première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
+// UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
+// même charge utile à l'octet près).
+const USER_AGENT = 'cine-calendar/1.0';
 const TIMEOUT = 8000;
 
-// Le sitemap ne bouge qu'au rythme des publications de Dulac, et une même vague de relevés enchaîne
-// plusieurs recherches. On le garde donc en mémoire quelques minutes.
-//
-// ⚠️ Cache **mémoire d'instance**, donc partagé entre toutes les requêtes d'un serveur Nitro — le motif
-// que `useShowtimes` a jugé assez risqué pour y ajouter une garde `import.meta.server`. Ici il est
-// inoffensif, et il faut dire pourquoi : ce cache ne contient que de la **donnée publique en lecture**,
-// identique pour tous les visiteurs, et aucune promesse n'y est partagée (pas de file d'attente). Le pire
-// qu'une course puisse produire, c'est deux lectures de sitemap au lieu d'une.
-//
-// Opportuniste par ailleurs : il meurt au cold start sur Vercel — c'est exactement pourquoi les caches
-// qui comptent vivent en base (cf. `refresh.js`). Le perdre coûte une requête, pas une salve.
+// Le sitemap ne bouge qu'au rythme des publications de Dulac, et une vague de relevés enchaîne
+// plusieurs recherches. Cache mémoire d'instance, inoffensif pour la même raison que celui d'`ugc.js`.
 const SLUGS_TTL = 10 * 60 * 1000;
 let slugsCache = { at: 0, slugs: null };
 

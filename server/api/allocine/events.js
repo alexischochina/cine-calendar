@@ -6,16 +6,12 @@
 // est frais, et laisse à l'appelant la liste de ce qui reste à rafraîchir (`events-refresh`, une
 // salle à la fois).
 //
-// Pourquoi une seconde passe existe : l'endpoint film d'Allociné ne porte aucun champ d'événement,
-// seul l'endpoint salle les a (cf. l'encadré « Deux endpoints, deux jeux de champs » dans
-// `server/utils/allocine.js`). Les horaires continuent donc de venir de l'endpoint film — film-centré
-// et ~4× moins coûteux — et cette passe n'ajoute qu'une qualification, sur les seules salles qui
-// jouent des films de la liste.
+// Pourquoi une seconde passe existe : l'endpoint film ne porte aucun champ d'événement, seul
+// l'endpoint salle les a (cf. `server/utils/allocine.js`).
 //
-// Le payload d'une salle est `{ events, seen, previews }` et non la seule carte des événements :
-// l'endpoint salle est **creux**, donc il faut savoir quelles séances il a réellement rendues pour ne
-// se prononcer que sur celles-là, et l'avant-première voyage en booléen parce qu'elle décide de
-// l'éligibilité à la carte UGC (cf. `fetchTheaterEvents` et `graftEvents`).
+// ⚠️ Le payload est `{ events, seen, previews }` et non la seule carte des événements : l'endpoint
+// salle est **creux**, donc il faut savoir quelles séances il a réellement rendues pour ne se prononcer
+// que sur celles-là.
 
 import { serverSupabaseClient } from '#supabase/server';
 
@@ -28,6 +24,9 @@ const MAX_CODES = 60;
 const CODE = /^[A-Z]\d{3,6}$/;
 
 export default defineEventHandler(async (event) => {
+    // Même écrêtage que sa jumelle `showtimes.js` : route ouverte, lecture de cache seule.
+    rateLimit(event);
+
     const { codes, date } = getQuery(event);
 
     const wanted = [...new Set(String(codes ?? '').split(',').filter(Boolean))];

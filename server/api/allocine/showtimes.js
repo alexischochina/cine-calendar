@@ -5,13 +5,10 @@
 // tous les films du jour, renvoie ce qui est frais, et laisse à l'appelant la liste de ce qui reste
 // à rafraîchir (`/api/allocine/refresh`, un film à la fois).
 //
-// Pourquoi ce découpage plutôt qu'une route qui ferait tout :
-//   - Le chemin **chaud** est le cas courant (cache plein). Il passe de 14 requêtes HTTP + 14 requêtes
-//     Supabase à 1 + 1 — mesuré à 252 ms → 92 ms sur la seule lecture en base, sans compter les 14
-//     invocations de fonction serverless épargnées.
-//   - Le chemin **froid** garde l'éventail côté client : une journée entière à rafraîchir prendrait
-//     plusieurs secondes en série côté serveur et flirterait avec la limite d'exécution d'une
-//     fonction. En parallélisant depuis le navigateur, chaque appel reste court et indépendant.
+// Pourquoi ce découpage plutôt qu'une route qui ferait tout : le chemin **chaud** (cache plein) passe
+// de 14 requêtes HTTP + 14 requêtes Supabase à 1 + 1 (mesuré 252 ms → 92 ms), et le chemin **froid**
+// garde l'éventail côté client, où chaque appel reste court plutôt que de flirter avec la limite
+// d'exécution d'une fonction.
 
 import { serverSupabaseClient } from '#supabase/server';
 
@@ -20,6 +17,13 @@ import { serverSupabaseClient } from '#supabase/server';
 const MAX_IDS = 60;
 
 export default defineEventHandler(async (event) => {
+    // Ouverte aux anonymes — c'est un choix, et le seul qui tienne sur le chemin le plus chaud du
+    // projet (cf. `server/utils/requireUser.js`). Ce qui restait ouvert n'était pas la donnée, que
+    // RLS protège, mais la dépense : invocations serverless et requêtes Supabase à volonté. Le
+    // compteur est en mémoire et ne coûte donc rien à la lecture (cf. `server/utils/rateLimit.js`,
+    // qui dit aussi ce que cette protection ne vaut pas).
+    rateLimit(event);
+
     const { ids, date } = getQuery(event);
 
     if (!/^\d+(,\d+)*$/.test(String(ids ?? ''))) {

@@ -6,14 +6,11 @@
 //   - `/_/autocomplete/{titre}`  → recherche interne, résout un titre TMDB en identifiant Allociné.
 //   - `/_/showtimes/movie-…`     → séances d'un film à une date, autour de Paris.
 //
-// ⚠️ `robots.txt` d'Allociné porte `Disallow: /_/`. Les deux sont donc hors-crawl selon leur
-// politique déclarée. Les voies conformes ont été explorées et ne tiennent pas (la page publique
-// `/seance/film-{id}/` ne rend aucune séance côté serveur, la page par salle en rend une seule
-// journée et exigerait 300–600 requêtes par jour affiché contre ~20 ici ; l'index HTML
-// `/film/aucinema/`, lui, ignore purement et simplement l'art et essai — cf. `resolveAllocineId`).
-// Compromis assumé pour une app mono-utilisateur, en lecture, à volume dérisoire et adossée à un
-// cache durable : User-Agent honnête et identifiable, timeout dur, concurrence bornée, aucun
-// contournement anti-bot. Précédent maison de même nature : `server/api/movies/[id]/letterboxd.js`.
+// ⚠️ `robots.txt` d'Allociné porte `Disallow: /_/` : les deux routes sont hors-crawl selon leur
+// politique déclarée. Les voies conformes ont été explorées et ne tiennent pas (détail et mesures dans
+// le README). Compromis assumé pour une app mono-utilisateur, en lecture, à volume dérisoire et adossée
+// à un cache durable : User-Agent honnête, timeout dur, concurrence bornée, aucun contournement
+// anti-bot.
 
 // Identifiant de localisation « Paris » chez Allociné. ⚠️ Il ratisse Paris **+ toute la couronne**
 // (mesuré : 73 salles dont 22 seulement en 75xxx sur un blockbuster) → le filtre sur le code
@@ -21,7 +18,12 @@
 export const PARIS_LOCALIZATION = 115755;
 
 const ALLOCINE_ORIGIN = 'https://www.allocine.fr';
-const USER_AGENT = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+// ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
+// plus haut ne tient que si l'on est identifiable — se présenter comme un navigateur serait la
+// première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
+// UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
+// même charge utile à l'octet près).
+const USER_AGENT = 'cine-calendar/1.0';
 const TIMEOUT = 8000;
 const SHOWTIME_CONCURRENCY = 4;
 
@@ -81,15 +83,8 @@ const fetchAutocomplete = async (query) => {
 // on passe par le titre, avec la date de sortie FR et le réalisateur (tous deux déjà en base) comme
 // départage.
 //
-// ⚠️ Historique : la première version parcourait `/film/aucinema/` (14 pages de HTML) et exigeait un
-// titre normalisé **identique**. Elle laissait deux trous constatés — les films d'art et essai n'y
-// figurent pas du tout (`Silent Friend`, à l'affiche aux 3 Luxembourg, était absent des 210 titres),
-// et le moindre écart de rédaction faisait échouer le match (« Chronique » vs « Chroniques du
-// Caire »). La recherche interne couvre le catalogue entier pour **une** requête au lieu de 14, sans
-// parsing HTML — donc sans la pièce la plus fragile du client.
-// Renvoie `{ allocineId, unavailable }`. `unavailable` distingue « Allociné n'a pas répondu » de
-// « Allociné a répondu, ce film n'existe pas chez eux » — seul le second justifie que l'appelant
-// arrête de réessayer.
+// Renvoie `{ allocineId, unavailable }`. ⚠️ `unavailable` distingue « Allociné n'a pas répondu » de
+// « ce film n'existe pas chez eux » : seul le second justifie que l'appelant arrête de réessayer.
 export const resolveAllocineId = async ({ title, releaseDate, director }) => {
     if (!title) return { allocineId: null, unavailable: false };
 
@@ -161,28 +156,18 @@ const fetchTheaterPage = (code, date, page = 1) =>
 // films de la liste, et on rapproche séance par séance — l'endpoint film reste la source des horaires,
 // celui-ci ne fait qu'ajouter une qualification.
 //
-// ⚠️⚠️ CET ENDPOINT EST CREUX, et c'est pourquoi on rend `seen` en plus de `events`.
-// Mesuré le 13/08/2026 (cf. `README-seances.md`, spike Cinéfil) : `theater-C0159` rendait *1 jour sur
-// 7* là où `movie-…/near-Paris` en rendait 6. Une réponse vide ne veut donc pas dire « aucun
-// événement » — le plus souvent elle veut dire « cet endpoint n'a rien à dire de cette journée ».
-// Confondre les deux est **exactement** le faux positif qui avait fait déclarer Les Halles muette par
-// `check-seances.mjs`.
+// ⚠️⚠️ CET ENDPOINT EST CREUX — mesuré : `theater-C0159` rendait 1 jour sur 7 là où l'endpoint film en
+// rendait 6. Une réponse vide veut le plus souvent dire « rien à dire de cette journée », pas « aucun
+// événement ». D'où `seen` : les `internalId` réellement observés, seule preuve permettant de se
+// prononcer. L'appelant ne réécrit que ceux-là — on résout **par séance** et non par salle, une salle à
+// moitié rendue étant le cas courant.
 //
-// `seen` = tous les `internalId` réellement observés, événement ou pas. C'est la seule preuve qu'on
-// ait vu une séance et qu'on peut donc se prononcer sur elle. L'appelant ne réécrit que celles-là ;
-// les autres gardent ce qu'elles avaient, faute de savoir. On résout donc **par séance** et non par
-// salle — une salle à moitié rendue est le cas courant ici, pas l'exception.
+// `events` ne porte que ce qui a au moins un libellé (une salle rend ~50 séances/jour pour 0 à 1
+// événement) ; `seen` suffit à distinguer « vue sans événement » de « pas vue ». `previews` voyage à
+// part parce que c'est la seule qualification qui décide quelque chose en aval (`isCardEligible`).
 //
-// `events` ne porte que ce qui a au moins un libellé : une salle rend ~50 séances par jour dont 0 à 1
-// événement, garder les vides multiplierait par cinquante la taille du cache pour n'y stocker que des
-// tableaux vides. `seen` suffit à distinguer « vue, sans événement » de « pas vue ».
-//
-// `previews` voyage à part des libellés parce que c'est la seule qualification qui **décide** quelque
-// chose en aval : la carte UGC ne couvre pas les avant-premières (`isCardEligible`). Un booléen se
-// teste ; un libellé d'interface se reformule et casse le test en silence.
-//
-// N'échoue jamais : `ok: false` = « on n'a pas joint Allociné ». Sans ce drapeau, la route de cache
-// graverait une panne réseau comme une journée sans événement.
+// N'échoue jamais : `ok: false` = « on n'a pas joint Allociné », sans quoi la route de cache graverait
+// une panne réseau comme une journée sans événement.
 export const fetchTheaterEvents = async (code, date) => {
     const first = await fetchTheaterPage(code, date, 1);
     if (!first) return { ok: false, events: {}, seen: [], previews: [] };
@@ -269,20 +254,17 @@ const pickBooking = (ticketing) => {
 // borné par un **vocabulaire fermé**, et c'est lui qu'on traduit ici — inutile de chercher mieux
 // ailleurs dans le payload, il n'y a rien.
 //
-// ⚠️⚠️ DEUX ENDPOINTS, DEUX JEUX DE CHAMPS — et c'est le piège central de ce fichier.
-// Le même `Showtime` (comparé à `internalId` égal, 80248550361 le 14/08/2026) n'est pas sélectionné
-// pareil selon la route :
+// ⚠️⚠️ DEUX ENDPOINTS, DEUX JEUX DE CHAMPS — le piège central de ce fichier. À `internalId` égal, le
+// même `Showtime` ne porte les champs d'événement que sur la route **par salle** ; la route par film,
+// celle qui sert les horaires, ne les porte pas. Conséquence pratique, la seule à retenir ici :
+// appelée depuis `normalizeShowtime` (chemin film), cette fonction rend `[]` ; ce sont
+// `fetchTheaterEvents` et la seconde passe qui posent les libellés, greffés ensuite par
+// `graftEvents`.
 //
-//   `/_/showtimes/theater-{code}/d-{date}/`   → porte `isPreview`, `isWeeklyMovieOuting`
-//                                               et les tags `Showtime.Event.*`
-//   `/_/showtimes/movie-{id}/near-{loc}/…`    → ne les porte PAS. Ni le booléen, ni les tags.
-//
-// Or c'est la seconde que le projet interroge (`fetchShowtimesPage`), parce qu'elle est film-centrée
-// et coûte ~14 requêtes par journée là où balayer les salles en coûterait ~53. Conséquence directe :
-// **`showtimeEventLabels` rend aujourd'hui `[]` sur toutes les séances de production.** Le code n'est
-// pas mort pour autant — c'est le même arrangement que `isPreview` juste en dessous : il se réveille
-// tout seul le jour où la source enrichit sa sélection, ou le jour où on ajoutera une passe par
-// salle. Voir `_ressources/README-seances.md`, « Séances événement ».
+// Le tableau comparatif, la mesure qui l'établit et ce que la seconde passe coûte :
+// `_ressources/README-seances.md`, « Pourquoi une seconde passe par salle — et pourquoi elle est
+// partielle ». Le détail n'est pas recopié ici : il a déjà vieilli une fois dans ce commentaire, qui
+// annonçait la passe par salle comme une éventualité future alors qu'elle existait.
 //
 // Table volontairement explicite : c'est le seul endroit du projet où un tag Allociné devient du
 // texte affiché à l'utilisateur. Elle reste **côté serveur** — l'app ne compare jamais ces chaînes,
@@ -299,24 +281,13 @@ const EVENT_LABELS = {
 // affiché de confiance.
 const EVENT_NAMESPACE = /^Showtime\.Event\./;
 
-// ⚠️⚠️ `BoostPos.XpEtLabels.*` N'EST PAS un namespace d'événements, et l'avoir cru a produit des badges
-// absurdes en production. Relevé sur 267 journées-salles réelles le 14/08/2026 : sur 202 libellés
-// enregistrés, **161 étaient du bruit** —
+// ⚠️⚠️ `BoostPos.XpEtLabels.*` N'EST PAS un namespace d'événements — « expériences **et labels** »
+// mélange dispositifs de programmation et identités de salles. Généralisé sur deux exemples, il a
+// produit 161 badges de bruit sur 202 (« Artet essai » ×54, des noms de salles ×45…). Liste blanche
+// stricte, **sans repli** : un membre inconnu y est ignoré, pas deviné.
 //
-//   « Artet essai » ×54                        label de salle, sur *chaque* séance d'un art et essai
-//   « Diffusion salle le club / le studio »×45  noms de salles
-//   « Salle infinite », « Salle1 youssef chahine » ×32
-//   « Premier » ×14, « St anglais », « Headline »
-//
-// « XpEtLabels » veut dire « expériences **et labels** » : ça mélange dispositifs de programmation et
-// identités de salles. On n'y accepte donc **que ce qu'on a vérifié**, sans repli — un membre inconnu
-// y est ignoré, pas deviné. C'est exactement la garde qui manquait : le sondage initial n'avait croisé
-// que `JeunePublic` et `LenfanceDeLart`, et j'ai généralisé le namespace entier sur deux exemples.
-//
-// Le reste est écarté depuis le début : `Format.*` et `Auditorium.Experience.*` décrivent la copie et la
-// salle (4DX, Dolby Atmos, laser) ; `Localization.*` la version ; `Showtime.Accessibility.*` et
-// `BoostPos.Accessibilite.*` l'accessibilité ; `BoostPos.Autres.PopCorn` et `BoostPos.Son.*` sont
-// commerciaux. Tout accepter aurait marqué 1 656 séances sur 2 293 — un badge sur presque tout.
+// Les autres namespaces sont écartés depuis le début (format de copie, version, accessibilité,
+// commercial) : tout accepter aurait marqué 1 656 séances sur 2 293.
 const PROGRAMME_LABELS = {
     'BoostPos.XpEtLabels.JeunePublic': 'Jeune public',
     'BoostPos.XpEtLabels.LenfanceDeLart': 'L’enfance de l’art',
@@ -415,16 +386,12 @@ const normalizeShowtime = (showtime) => {
     };
 };
 
-// Séances d'un film à une date, restreintes à Paris intra-muros, dans la forme que consomme le
-// front (et que met en cache `showtimes_cache`).
+// Séances d'un film à une date, restreintes à Paris intra-muros, dans la forme que consomme le front.
+// 15 salles/page, `totalPages` connu après la page 1, le reste en parallèle borné.
 //
-// Coût : 15 salles/page → 1 page pour un film d'art et essai, jusqu'à 6 pour un blockbuster.
-// `totalPages` est connu après la page 1, le reste part en parallèle (borné à 4).
-// N'échoue jamais : réseau coupé ou format changé → `{ theaters: [] }`, jamais de throw.
-//
-// `ok` distingue les deux vides qui se ressemblent : « Allociné a répondu, il n'y a aucune séance
-// ce jour-là » (`ok: true`) et « on n'a pas pu joindre Allociné » (`ok: false`). Sans ce drapeau, la
-// route de cache mettrait un échec réseau en cache comme une journée sans séance.
+// N'échoue jamais. ⚠️ `ok` distingue les deux vides qui se ressemblent : « aucune séance ce jour-là »
+// (`true`) et « on n'a pas joint Allociné » (`false`) — sans lui, la route de cache graverait un échec
+// réseau comme une journée sans séance.
 export const fetchParisShowtimes = async (allocineId, date) => {
     const first = await fetchShowtimesPage(allocineId, date, 1);
 
@@ -446,10 +413,8 @@ export const fetchParisShowtimes = async (allocineId, date) => {
         )
         : [];
 
-    // Une page manquante, c'est jusqu'à 15 salles évanouies **sans le moindre signal** : le
-    // résultat reste parfaitement bien formé, simplement amputé. L'appelant a besoin de le savoir
-    // pour ne pas graver ce trou dans le cache — un blockbuster tient sur 5 pages, en perdre une
-    // reviendrait à masquer un cinquième des salles jusqu'à la prochaine expiration.
+    // Une page manquante, c'est jusqu'à 15 salles évanouies **sans signal** : le résultat reste bien
+    // formé, simplement amputé. L'appelant doit le savoir pour ne pas graver le trou dans le cache.
     const missedPages = rest.filter(page => !page).length;
     if (missedPages) console.error(`[allocine] ${missedPages}/${totalPages} page(s) perdues pour le film ${allocineId} au ${date}`);
 
@@ -484,11 +449,9 @@ export const fetchParisShowtimes = async (allocineId, date) => {
             address: theater.location?.address ?? null,
             zip: zip ?? null,
             circuit: theater.theaterCircuits?.name ?? null,
-            // Ce qu'Allociné annonce sur la carte UGC Illimité. ⚠️ Sert **uniquement** de valeur par
-            // défaut à la création d'une salle dans le référentiel, jamais à mettre à jour une ligne
-            // existante : la liste reste curée à la main (Allociné a déjà été pris en défaut dessus).
-            // Sans ce défaut, toute salle découverte après le seed entrait à `false` et disparaissait
-            // silencieusement de la vue filtrée — constaté sur Les 3 Luxembourg.
+            // ⚠️ Valeur par défaut **à la création** d'une salle, jamais une mise à jour : la liste
+            // reste curée à la main (Allociné a déjà été pris en défaut dessus). Sans ce défaut, une
+            // salle découverte après le seed entrait à `false` et disparaissait de la vue filtrée.
             ugcCard: (theater.loyaltyCards ?? []).includes('UGC_ILLIMITE'),
             showtimes,
         });
