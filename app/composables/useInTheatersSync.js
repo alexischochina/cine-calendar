@@ -19,32 +19,16 @@
 // n'a pas à les défaire.
 const CHECKABLE_STATES = ['unseen', 'inTheaters'];
 
-// Trois issues et pas deux : `null` = « on ne sait pas ». Le confondre avec « plus à l'affiche »
-// retirerait un film du rail sur un simple hoquet réseau, et il n'y reviendrait qu'une semaine plus
-// tard — la panne d'un jour se paierait sept.
-const playingWithin = (payload, horizon) => {
-    if (!payload || payload.error) return null;
-
-    // ⚠️ Les salles reportées (`unconfirmedSince`, cf. `carryOverMissing`) ne comptent pas : elles
-    // témoignent du passé, pas de l'affiche. Les prendre pour argent comptant maintiendrait un film
-    // « en salle » 48 h de plus après sa déprogrammation — exactement le défaut collant qu'on a
-    // corrigé. Elles restent visibles dans la vue, marquées ; elles ne décident de rien.
-    if (payload.theaters?.some(t => !t.unconfirmedSince)) return true;
-    // Aucune séance aujourd'hui **et** horaires servis depuis une entrée périmée : c'est le cas où
-    // le vide n'est pas une information.
-    if (payload.stale) return null;
-
-    // Allociné livre `nextDate` quand il n'y a rien ce jour-là : un film qui ne joue que le week-end
-    // (ou qui ressort mercredi) est bien en salle cette semaine.
-    const next = String(payload.nextDate ?? '').slice(0, 10);
-    if (/^\d{4}-\d{2}-\d{2}$/.test(next)) return next <= horizon;
-    return false;
-};
+// Les verdicts (`playingWithin`, `horizonVerdict`) vivent dans `app/utils/inTheaters.js` : ce sont des
+// fonctions pures, et leurs erreurs sont silencieuses — elles méritaient d'être testables sans monter
+// Nuxt. Auto-importées ici.
 
 export function useInTheatersSync() {
     const client = useSupabaseClient();
     const { movies, sortMovies } = useMovieCalendar();
     const { resolveAllocineIds, loadShowtimes, payloadFor, forget } = useShowtimes();
+    const { loadEvents } = useTheaterEvents();
+    const { syncEvents } = useSeanceEvents();
 
     const syncing = useState('inTheatersSyncing', () => false);
     // Migration pas jouée : on ne réessaie pas à chaque navigation.
@@ -110,6 +94,23 @@ export function useInTheatersSync() {
                 todayStr,
             );
 
+            // Séances événement du jour, pour que le rail « Au ciné en ce moment » les mette en avant
+            // sans que l'utilisateur ait à ouvrir la vue Séances — c'est le badge qui doit l'y envoyer,
+            // pas l'inverse.
+            //
+            // Coût : ~25 salles interrogées, **une fois par semaine ciné**. C'est la seule dépense
+            // ajoutée au chargement de l'app, et elle préchauffe la vue Séances pour aujourd'hui.
+            // Seuls les films gardés sont concernés : les autres viennent de sortir du L1 juste
+            // au-dessus, donc `loadEvents` ne demandera aucune de leurs salles.
+            //
+            // Placé **avant** les écritures d'état, pour ne pas dépendre de leur sortie anticipée
+            // (`if (!applied.size) return`) : une semaine sans changement d'affiche est le cas normal,
+            // et c'est justement une semaine où un événement peut apparaître.
+            const kept = new Set(keep);
+            const withEvents = checkable.filter(m => kept.has(m.id));
+            await loadEvents(withEvents, todayStr);
+            await syncEvents(withEvents, [todayStr]);
+
             const checkedAt = new Date().toISOString();
             const applied = new Map();
 
@@ -143,8 +144,19 @@ export function useInTheatersSync() {
             // la vue seule en écrivait ~14 : sans ce coup de balai, `showtimes_cache` gagnerait des
             // dizaines de Mo par an pour des journées révolues que plus rien ne lira jamais (la vue
             // ne regarde que J → J+6).
-            const { error: pruneError } = await client.from('showtimes_cache').delete().lt('date', todayStr);
-            if (pruneError) console.error('[en salle] Ménage du cache de séances échoué:', pruneError.message);
+            // Les deux caches de journée sont balayés ici, sur le même critère : ils vieillissent au
+            // même rythme et plus rien ne relit une journée révolue. `theater_events_cache` est le plus
+            // petit des deux (seules les séances événement y sont stockées, ~0 à 1 par salle) mais il
+            // gagne ~25 lignes par jour consulté — autant ne pas laisser deux règles divergentes.
+            for (const [table, what] of [['showtimes_cache', 'séances'], ['theater_events_cache', 'événements']]) {
+                const { error: pruneError } = await client.from(table).delete().lt('date', todayStr);
+                // Table absente (migration pas jouée) : rien à balayer, et `useTheaterEvents` l'a déjà
+                // signalé une fois. Inutile de le redire à chaque passage hebdomadaire. ⚠️ Le code peut
+                // être `PGRST205` et non `42P01` — PostgREST tranche sur son cache de schéma.
+                if (pruneError && !['42P01', 'PGRST205'].includes(pruneError.code)) {
+                    console.error(`[en salle] Ménage du cache de ${what} échoué:`, pruneError.message);
+                }
+            }
 
             if (!applied.size) return;
 
@@ -160,5 +172,58 @@ export function useInTheatersSync() {
         }
     };
 
-    return { syncing, syncInTheaters };
+    // Retire de l'affiche un film dont **l'horizon entier** est vide, sans attendre le mercredi.
+    //
+    // Pourquoi ça manquait. Le contrôle ci-dessus ne tourne qu'une fois par semaine ciné : un film qui
+    // quitte l'affiche le jeudi reste dans le rail jusqu'au mercredi suivant, avec zéro séance à
+    // montrer. Constaté le 14/08/2026 sur *Silent Friend*, *Plus fort que moi* et *The Plague*, tous
+    // trois contrôlés — et légitimement gardés — le 12/08 à 23:10, donc après le mercredi.
+    //
+    // Or la preuve de leur départ était **déjà en cache** : les sept journées chargées, zéro salle
+    // intra-muros partout. Cette fonction ne fait que lire ce qu'on a déjà payé. Aucune requête.
+    //
+    // ⚠️ Elle ne conclut que sur des preuves complètes, et c'est tout l'enjeu — un verdict trop
+    // pressé retirerait un film sur un hoquet réseau, et il ne reviendrait qu'une semaine plus tard :
+    //   - **toutes** les journées de l'horizon doivent être en cache (une seule manquante → on se tait) ;
+    //   - aucune ne doit être en échec (`error`) ni servie depuis du périmé (`stale`) ;
+    //   - les salles reportées (`unconfirmedSince`) ne comptent pas — elles témoignent du passé ;
+    //   - un `nextDate` **dans** l'horizon suffit à garder le film.
+    const pruneEmptyHorizon = async (list, dates) => {
+        if (disabled.value || dates.length < SEANCES_HORIZON_DAYS) return;
+
+        const horizon = isoDay(SEANCES_HORIZON_DAYS - 1);
+        const current = new Map(movies.value.map(m => [m.id, m]));
+
+        const candidates = list
+            .map(({ id }) => current.get(id))
+            .filter(m => m?.state === 'inTheaters' && m.allocine_id)
+            .map(movie => ({ movie, payloads: dates.map(date => payloadFor(movie, date)) }));
+
+        // ⚠️ Corroboration avant tout retrait : si **aucun** film du lot ne joue nulle part sur sept
+        // jours, ce n'est pas l'affiche parisienne qui est vide, c'est notre lecture qui est fausse.
+        // Allociné perd parfois un pan de sa grille (cf. UGC Les Halles le 13/08/2026), et le retrait
+        // est plus violent qu'une page vide — le film sort du rail jusqu'au mercredi suivant.
+        if (!sourceLooksAlive(candidates.map(c => c.payloads))) return;
+
+        const gone = candidates
+            .filter(({ payloads }) => horizonVerdict(payloads, horizon) === 'gone')
+            .map(({ movie }) => movie.id);
+
+        if (!gone.length) return;
+
+        const patch = { state: 'unseen', in_theaters_checked_at: new Date().toISOString() };
+        const { error } = await client.from('calendar').update(patch).in('id', gone);
+        if (error) {
+            if (error.code === '42703' || error.code === 'PGRST204') { disabled.value = true; return; }
+            console.error('[en salle] Retrait sur horizon vide échoué:', error.message);
+            return;
+        }
+
+        console.warn(`[en salle] ${gone.length} film(s) retiré(s) : aucune séance parisienne sur les 7 jours.`);
+        const next = movies.value.map(m => (gone.includes(m.id) ? { ...m, ...patch } : m));
+        movies.value = next;
+        sortMovies(next);
+    };
+
+    return { syncing, syncInTheaters, pruneEmptyHorizon };
 }
