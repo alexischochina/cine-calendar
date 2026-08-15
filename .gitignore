@@ -23,3 +23,7 @@ logs
 .env
 !.env.example
 .claude
+
+# Captures d'écran de recherche (18 Mo) — matériau d'enquête, pas du code.
+# Le README cite ce qu'il en retient ; les images elles-mêmes n'ont pas à peser sur les clones.
+_ressources/reddit-posts/
