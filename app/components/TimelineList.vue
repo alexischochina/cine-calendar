@@ -18,61 +18,85 @@ const monthCount = (days) => {
 </script>
 
 <template>
-    <div class="timeline scr">
-        <template v-if="hasContent">
-            <!-- Année datée : groupes de mois -->
-            <template v-if="selectedYear !== null">
-                <div class="month-group" v-for="(days, month) in monthsOfYear" :key="month">
-                    <div class="month-head">
-                        <span class="name">{{ month }}</span>
-                        <span class="rule" />
-                        <span class="count">{{ monthCount(days) }}</span>
+    <div class="timeline-list">
+        <!-- Bouche la bande que l'en-tête de mois laisse voir quand son `sticky` décroche pendant un
+             scroll rapide. Hors du scroller, donc jamais en retard. « Sans date » n'a pas d'en-tête. -->
+        <div v-if="hasContent && selectedYear !== null" class="headmask" aria-hidden="true" />
+
+        <div class="timeline scr">
+            <template v-if="hasContent">
+                <!-- Année datée : groupes de mois -->
+                <template v-if="selectedYear !== null">
+                    <div class="month-group" v-for="(days, month) in monthsOfYear" :key="month">
+                        <div class="month-head">
+                            <span class="name">{{ month }}</span>
+                            <span class="rule" />
+                            <span class="count">{{ monthCount(days) }}</span>
+                        </div>
+                        <template v-for="(dayMovies, day) in days" :key="day">
+                            <MovieListItem v-for="(movie, index) in dayMovies" :key="movie.id"
+                                           :release-day="index === 0 ? String(day) : ''"
+                                           :movie-id="movie.movie_id"
+                                           :media="movie.media"
+                                           :state="movie.state"
+                                           :id="movie.id"
+                                           :title="movie.title"
+                                           :poster-path="movie.poster_path"
+                                           :manual-release-date="movie.manual_release_date"
+                                           :director="movie.director"
+                                           :letterboxd-directors="movie.letterboxd_directors"
+                                           :release-date="movie.release_date"
+                                           :catchup="movie.catchup"
+                                           @movie-deleted="emit('movie-deleted', $event)"
+                                           @release-date-updated="emit('release-date-updated', $event)"
+                                           @toggle-catchup="(id, value) => emit('toggle-catchup', id, value)" />
+                        </template>
                     </div>
-                    <template v-for="(dayMovies, day) in days" :key="day">
-                        <MovieListItem v-for="(movie, index) in dayMovies" :key="movie.id"
-                                       :release-day="index === 0 ? String(day) : ''"
-                                       :movie-id="movie.movie_id"
-                                       :media="movie.media"
-                                       :state="movie.state"
-                                       :id="movie.id"
-                                       :title="movie.title"
-                                       :poster-path="movie.poster_path"
-                                       :manual-release-date="movie.manual_release_date"
-                                       :director="movie.director"
-                                       :release-date="movie.release_date"
-                                       :catchup="movie.catchup"
-                                       @movie-deleted="emit('movie-deleted', $event)"
-                                       @release-date-updated="emit('release-date-updated', $event)"
-                                       @toggle-catchup="(id, value) => emit('toggle-catchup', id, value)" />
-                    </template>
+                </template>
+
+                <!-- Sans date -->
+                <div class="month-group" v-else>
+                    <MovieListItem v-for="movie in moviesWithoutDate" :key="movie.id"
+                                   :release-day="''"
+                                   :movie-id="movie.movie_id"
+                                   :media="movie.media"
+                                   :state="movie.state"
+                                   :id="movie.id"
+                                   :title="movie.title"
+                                   :poster-path="movie.poster_path"
+                                   :manual-release-date="movie.manual_release_date"
+                                   :director="movie.director"
+                                   :letterboxd-directors="movie.letterboxd_directors"
+                                   :release-date="movie.release_date"
+                                   :catchup="movie.catchup"
+                                   @movie-deleted="emit('movie-deleted', $event)"
+                                   @release-date-updated="emit('release-date-updated', $event)"
+                                   @toggle-catchup="(id, value) => emit('toggle-catchup', id, value)" />
                 </div>
             </template>
 
-            <!-- Sans date -->
-            <div class="month-group" v-else>
-                <MovieListItem v-for="movie in moviesWithoutDate" :key="movie.id"
-                               :release-day="''"
-                               :movie-id="movie.movie_id"
-                               :media="movie.media"
-                               :state="movie.state"
-                               :id="movie.id"
-                               :title="movie.title"
-                               :poster-path="movie.poster_path"
-                               :manual-release-date="movie.manual_release_date"
-                               :director="movie.director"
-                               :release-date="movie.release_date"
-                               :catchup="movie.catchup"
-                               @movie-deleted="emit('movie-deleted', $event)"
-                               @release-date-updated="emit('release-date-updated', $event)"
-                               @toggle-catchup="(id, value) => emit('toggle-catchup', id, value)" />
-            </div>
-        </template>
-
-        <div v-else class="empty">Aucun film ne correspond.</div>
+            <div v-else class="empty">Aucun film ne correspond.</div>
+        </div>
     </div>
 </template>
 
 <style lang="scss" scoped>
+// Enveloppe non scrollable : elle ancre la plaque hors du flux scrollé.
+.timeline-list {
+    // Géométrie de l'en-tête, écrite une fois : la plaque doit valoir exactement sa hauteur, sinon
+    // elle déborde sur le premier film ou laisse un filet.
+    --head-pad-y: 1.6rem;
+    --head-line: 1.7rem;
+    --head-pad-b: 1rem;
+    --head-h: calc(var(--head-pad-y) + var(--head-line) + var(--head-pad-b));
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+}
+
 .timeline {
     flex: 1;
     min-width: 0;
@@ -81,6 +105,19 @@ const monthCount = (days) => {
     overflow-x: hidden;
     padding: .8rem 0 11rem;
     margin-right: var(--rail-space, 0); // place pour le rail overlay (posé par le layout)
+}
+
+// `z-index: 1` : au-dessus des films, sous les en-têtes (z-index 2). `pointer-events: none`, sinon
+// la plaque avalerait la molette du scroller.
+.headmask {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: var(--rail-space, 0);
+    z-index: 1;
+    height: var(--head-h);
+    background: $color-bg;
+    pointer-events: none;
 }
 
 .empty {
@@ -94,17 +131,18 @@ const monthCount = (days) => {
     position: sticky;
     top: 0;
     z-index: 2;
+    min-height: var(--head-h); // garde-fou : l'en-tête ne peut pas devenir plus court que la plaque
     display: flex;
     align-items: baseline;
     gap: 1rem;
-    padding: 1.6rem 2.4rem 1rem;
-    background: rgba($color-bg, .92);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    padding: var(--head-pad-y) 2.4rem var(--head-pad-b);
+    // Sans `backdrop-filter` : le flou sur un `sticky` interdit au compositeur de le suivre pendant
+    // le scroll, et c'est ce décrochage qui laissait voir les films au-dessus.
+    background: $color-bg;
 
     > .name {
         color: $color-text;
-        font: 800 1.7rem/1 $font-title;
+        font: 800 var(--head-line)/1 $font-title;
         text-transform: capitalize;
     }
 
@@ -121,12 +159,16 @@ const monthCount = (days) => {
 }
 
 @media (max-width: 999px) {
-    .timeline { padding: 0 0 11rem; margin-right: 0; } // le rail est masqué en mobile (bande à la place)
-
-    .month-head {
-        padding: 1.4rem 1.8rem .8rem;
-
-        > .name { font-size: 1.5rem; }
+    .timeline-list {
+        --head-pad-y: 1.4rem;
+        --head-line: 1.5rem;
+        --head-pad-b: .8rem;
     }
+
+    // le rail est masqué en mobile (bande à la place)
+    .timeline { padding: 0 0 11rem; margin-right: 0; }
+    .headmask { right: 0; }
+
+    .month-head { padding-inline: 1.8rem; }
 }
 </style>
