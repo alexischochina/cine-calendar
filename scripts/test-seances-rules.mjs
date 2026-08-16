@@ -49,6 +49,8 @@ import {
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
 import { hasDatedEventFrom, isSeanceFilm } from '../shared/utils/seanceScope.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
+import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
+import { parseLetterboxdFilm, isLetterboxdDirectorUrl } from '../shared/utils/letterboxdFilm.js';
 
 // --- Auto-imports simulés ------------------------------------------------------------------------
 //
@@ -61,6 +63,8 @@ import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 globalThis.isoDay = isoDay;                          // ← server/utils/showtimesFreshness.js
 globalThis.lastWednesday = lastWednesday;            // ← server/utils/showtimesFreshness.js
 globalThis.hasDatedEventFrom = hasDatedEventFrom;
+// Idem pour `directorLinks` (app/utils/movieHelpers.js), qui revalide les URL stockées.
+globalThis.isLetterboxdDirectorUrl = isLetterboxdDirectorUrl;    // ← app/utils/seanceEvents.js
 
 let pass = 0, fail = 0;
 
@@ -1029,6 +1033,118 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
     t('la veille → dit « hier »', stampForDisplay(new Date('2026-08-15T21:34:00').toISOString(), maintenant), 'hier à 21:34');
     t('plus ancien → date complète', stampForDisplay(new Date('2026-08-13T21:34:00').toISOString(), maintenant), 'le 13/08 à 21:34');
     t('horodatage illisible → null', stampForDisplay('jamais', maintenant), null);
+}
+
+// --- 11. Liens Letterboxd des réalisateurs -------------------------------------------------------
+console.log('\n\x1b[1mletterboxdPersonSlug — le repli, et ses limites assumées\x1b[0m');
+{
+    t('accents décomposés', letterboxdPersonSlug('Pedro Almodóvar'), 'pedro-almodovar');
+    t('tiret interne conservé', letterboxdPersonSlug('Bong Joon-ho'), 'bong-joon-ho');
+    t('points supprimés, pas coupés', letterboxdPersonSlug('J.J. Abrams'), 'jj-abrams');
+    t('apostrophe supprimée', letterboxdPersonSlug("Michael O'Shea"), 'michael-oshea');
+    // NFD ne décompose pas ces lettres : la barre fait partie du glyphe.
+    t('ø translittéré', letterboxdPersonSlug('André Øvredal'), 'andre-ovredal');
+    t('ı sans point translittéré', letterboxdPersonSlug('Levan Akın'), 'levan-akin');
+    // Aucun caractère latin → pas de lien deviné, plutôt qu'un lien vide.
+    t('écriture non latine → vide', letterboxdPersonSlug('장재현'), '');
+    t('absent → vide', letterboxdPersonSlug(null), '');
+}
+
+console.log('\n\x1b[1mdirectorLinks — le lien stocké fait autorité, le slug n\'est qu\'un repli\x1b[0m');
+{
+    const lb = (slug, name) => ({ name, url: `https://letterboxd.com/director/${slug}/` });
+
+    t('sans lien stocké → slug deviné', directorLinks('Sean Baker'),
+        [{ name: 'Sean Baker', url: 'https://letterboxd.com/director/sean-baker/', sep: '' }]);
+
+    // Le séparateur est porté par chaque entrée : la première n'en a pas, les suivantes si.
+    t('séparateurs calculés hors du template', directorLinks('Joel Coen, Ethan Coen').map(d => d.sep), ['', ', ']);
+
+    // La colonne `director` joint les co-réalisateurs par « , » : un lien par personne.
+    t('co-réalisateurs redécoupés', directorLinks('Joel Coen, Ethan Coen').map(d => d.url),
+        ['https://letterboxd.com/director/joel-coen/', 'https://letterboxd.com/director/ethan-coen/']);
+
+    // Le cas qui justifie la colonne : le slug nu existe, mais désigne quelqu'un d'autre.
+    t('homonyme suffixé → l\'URL stockée gagne', directorLinks('Kane Parsons', [lb('kane-parsons-4', 'Kane Parsons')]),
+        [{ name: 'Kane Parsons', url: 'https://letterboxd.com/director/kane-parsons-4/', sep: '' }]);
+
+    // Même personne → on garde le libellé TMDB, affiché partout ailleurs.
+    t('libellé TMDB conservé quand c\'est la même personne',
+        directorLinks('Pedro Almodóvar', [lb('pedro-almodovar', 'Pedro Almodovar')])[0].name, 'Pedro Almodóvar');
+
+    // Orthographes irréconciliables : le libellé Letterboxd est le seul cohérent avec la page.
+    t('translittération divergente → libellé Letterboxd',
+        directorLinks('Andreï Zviaguintsev', [lb('andrey-zvyagintsev', 'Andrey Zvyagintsev')]),
+        [{ name: 'Andrey Zvyagintsev', url: 'https://letterboxd.com/director/andrey-zvyagintsev/', sep: '' }]);
+    t('nom non latin → lien quand même',
+        directorLinks('장재현', [lb('jang-jae-hyun', 'Jang Jae-hyun')]).map(d => d.name), ['Jang Jae-hyun']);
+
+    // Par slug et non par position : deux co-réals en ordre inverse ne doivent pas s'échanger.
+    t('appariement par slug, pas par position',
+        directorLinks('Joel Coen, Ethan Coen', [lb('ethan-coen', 'Ethan Coen'), lb('joel-coen', 'Joel Coen')]),
+        [{ name: 'Ethan Coen', url: 'https://letterboxd.com/director/ethan-coen/', sep: '' },
+         { name: 'Joel Coen', url: 'https://letterboxd.com/director/joel-coen/', sep: ', ' }]);
+
+    // Identifiant de contributeur : lien valide, mais aucun nom à rapprocher.
+    const contrib = (id, name) => ({ name, url: `https://letterboxd.com/director/contributor:${id}/` });
+    t('URL contributor: acceptée telle quelle',
+        directorLinks('Joe Russo, Anthony Russo', [contrib(61567, 'Joe Russo'), contrib(61656, 'Anthony Russo')]).map(d => d.url),
+        ['https://letterboxd.com/director/contributor:61567/', 'https://letterboxd.com/director/contributor:61656/']);
+    // Un nom non latin donne un slug vide : il ne doit pas s'apparier avec une URL sans slug.
+    t('nom non latin ≠ URL contributor:', directorLinks('장재현', [contrib(999, 'Jang Jae-hyun')])[0].name, 'Jang Jae-hyun');
+
+    t('colonne vide → repli sur le slug', directorLinks('Sean Baker', []).length, 1);
+    t('réalisateur inconnu → aucun lien', directorLinks(null), []);
+}
+
+console.log('\n\x1b[1mparseLetterboxdFilm — note et réalisateurs dans le même JSON-LD\x1b[0m');
+{
+    const page = (ld) => `<html><script type="application/ld+json">/* <![CDATA[ */ ${JSON.stringify(ld)} /* ]]> */</script></html>`;
+
+    const full = parseLetterboxdFilm(page({
+        aggregateRating: { ratingValue: 3.4, ratingCount: 1200 },
+        director: [{ '@type': 'Person', name: 'Kane Parsons', sameAs: 'https://letterboxd.com/director/kane-parsons-4/' }],
+    }));
+    t('note lue', [full.rating, full.count], [3.4, 1200]);
+    t('réalisateur lu depuis sameAs', full.directors, [{ name: 'Kane Parsons', url: 'https://letterboxd.com/director/kane-parsons-4/' }]);
+
+    // Le JSON-LD finit dans un href : ce qui n'est pas une page réalisateur Letterboxd est jeté.
+    t('sameAs hors du domaine → jeté', parseLetterboxdFilm(page({
+        director: [{ name: 'X', sameAs: 'https://evil.example/director/x/' },
+                   { name: 'Y', sameAs: 'https://letterboxd.com/actor/y/' },
+                   { name: 'Z', sameAs: 'javascript:alert(1)' }],
+    })).directors, []);
+
+    t('forme contributor: conservée', parseLetterboxdFilm(page({
+        director: [{ name: 'Joe Russo', sameAs: 'https://letterboxd.com/director/contributor:61567/' }],
+    })).directors, [{ name: 'Joe Russo', url: 'https://letterboxd.com/director/contributor:61567/' }]);
+
+    t('note absente → nulls, sans throw', parseLetterboxdFilm(page({ director: [] })), { rating: null, count: null, directors: [] });
+    t('JSON-LD illisible → charge utile vide', parseLetterboxdFilm('<html><script type="application/ld+json">{oops</script></html>'),
+        { rating: null, count: null, directors: [] });
+    t('page sans JSON-LD → charge utile vide', parseLetterboxdFilm('<html></html>'), { rating: null, count: null, directors: [] });
+
+    // Plusieurs blocs : c'est la fiche film qu'on lit, pas le fil d'Ariane qui la précède.
+    const breadcrumb = { '@type': 'BreadcrumbList', itemListElement: [] };
+    const movie = { '@type': 'Movie', aggregateRating: { ratingValue: 4.2, ratingCount: 10 },
+                    director: [{ name: 'Céline Sciamma', sameAs: 'https://letterboxd.com/director/celine-sciamma/' }] };
+    const multi = parseLetterboxdFilm(page(breadcrumb) + page(movie));
+    t('bloc Movie choisi parmi plusieurs', [multi.rating, multi.directors.map(d => d.name)], [4.2, ['Céline Sciamma']]);
+}
+
+console.log('\n\x1b[1misLetterboxdDirectorUrl — la dernière ligne de défense avant le href\x1b[0m');
+{
+    t('slug accepté', isLetterboxdDirectorUrl('https://letterboxd.com/director/sean-baker/'), true);
+    t('contributor: accepté', isLetterboxdDirectorUrl('https://letterboxd.com/director/contributor:61567/'), true);
+    t('javascript: refusé', isLetterboxdDirectorUrl('javascript:alert(1)'), false);
+    t('autre domaine refusé', isLetterboxdDirectorUrl('https://evil.example/director/x/'), false);
+    t('http refusé', isLetterboxdDirectorUrl('http://letterboxd.com/director/x/'), false);
+    t('absent refusé', isLetterboxdDirectorUrl(null), false);
+
+    // La garde vaut aussi pour ce qui remonte de la base, pas seulement pour ce qui y descend.
+    t('URL douteuse en base → ignorée au rendu',
+        directorLinks('X', [{ name: 'X', url: 'javascript:alert(1)' }]).map(d => d.url),
+        ['https://letterboxd.com/director/x/']);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

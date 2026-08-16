@@ -756,7 +756,7 @@ server/utils/promisePool.js        copie serveur du pool de concurrence
 
 .github/workflows/warm-showtimes.yml  les deux cadences du préchauffage
 
-scripts/test-seances-rules.mjs     319 tests des règles pures →  npm test
+scripts/test-seances-rules.mjs     354 tests des règles pures →  npm test
 scripts/check-seances.mjs          contrôle de santé          →  npm run check:seances
 scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ```
@@ -764,10 +764,10 @@ scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ### Les règles pures sont testées
 
 ```bash
-npm test        # 319 assertions, aucune dépendance réseau ni base, < 1 s
+npm test        # 354 assertions, aucune dépendance réseau ni base, < 1 s
 ```
 
-Neuf familles, toutes importées **du code réel** (aucune copie) — la liste à jour vit en tête de
+Dix familles, toutes importées **du code réel** (aucune copie) — la liste à jour vit en tête de
 `scripts/test-seances-rules.mjs`. Les dernières arrivées : la fraîcheur anticipée du préchauffage
 (`isShowtimesFresh` avec son horizon) et l'instantané persistant (`pruneSnapshot`,
 `relevePourAffichage`).

@@ -27,8 +27,8 @@ npm test          # Règles pures des vues Séances / Événements (scripts/test
 
 **Tests** — `npm test` couvre les règles **pures** des vues Séances et Événements : filtres et
 regroupements, semaine ciné, report des salles disparues, vocabulaire d'événement, connecteurs
-d'exploitant, verdicts « en salle ». Aucun framework — un script Node qui sort en code 1 au premier
-échec. Les composables (état, réseau, écritures) ne sont **pas** couverts : c'est là que se sont logés
+d'exploitant, verdicts « en salle » — plus la lecture des fiches Letterboxd (note et liens
+réalisateurs). Aucun framework — un script Node qui sort en code 1 au premier échec. Les composables (état, réseau, écritures) ne sont **pas** couverts : c'est là que se sont logés
 les défauts trouvés en revue, à garder en tête avant d'y toucher.
 
 ⚠️ Ne pas lancer `npm run build` pendant qu'un serveur de dev tourne : il écrit dans `.nuxt` au format
@@ -45,7 +45,11 @@ production et le dev suivant échoue sur `#internal/nuxt/paths`. Nettoyer par
 - Calendar entries are stored in Supabase table `calendar`. Columns: `id`, `movie_id`, `media`, `state`, `manual_release_date`, plus the **persisted TMDB metadata** `title`, `release_date` (resolved FR theatrical date, nullable), `poster_path` (relative TMDB path).
 - **Metadata lives in the DB, not fetched on every load.** TMDB is called only (a) when adding a movie (`MovieAddForm` → `/api/movies/:id/full`, persisted on insert) and (b) when re-checking upcoming cinema release dates on load (`useMovieCalendar.recheckUpcomingCinema` — only `media==='cinema'`, no `manual_release_date`, date in the future/null). Normal page load reads Supabase only → no TMDB calls, no `429`.
 - Server routes in `server/api/movies/` (repo root, not under `app/`): `search`, `[id]` (detail, used by `/movies/[id]`), `[id]/release_dates`, and `[id]/full` (single TMDB call with `append_to_response=release_dates`, returns resolved `{ title, poster_path, release_date }`). FR date resolution (type 3 theatrical, else CNC/Netflix/Amazon/Disney+ notes) lives in `server/utils/tmdbDates.js` — **single source of truth**, auto-imported by the route and imported explicitly by the backfill script.
-- Posters are served from the `image.tmdb.org` CDN using the stored `poster_path`; the poster file itself is not downloaded/stored. The Letterboxd link is derived from `movie_id` (no column).
+- Posters are served from the `image.tmdb.org` CDN using the stored `poster_path`; the poster file itself is not downloaded/stored. The Letterboxd link **du film** is derived from `movie_id` (no column). Celui **du réalisateur** ne se
+devine pas — homonymes suffixés, orthographes divergentes : il est lu sur la fiche film
+(`director[].sameAs` du JSON-LD, page déjà chargée pour la note — `shared/utils/letterboxdFilm.js`) et
+persisté dans `calendar.letterboxd_directors`. Le slug deviné de `app/utils/movieHelpers.js` est un
+repli, pas une source.
 - `manual_release_date` (user override) always wins over the stored `release_date`. `useMovieCalendar` keeps the raw stored TMDB date under `_tmdbReleaseDate` so clearing an override falls back correctly.
 - One-shot backfill of pre-existing rows: `scripts/backfill-movies.mjs` (throttled to 8 concurrent via `app/utils/promisePool.js`). Migration SQL in `_ressources/sql/`.
 - Pinia store at `app/stores/movies.js` manages filters / movies list state.

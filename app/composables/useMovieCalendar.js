@@ -208,6 +208,10 @@ export function useMovieCalendar() {
         // Gate sur l'ancienneté du dernier check (jamais checké OU périmé > 7 j). Un film jamais
         // noté avec succès n'est pas horodaté (voir plus bas) → il repasse ici à chaque ouverture
         // jusqu'à obtenir une note ; les films notés sont mis en cache 7 j.
+        //
+        // ⚠️ Ne **pas** y ajouter « ou les liens réalisateurs manquent » : sans porte de sortie, un
+        // film que Letterboxd ne crédite pas repasserait à chaque ouverture, pour toujours. Ces
+        // liens sont acquis à l'insertion et par le backfill ; ici ils sont ramassés au passage.
         const toCheck = movies.value.filter(m =>
             m.state !== 'seen' &&
             m.release_date &&
@@ -221,21 +225,22 @@ export function useMovieCalendar() {
         const patches = new Map();
         await promisePool(toCheck.map(movie => async () => {
             try {
-                const { rating } = await $fetch(`/api/movies/${movie.movie_id}/letterboxd`);
-                let patch;
+                const { rating, directors } = await $fetch(`/api/movies/${movie.movie_id}/letterboxd`);
+                let patch = null;
                 if (rating != null) {
                     patch = { letterboxd_rating: rating, letterboxd_rating_at: nowIso };
                 } else if (movie.letterboxd_rating != null) {
                     // Scrape transitoirement raté mais note déjà en base : on la garde et on
                     // repousse le prochain check en rafraîchissant seulement l'horodatage.
                     patch = { letterboxd_rating_at: nowIso };
-                } else {
-                    // Jamais de note obtenue → on n'horodate pas : nouvelle tentative à la
-                    // prochaine ouverture (au lieu d'un cache « vide » de 7 j).
-                    return;
                 }
-                await client.from('calendar').update(patch).eq('id', movie.id);
-                patches.set(movie.id, patch);
+                // Écrits même si la note manque : les liens, eux, ne périment pas.
+                if (directors?.length) patch = { ...patch, letterboxd_directors: directors };
+                // Ni note ni liens → on n'horodate pas : nouvelle tentative à la prochaine ouverture.
+                if (!patch) return;
+
+                const applied = await patchCalendarRow(client, movie.id, patch);
+                if (applied) patches.set(movie.id, applied);
             } catch (e) {
                 console.error('Refresh note Letterboxd échoué pour', movie.movie_id, e);
             }
@@ -307,7 +312,7 @@ export function useMovieCalendar() {
             .single();
         if (error) { console.error('Insert film catchup échoué:', error.message); return null; }
 
-        return {
+        const entry = {
             id: inserted.id,
             movie_id: movieId,
             media,
@@ -323,6 +328,10 @@ export function useMovieCalendar() {
             countries: meta.countries,
             tmdb_vote: meta.vote_average,
         };
+        // Second point d'insertion — l'autre est nav/MovieAddForm. Sans `await` : l'ajout ne doit pas
+        // attendre Letterboxd.
+        void resolveLetterboxdDirectors(client, entry);
+        return entry;
     }
 
     const handleMovieExists = (event) => event.detail?.movieId

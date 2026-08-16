@@ -81,6 +81,10 @@ const addMovie = async () => {
         };
         resetForm();
         emit('movie-added', newEntry)
+        // Ici plutôt qu'à la réception de `movie-added` : le layout `bare` émet sans écouter.
+        // Après l'emit et sans `await` — l'insert est acquis, et le slug deviné s'affiche en
+        // attendant plutôt que de retenir la fermeture du formulaire jusqu'à 8 s.
+        void resolveLetterboxdDirectors(client, newEntry);
     } catch (error) {
         console.error("Erreur lors de l'insertion:", error.message);
     }

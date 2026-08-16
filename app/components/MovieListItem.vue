@@ -38,6 +38,12 @@ const props = defineProps({
         type: String,
         default: null,
     },
+    // Colonne `letterboxd_directors`. Null tant que la ligne n'est pas résolue : `directorLinks`
+    // retombe alors sur le slug deviné.
+    letterboxdDirectors: {
+        type: Array,
+        default: null,
+    },
     releaseDate: {
         type: String,
         default: null,
@@ -79,12 +85,15 @@ const updateState = async (newState) => {
 const MEDIA_LABELS = { cinema: 'Cinéma', netflix: 'Netflix', primeVideo: 'Prime Video', 'disney+': 'Disney+', streaming: 'Streaming', vod: 'Streaming', unknown: 'Streaming' };
 // En salle : le nom du réal reste dans le sous-titre, le badge « En salle » se cale à droite du titre.
 const isInTheaters = computed(() => selectedState.value === 'inTheaters');
-const sub = computed(() => {
-    const dir = props.director;
-    if (selectedState.value === 'seen') return dir || MEDIA_LABELS[selectedMedia.value] || 'Streaming';
-    if (selectedState.value === 'inTheaters') return dir || MEDIA_LABELS[selectedMedia.value] || 'Cinéma';
-    if (selectedState.value === 'downloadAvailable') return dir || 'Dispo en téléchargement';
-    return dir || 'Envie de voir';
+// Une entrée cliquable par personne, chacune portant son `sep` — sans quoi le gabarit empile trois
+// `<template>` pour un `v-if="i"`.
+const directors = computed(() => directorLinks(props.director, props.letterboxdDirectors));
+// Repli quand le réalisateur est inconnu : un libellé, jamais un lien.
+const subFallback = computed(() => {
+    if (selectedState.value === 'seen') return MEDIA_LABELS[selectedMedia.value] || 'Streaming';
+    if (selectedState.value === 'inTheaters') return MEDIA_LABELS[selectedMedia.value] || 'Cinéma';
+    if (selectedState.value === 'downloadAvailable') return 'Dispo en téléchargement';
+    return 'Envie de voir';
 });
 </script>
 
@@ -100,7 +109,15 @@ const sub = computed(() => {
                 <a :href="`https://letterboxd.com/tmdb/${props.movieId}/`" target="_blank" rel="noopener" class="title">{{ props.title }}</a>
                 <span v-if="isInTheaters" class="badge">En salle</span>
             </div>
-            <div class="sub">{{ sub }}</div>
+            <div class="sub">
+                <template v-if="directors.length">
+                    <template v-for="dir in directors" :key="dir.url">{{ dir.sep }}<a
+                        :href="dir.url" target="_blank" rel="noopener" class="person"
+                        :aria-label="`Filmographie de ${dir.name} sur Letterboxd (nouvel onglet)`"
+                    >{{ dir.name }}</a></template>
+                </template>
+                <template v-else>{{ subFallback }}</template>
+            </div>
         </div>
         <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" />
         <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected" />
@@ -202,6 +219,23 @@ const sub = computed(() => {
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+
+        // Hérite de la teinte du sous-titre, pilotée par l'état juste dessous. Souligné en
+        // permanence et pas seulement recoloré au survol : `.sub` mêle libellés inertes et liens, et
+        // un appareil tactile large — où `.sub` reste affiché — n'a pas de survol pour les séparer.
+        .person {
+            color: inherit;
+            text-decoration: underline;
+            text-decoration-color: currentColor;
+            text-decoration-thickness: 1px;
+            text-underline-offset: .25em;
+            opacity: .85;
+            transition: color .2s linear, opacity .2s linear;
+
+            @media (hover: hover) {
+                &:hover { color: $color-primary-light; opacity: 1; }
+            }
+        }
     }
 
     // Teintes de texte par état.
