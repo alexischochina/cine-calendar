@@ -16,8 +16,16 @@ export function useCinemas() {
     // Référentiel, chargé une fois par visite : il ne bouge qu'au rythme du seed carte et des scripts.
     const cinemas = useState('seancesCinemas', () => null);
 
-    const loadCinemas = async () => {
-        if (cinemas.value) return;
+    // ⚠️ La garde vit sur la requête **en vol**, pas sur son résultat : `cinemas.value` n'est
+    // affecté qu'après l'`await`, donc deux appelants partis sur le même tick liraient la table en
+    // double. Le rail gauche et la page Séances se montent justement ensemble.
+    //
+    // Sur `nuxtApp` et non un `useState` (une promesse ne se sérialise pas dans le payload SSR) ni
+    // une variable de module (partagée entre requêtes SSR concurrentes, donc entre visiteurs).
+    const nuxtApp = useNuxtApp();
+    const INFLIGHT = '$seancesCinemasInflight';
+
+    const fetchCinemas = async () => {
         // `lat` / `lng` servent l'itinéraire (cf. `utils/maps.js`) : une salle géocodée s'ouvre sur
         // ses coordonnées exactes plutôt que sur une adresse Allociné approximative.
         const COLUMNS = 'code, name, arrondissement, accepts_ugc, transit_minutes, lat, lng';
@@ -47,11 +55,20 @@ export function useCinemas() {
         cinemas.value = Object.fromEntries((data ?? []).map(c => [c.code, c]));
     };
 
+    const loadCinemas = () => {
+        if (cinemas.value) return Promise.resolve();
+        nuxtApp[INFLIGHT] ??= fetchCinemas().finally(() => { nuxtApp[INFLIGHT] = null; });
+        return nuxtApp[INFLIGHT];
+    };
+
     // Relit le référentiel malgré le cache de session. Il bouge rarement, mais pas jamais : une
     // étoile posée sur un autre appareil, une salle nouvellement géocodée, ou surtout un signalement
     // d'absence écrit par `check-seances.mjs` pendant que la page est ouverte — sans relecture,
     // l'avertissement n'apparaîtrait qu'au prochain rechargement complet.
     const refreshCinemas = async () => {
+        // Garde vidée d'abord : sinon un rafraîchissement demandé pendant un chargement se
+        // contenterait d'attendre celui-ci et ne relirait rien.
+        nuxtApp[INFLIGHT] = null;
         cinemas.value = null;
         await loadCinemas();
     };
