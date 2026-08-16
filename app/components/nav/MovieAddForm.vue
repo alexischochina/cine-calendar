@@ -127,8 +127,6 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
 <style lang="scss" scoped>
 .form-content {
     gap: .5rem;
-    position: relative;
-    z-index: 950;
 }
 
 .text-input {
@@ -141,27 +139,32 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
     font: $normal 1.4rem/1 $font-body;
 }
 
+// Le bloc conteneur est `.nav-header`, pas le formulaire (contrat noté dans `nav/Header.vue`) :
+// c'est ce qui donne au panneau la largeur de la barre entière.
 .suggestions-container {
     background-color: $color-surface-2;
     border: 1px solid $color-border-5;
-    width: calc(var(--search-bar-width) + 3rem);
-    height: auto;
     position: absolute;
-    bottom: 0;
     left: 0;
-    z-index: 900;
+    right: 0;
+    bottom: calc(100% + 1rem);
     border-radius: 1.4rem;
     overflow: hidden;
-    padding: 0 0 var(--search-bar-height);
     box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
 }
 
 .suggestion {
+    display: flex;
+    align-items: baseline;
+    gap: .8rem;
     width: 100%;
     padding: 1.1rem 1.4rem;
-    border-bottom: solid 1px $color-border-2;
     text-align: left;
     transition: background-color .2s linear;
+
+    & + & {
+        border-top: solid 1px $color-border-2;
+    }
 }
 
 .movie-title {
@@ -170,7 +173,6 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
 }
 
 .release-date {
-    margin-left: .6rem;
     color: $color-text-weaker;
     font-family: $font-mono;
 }
@@ -216,12 +218,6 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
         flex: 1;
         width: auto;
         min-width: 0;
-    }
-
-    .suggestions-container {
-        left: 0;
-        right: 0;
-        width: auto;
     }
 }
 </style>
