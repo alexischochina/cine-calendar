@@ -139,6 +139,9 @@ const onVisible = async () => {
 }
 
 // Rien n'est chargé avant l'ouverture de l'onglet : le composable n'est monté que par cette page.
+//
+// ⚠️ Second `visibilitychange` de la vue : `useShowtimes.wireSnapshot` en pose un autre, qui survit à
+// la navigation à dessein. Celui-ci meurt avec la page, puisqu'il la recharge.
 onMounted(() => {
     document.addEventListener('visibilitychange', onVisible)
     focusThenLoad()
@@ -286,12 +289,15 @@ watch(focusKey, (now, before) => {
             </p>
         </div>
 
-        <!-- L'heure de dernier relevé n'était qu'informative ; elle porte maintenant sa contrepartie.
-             Les salles ouvrent leurs ventes en cours de journée : quand la vue et le site de la
-             salle divergent, c'est ici qu'on tranche. -->
+        <!-- Quand la vue et le site de la salle divergent, c'est cet horodatage qui tranche.
+             ⚠️ `aria-live` sur le **seul horodatage**, jamais sur le `<p>` : celui-ci contient le
+             bouton, dont le libellé bascule à chaque chargement — la région annoncerait
+             « Actualisation… » en boucle et noierait la seule information qui compte. -->
         <p class="source">
-            Séances Allociné · Paris intra-muros<template v-if="updatedAt"> · relevé à {{ updatedAt }}</template>
-            <button class="refresh" type="button" :disabled="loading" @click="refreshDay">
+            Séances Allociné · Paris intra-muros<span v-if="updatedAt" aria-live="polite"> · relevé {{ updatedAt }}</span>
+            <!-- `aria-disabled` plutôt que `disabled` : un bouton désactivé sort du parcours clavier au
+                 moment où l'utilisateur vient de l'actionner, et le focus retombe en début de page. -->
+            <button class="refresh" type="button" :aria-disabled="loading" @click="loading || refreshDay()">
                 {{ loading ? 'Actualisation…' : 'Actualiser' }}
             </button>
         </p>
@@ -474,7 +480,8 @@ watch(focusKey, (now, before) => {
             cursor: pointer;
             transition: color .18s ease, border-color .18s ease;
 
-            &:disabled { opacity: .5; cursor: default; }
+            // `[aria-disabled]` et non `:disabled` : le bouton reste focusable (cf. le gabarit).
+            &[aria-disabled='true'] { opacity: .5; cursor: default; }
 
             @media (hover: hover) {
                 &:not(:disabled):hover { color: $color-primary-light; border-color: $color-primary; }

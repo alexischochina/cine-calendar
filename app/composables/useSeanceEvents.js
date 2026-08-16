@@ -11,7 +11,9 @@
 export function useSeanceEvents() {
     const client = useSupabaseClient();
     const { movies } = useMovieCalendar();
-    const { payloadFor } = useShowtimes();
+    // ⚠️ `livePayloadFor` : ce qui sort d'ici est écrit dans `calendar.events`, et `mergeEventEntries`
+    // remplace pour les dates déclarées. Un relevé de la veille écraserait celui du jour, muettement.
+    const { livePayloadFor } = useShowtimes();
 
     // Migration pas jouée : on ne réessaie pas à chaque chargement de journée.
     const disabled = useState('seanceEventsDisabled', () => false);
@@ -95,7 +97,7 @@ export function useSeanceEvents() {
             const movie = current.get(id);
             if (!movie) return null;
 
-            const payloads = dates.map(date => [date, payloadFor(movie, date)]).filter(([, p]) => p);
+            const payloads = dates.map(date => [date, livePayloadFor(movie, date)]).filter(([, p]) => p);
             // Aucune journée lue pour ce film : on ne sait rien de neuf. Sans `stamp`, on n'écrit rien
             // — ne pas confondre avec « aucun événement », un film non résolu chez Allociné passerait
             // ici à chaque chargement et effacerait ce qu'une visite précédente avait trouvé.

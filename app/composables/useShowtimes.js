@@ -2,9 +2,17 @@
 // `useSeances` parce que la vue et le contrôle « en salle » doivent partager le **même** cache L1 —
 // chacun préchauffe l'autre.
 //
-// Deux niveaux de cache :
+// Trois niveaux de cache :
+//   L0 — `localStorage`, instantané du L1 (cf. `app/utils/seancesSnapshot.js`), affiché au chargement.
 //   L1 — `useState` clé `allocineId:date`, portée visite.
 //   L2 — table `showtimes_cache`, durable (cf. server/api/allocine/showtimes.js).
+//
+// ⚠️ Deux accesseurs, et la distinction n'est pas cosmétique :
+//   `payloadFor`     — L1 puis L0. Pour **afficher**.
+//   `livePayloadFor` — L1 seul. Pour **décider** : un instantané d'hier n'est une preuve de rien.
+//
+// Le L0 ne dispense jamais d'un appel — `fetchMissing` n'établit ce qui manque que sur le L1. C'est un
+// stale-while-revalidate, pas un cache de plus.
 
 const RESOLVE_CONCURRENCY = 8;
 const SHOWTIMES_CONCURRENCY = 4;
@@ -29,16 +37,114 @@ const RESOLVE_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 // qu'improbable.
 const inFlightByDate = new Map();
 
+// Branchement global à la visite : `useShowtimes` a quatre appelants, qui poseraient sinon quatre
+// observateurs d'écriture. Écrits côté client uniquement, donc sans partage entre requêtes Nitro.
+let snapshotWired = false;
+let snapshotWritable = true;   // coupé après un dépassement de quota : réessayer relancerait l'erreur
+
 export function useShowtimes() {
     const client = useSupabaseClient();
     const { movies } = useMovieCalendar();
 
     const payloads = useState('seancesPayloads', () => ({}));   // L1
+    const snapshot = useState('seancesSnapshot', () => ({}));   // L0, hydraté après le montage
 
     const cacheKey = (allocineId, date) => `${allocineId}:${date}`;
 
+    // Pour afficher : le L1 d'abord, l'instantané en secours.
     const payloadFor = (movie, date) =>
+        movie?.allocine_id
+            ? (payloads.value[cacheKey(movie.allocine_id, date)] ?? snapshot.value[cacheKey(movie.allocine_id, date)] ?? null)
+            : null;
+
+    // Pour décider. ⚠️ Ne jamais remplacer par `payloadFor` « pour simplifier » : ses appelants
+    // écrivent en base ou sortent sur le réseau sur la foi de ce qu'ils lisent ici — leur servir un
+    // instantané d'hier, c'est écrire hier. `payloadFor` n'appartient qu'au code qui **affiche** ;
+    // `grep -n "payloadFor" app/composables/` le vérifie.
+    const livePayloadFor = (movie, date) =>
         movie?.allocine_id ? (payloads.value[cacheKey(movie.allocine_id, date)] ?? null) : null;
+
+    // Relit l'instantané et branche son entretien. Appelé au premier chargement de la vue Séances,
+    // donc **après** l'hydratation : lire `localStorage` dans l'initialiseur d'un `useState` ferait
+    // diverger le rendu serveur du premier rendu client.
+    const wireSnapshot = () => {
+        if (!import.meta.client || snapshotWired) return;
+        snapshotWired = true;
+
+        const bounds = () => ({ today: isoDay(0), freshSince: lastWednesday() });
+
+        try {
+            const raw = localStorage.getItem(SNAPSHOT_KEY);
+            if (raw) snapshot.value = pruneSnapshot(JSON.parse(raw), bounds());
+        } catch (e) {
+            // Instantané illisible (format changé à la main, écriture interrompue) : on repart de
+            // rien plutôt que de tenter de sauver les meubles.
+            console.warn('Instantané des séances illisible, ignoré', e);
+            try { localStorage.removeItem(SNAPSHOT_KEY); } catch { /* mode privé */ }
+        }
+
+        // Le L1 fait autorité sur l'instantané. Débounce parce que `fetchMissing`, `graftEvents` et le
+        // contrôle « en salle » réassignent `payloads` coup sur coup.
+        let timer = null;
+
+        const persist = () => {
+            if (!snapshotWritable) return;
+            clearTimeout(timer);
+            timer = null;
+
+            const limits = bounds();
+
+            // ⚠️ Filtré sur le périmètre de la vue, pas seulement plafonné : le contrôle « en salle »
+            // charge ~91 films et `forget()` ne passe qu'après. Un débounce tombant entre les deux
+            // remplissait l'instantané de films non affichés, qui évinçaient les journées lointaines.
+            const scope = new Set(
+                movies.value
+                    .filter(m => m.allocine_id && isSeanceFilm(m, limits.today))
+                    .map(m => String(m.allocine_id))
+            );
+
+            const candidate = Object.fromEntries(
+                Object.entries({ ...snapshot.value, ...payloads.value })
+                    .filter(([key]) => scope.has(key.slice(0, key.indexOf(':'))))
+            );
+
+            const merged = pruneSnapshot(candidate, limits);
+            snapshot.value = merged;
+            try {
+                localStorage.setItem(SNAPSHOT_KEY, JSON.stringify(merged));
+            } catch (e) {
+                snapshotWritable = false;
+                console.warn('Instantané des séances non écrit (quota ?), désactivé pour la visite', e);
+                try { localStorage.removeItem(SNAPSHOT_KEY); } catch { /* mode privé */ }
+            }
+        };
+
+        // ⚠️ Portée **détachée**, jamais arrêtée : appelé depuis le `onMounted` de la page, un `watch`
+        // nu mourrait au passage sur Timeline — et `snapshotWired` interdisant la ré-inscription, plus
+        // rien ne serait persisté de la session.
+        effectScope(true).run(() => watch(payloads, () => {
+            if (!snapshotWritable) return;
+            clearTimeout(timer);
+            timer = setTimeout(persist, 400);
+        }));
+
+        // Ferme la fenêtre du débounce. `visibilitychange` et non `beforeunload` : un onglet tué en
+        // arrière-plan ne repasse jamais par `unload`, sur mobile surtout.
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'hidden' && timer) persist();
+        });
+    };
+
+    // Retire des deux niveaux de mémoire. L'instantané doit suivre le L1 sur les oublis, sinon
+    // `payloadFor` ressusciterait par le L0 exactement ce que l'appelant vient d'écarter.
+    const dropKeys = (matches) => {
+        payloads.value = Object.fromEntries(
+            Object.entries(payloads.value).filter(([key]) => !matches(key))
+        );
+        snapshot.value = Object.fromEntries(
+            Object.entries(snapshot.value).filter(([key]) => !matches(key))
+        );
+    };
 
     // Résout les identifiants Allociné manquants de `list` et les persiste. Même discipline que
     // `recheckUpcomingCinema` : pool borné, un seul réassign de `movies.value` à la fin.
@@ -181,6 +287,10 @@ export function useShowtimes() {
 
     // Purge le L1 d'une journée, pour forcer un nouvel appel (le L2 décidera de son côté s'il
     // retape Allociné ou s'il ressert du périmé).
+    //
+    // ⚠️ L'instantané, lui, **survit** : c'est le seul oubli des trois où on le garde. « Actualiser »
+    // et « Réessayer » veulent une donnée neuve, pas un écran vide pendant qu'on la cherche — laisser
+    // le dernier état connu à l'écran, daté, est précisément ce que le L0 existe pour faire.
     const forgetDay = (date) => {
         payloads.value = Object.fromEntries(
             Object.entries(payloads.value).filter(([key]) => !key.endsWith(`:${date}`))
@@ -190,22 +300,19 @@ export function useShowtimes() {
     // Oublie tout ce qui concerne des journées révolues. Appelé quand la page franchit minuit : ces
     // entrées ne seront plus jamais lues, et elles porteraient la mémoire de la veille dans une
     // visite qui parle désormais d'un autre jour.
-    const forgetBefore = (date) => {
-        payloads.value = Object.fromEntries(
-            Object.entries(payloads.value).filter(([key]) => (key.split(':')[1] ?? '') >= date)
-        );
-    };
+    const forgetBefore = (date) => dropKeys(key => (key.split(':')[1] ?? '') < date);
 
     // Oublie une liste précise de films pour une date. Le contrôle « en salle » charge ~91 films pour
-    // n'en garder qu'une douzaine : sans ce balai, ~0,5 Mo resteraient en mémoire pour la visite. Le L2
-    // les conserve, lui.
+    // n'en garder qu'une douzaine : sans ce balai, ~0,5 Mo resteraient en mémoire pour la visite — et,
+    // depuis le L0, dans le `localStorage` du navigateur. Le L2 les conserve, lui.
     const forget = (allocineIds, date) => {
         const drop = new Set(allocineIds.map(id => cacheKey(id, date)));
         if (!drop.size) return;
-        payloads.value = Object.fromEntries(
-            Object.entries(payloads.value).filter(([key]) => !drop.has(key))
-        );
+        dropKeys(key => drop.has(key));
     };
 
-    return { payloads, payloadFor, resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore, forget };
+    return {
+        payloads, payloadFor, livePayloadFor, wireSnapshot,
+        resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore, forget,
+    };
 }

@@ -21,11 +21,12 @@
 //   `useSeanceDays`                 la bande de sept jours et son recalage à minuit ;
 //   `useCinemas`                    le référentiel des salles, les favoris, les salles muettes.
 
-const pad = (n) => String(n).padStart(2, '0');
-
 export function useSeances() {
     const { seanceFilms } = useMovieCalendar();
-    const { payloadFor, resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore } = useShowtimes();
+    const {
+        payloadFor, livePayloadFor, wireSnapshot,
+        resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore,
+    } = useShowtimes();
     const { loadEvents } = useTheaterEvents();
     const { syncEvents } = useSeanceEvents();
     const { pruneEmptyHorizon } = useInTheatersSync();
@@ -81,12 +82,14 @@ export function useSeances() {
     const REVALIDATE_AFTER = 30 * 60 * 1000;
 
     // Le jour affiché mérite-t-il une seconde lecture en arrière-plan ?
+    // ⚠️ `livePayloadFor` : la question porte sur ce qu'on vient de charger. L'horodatage de la veille
+    // forcerait une revalidation — une quinzaine de sorties Allociné — à chaque ouverture.
     const needsRevalidation = (date) => {
         const [from, to] = PUBLICATION_WINDOW;
         if (dayIndex.value < from || dayIndex.value > to) return false;
 
         const stamps = films.value
-            .map(m => payloadFor(m, date)?.fetchedAt)
+            .map(m => livePayloadFor(m, date)?.fetchedAt)
             .filter(Boolean)
             .map(Date.parse)
             .filter(Number.isFinite);
@@ -95,6 +98,10 @@ export function useSeances() {
     };
 
     const load = async ({ force = false } = {}) => {
+        // En tête de `load`, seul appelé depuis `onMounted` : lire `localStorage` plus tôt ferait
+        // diverger le rendu serveur du premier rendu client. Sans effet aux appels suivants.
+        wireSnapshot();
+
         // Capturée une fois : tout ce qui suit s'étale sur plusieurs allers-retours, et un clic sur
         // un autre jour entre-temps ferait travailler la suite sur une date qui n'est plus celle du
         // chargement en cours.
@@ -326,15 +333,15 @@ export function useSeances() {
     });
 
     // Heure du dernier rafraîchissement effectif, pour la ligne de provenance.
+    // ⚠️ Daté dès que ce n'est pas d'aujourd'hui (cf. `stampForDisplay`) : la page s'ouvrant sur le
+    // relevé de la visite précédente, un « à 21:34 » nu se lirait « il y a un instant ».
     const updatedAt = computed(() => {
         const date = selectedDay.value.date;
         const stamps = visibleFilms.value
             .map(m => payloadFor(m, date)?.fetchedAt)
             .filter(Boolean)
             .sort();
-        if (!stamps.length) return null;
-        const d = new Date(stamps[stamps.length - 1]);
-        return isNaN(d) ? null : `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        return stamps.length ? stampForDisplay(stamps[stamps.length - 1]) : null;
     });
 
     return {

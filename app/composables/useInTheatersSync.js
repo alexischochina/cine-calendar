@@ -15,7 +15,9 @@ const CHECKABLE_STATES = ['unseen', 'inTheaters'];
 export function useInTheatersSync() {
     const client = useSupabaseClient();
     const { movies, sortMovies } = useMovieCalendar();
-    const { resolveAllocineIds, loadShowtimes, payloadFor, forget } = useShowtimes();
+    // ⚠️ `livePayloadFor` dans tout ce fichier : il retire des films de l'affiche sur la foi de ce
+    // qu'il lit, et rien en aval ne sait se méfier d'une lecture d'hier.
+    const { resolveAllocineIds, loadShowtimes, livePayloadFor, forget } = useShowtimes();
     const { loadEvents } = useTheaterEvents();
     const { syncEvents } = useSeanceEvents();
 
@@ -67,7 +69,9 @@ export function useInTheatersSync() {
             const keep = [];
             const drop = [];
             for (const movie of checkable) {
-                const verdict = playingWithin(payloadFor(movie, todayStr), horizon);
+                // ⚠️ Un relevé de la veille ne porte pas `stale` : `playingWithin` trancherait `false`
+                // là où il doit rendre `null`, et ce verdict écrit `unseen` sans corroboration.
+                const verdict = playingWithin(livePayloadFor(movie, todayStr), horizon);
                 if (verdict === true) keep.push(movie.id);
                 else if (verdict === false) drop.push(movie.id);
             }
@@ -159,7 +163,7 @@ export function useInTheatersSync() {
         const candidates = list
             .map(({ id }) => current.get(id))
             .filter(m => m?.state === 'inTheaters' && m.allocine_id)
-            .map(movie => ({ movie, payloads: dates.map(date => payloadFor(movie, date)) }));
+            .map(movie => ({ movie, payloads: dates.map(date => livePayloadFor(movie, date)) }));
 
         // ⚠️ Corroboration avant tout retrait : si **aucun** film du lot ne joue nulle part sur sept
         // jours, ce n'est pas l'affiche parisienne qui est vide, c'est notre lecture qui est fausse.

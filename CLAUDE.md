@@ -52,7 +52,16 @@ production et le dev suivant échoue sur `#internal/nuxt/paths`. Nettoyer par
 
 **Séances & Événements (Allociné + exploitants) :**
 - Horaires parisiens depuis Allociné (`server/utils/allocine.js`), deux caches durables
-  (`showtimes_cache`, `theater_events_cache`) et un cache L1 de visite (`useShowtimes`).
+  (`showtimes_cache`, `theater_events_cache`), un cache L1 de visite et un instantané L0 persistant
+  (`useShowtimes`).
+- **Trois niveaux de cache, et une distinction à ne pas perdre.** Le L0 (`localStorage`, cf.
+  `app/utils/seancesSnapshot.js`) sert à **afficher** immédiatement le dernier état connu pendant que
+  la page recharge. `useShowtimes` expose donc `payloadFor` (L1 puis L0, pour l'affichage) et
+  `livePayloadFor` (L1 seul, pour **décider**). ⚠️ Règle sans exception : `payloadFor` n'apparaît que
+  dans du code qui **affiche**. Tout ce qui écrit en base ou déclenche du réseau — `syncEvents`,
+  `syncInTheaters`, `pruneEmptyHorizon`, `useUpcomingEvents`, `needsRevalidation` — lit
+  `livePayloadFor` : un instantané d'hier n'est une preuve de rien aujourd'hui. L'inventaire à jour
+  vit en tête de `livePayloadFor` ; `grep -n "payloadFor" app/composables/` le vérifie.
 - Le cache durable est **préchauffé** par une tâche planifiée (`server/api/cron/warm.js`, déclenchée
   par `.github/workflows/warm-showtimes.yml`), pour que le visiteur ne paie plus l'aller-retour
   Allociné. ⚠️ Sa cadence **suit** le TTL de `showtimesFreshness.js`, elle ne l'autorise pas à

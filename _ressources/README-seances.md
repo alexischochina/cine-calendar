@@ -740,6 +740,7 @@ app/composables/useSeances.js      état, chargement et dérivés de la page
 app/composables/useShowtimes.js    résolution + chargement d'une journée + cache L1 (partagés)
 app/composables/useInTheatersSync.js  contrôle hebdomadaire de l'état « En salle »
 app/utils/seancesGrouping.js       filtres, tri, regroupements — fonctions PURES, donc testables
+app/utils/seancesSnapshot.js       élagage + datation de l'instantané L0 — PURES aussi
 app/utils/maps.js                  itinéraire vers une salle (Plans / Google Maps)
 app/utils/travel.js                mise en forme du temps de trajet
 shared/utils/cineWeek.js           semaine ciné — source unique app + serveur + scripts
@@ -755,7 +756,7 @@ server/utils/promisePool.js        copie serveur du pool de concurrence
 
 .github/workflows/warm-showtimes.yml  les deux cadences du préchauffage
 
-scripts/test-seances-rules.mjs     307 tests des règles pures →  npm test
+scripts/test-seances-rules.mjs     319 tests des règles pures →  npm test
 scripts/check-seances.mjs          contrôle de santé          →  npm run check:seances
 scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ```
@@ -763,12 +764,13 @@ scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ### Les règles pures sont testées
 
 ```bash
-npm test        # 307 assertions, aucune dépendance réseau ni base, < 1 s
+npm test        # 319 assertions, aucune dépendance réseau ni base, < 1 s
 ```
 
 Neuf familles, toutes importées **du code réel** (aucune copie) — la liste à jour vit en tête de
-`scripts/test-seances-rules.mjs`. La dernière arrivée : la fraîcheur anticipée du préchauffage
-(`isShowtimesFresh` avec son horizon) et le périmètre partagé (`seanceScope`).
+`scripts/test-seances-rules.mjs`. Les dernières arrivées : la fraîcheur anticipée du préchauffage
+(`isShowtimesFresh` avec son horizon) et l'instantané persistant (`pruneSnapshot`,
+`relevePourAffichage`).
 
 ⚠️ `showtimesFreshness.js` lit `isoDay` / `lastWednesday` comme des **globales** — c'est l'auto-import
 Nitro de `shared/utils/`. Ne pas « corriger » ça par un import relatif : Nitro le résout depuis son
@@ -781,12 +783,45 @@ un mercredi mal calculé, un filtre carte qui laisse passer une séance IMAX : r
 lève d'exception, ça affiche simplement quelque chose de faux. C'est exactement le genre de bug que
 ce projet a passé sa journée à traquer à la main.
 
-### Les deux caches
+### Les trois caches
 
 | | Où | Portée | Rôle |
 |---|---|---|---|
+| **L0** | `localStorage`, clé `seances:snapshot:v1` | entre les visites | la page s'ouvre sur le dernier état connu au lieu d'un écran vide, pendant qu'elle recharge |
 | **L1** | `useState` clé `allocineId:date` | la visite | changer de jour puis revenir ne refetch rien (0,6 Mo pour 7 jours) |
 | **L2** | table `showtimes_cache` | durable, partagé | survit au cold start Vercel, que le cache mémoire Nitro ne sait pas faire |
+
+### Le L0 s'affiche, il ne décide de rien
+
+Le L1 est une mémoire de **visite** : un F5, un retour depuis Timeline, une reprise d'onglet le
+matin, et la page repartait d'un écran vide le temps d'un aller-retour. Le L0 garde un instantané du
+L1 dans `localStorage` et l'affiche immédiatement.
+
+Ce n'est **pas un cache de plus** : `fetchMissing` n'établit ce qui manque qu'à partir du L1, donc
+tout ce qui vient de l'instantané est rechargé dans la foulée. C'est un stale-while-revalidate.
+
+⚠️ D'où deux accesseurs dans `useShowtimes`, et la distinction n'est pas cosmétique :
+
+| | Lit | Pour |
+|---|---|---|
+| `payloadFor` | L1 puis L0 | **afficher** — `entries`, `nextDate`, `updatedAt`, `stale` |
+| `livePayloadFor` | L1 seul | **décider** — `syncEvents` (écrit `calendar.events`), `syncInTheaters` (fait passer un film à `unseen`), `pruneEmptyHorizon` (retire un film de l'affiche), `useUpcomingEvents` (écrit les avant-premières dérivées), `needsRevalidation` (déclenche du réseau) |
+
+Servir un instantané de la veille à ces trois-là, c'est écrire hier dans la base d'aujourd'hui :
+`mergeEventEntries` remplace pour les dates qu'on lui déclare, et `pruneEmptyHorizon` conclurait
+« plus aucune séance » sur une lecture périmée que sa corroboration n'a aucun moyen de détecter.
+C'est le même appauvrissement silencieux que `carryOverMissing` et `graftEvents` s'interdisent
+ailleurs, sous une autre forme.
+
+Ce que l'instantané jette à la relecture (`pruneSnapshot`, testé) : les journées passées, les
+relevés d'avant le dernier mercredi, et tout payload qu'on ne sait pas dater — un instantané sans âge
+est pire qu'une absence d'instantané, puisque la ligne de provenance ne pourrait plus dire d'où il
+sort. Plafond de 160 entrées, les journées proches d'abord : le contrôle « en salle » charge ~91
+films d'un coup, et sans plafond il en déposerait un demi-mégaoctet dans le navigateur.
+
+Corollaire dans l'UI : `updatedAt` est **daté** dès que le relevé n'est pas d'aujourd'hui
+(« relevé hier à 21:34 », « relevé le 13/08 à 21:34 »). Un `HH:MM` nu se lirait « il y a un
+instant » précisément au moment où l'utilisateur a besoin de savoir que ça date.
 
 ### Le préchauffage planifié — `/api/cron/warm`
 
@@ -847,7 +882,7 @@ chargées (sans conséquence, l'horizon de fraîcheur absorbe), et les workflows
 **désactivés après 60 jours sans activité** sur le dépôt.
 
 Ce que ça ne couvre pas : la liste des films vient de Supabase à chaque chargement, et cette
-requête-là reste. Cache chaud, le plancher est de ~2 allers-retours Supabase.
+requête-là reste. Cache chaud + instantané, le plancher est de ~2 allers-retours Supabase.
 
 ### Pourquoi deux routes plutôt qu'une
 

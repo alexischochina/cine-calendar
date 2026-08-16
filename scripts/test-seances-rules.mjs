@@ -22,6 +22,7 @@
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
 import { carryOverMissing, isShowtimesFresh } from '../server/utils/showtimesFreshness.js';
+import { pruneSnapshot, stampForDisplay } from '../app/utils/seancesSnapshot.js';
 import { isoDay, lastWednesday, SEANCES_HORIZON_DAYS } from '../shared/utils/cineWeek.js';
 import {
     applyFilters, groupByFilm, groupByCinema, countShowtimes,
@@ -906,11 +907,12 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
     t('salle absente → la journée suffit', entryKey({ date: '2026-08-17' }), '2026-08-17|');
 }
 
-// --- 10. Fraîcheur anticipée ---------------------------------------------------------------------
+// --- 10. Fraîcheur anticipée et instantané persistant --------------------------------------------
 //
-// Règle ajoutée avec le préchauffage planifié (`server/api/cron/warm.js`). Elle a le profil de défaut
-// du reste de ce fichier : elle échoue en **affichant du faux** plutôt qu'en levant quoi que ce soit
-// — un cron qui ne rafraîchit jamais rien, un film que le préchauffage laisse au visiteur.
+// Deux règles ajoutées avec le préchauffage planifié (`server/api/cron/warm.js`) et l'instantané
+// `localStorage` (`app/utils/seancesSnapshot.js`). Toutes deux ont le profil de défaut du reste de ce
+// fichier : elles échouent en **affichant du faux** plutôt qu'en levant quoi que ce soit — une entrée
+// de la semaine dernière remontée à l'écran, un cron qui ne rafraîchit jamais rien.
 {
     console.log('\n\x1b[1mfraîcheur anticipée — ce qui expirera avant le prochain passage\x1b[0m');
 
@@ -974,6 +976,59 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
             isSeanceFilm(avecEvent({ events_checked_at: releveVieux }), jourRef)], [false, true]);
 
     t('la règle nue ignore les films vus', hasDatedEventFrom(avecEvent({ state: "seen" }), jourRef), false);
+
+    console.log('\n\x1b[1mpruneSnapshot — n\'afficher que ce qu\'on sait dater\x1b[0m');
+
+    const today = '2026-08-16';
+    const freshSince = Date.parse('2026-08-12T00:00:00.000Z');   // « mercredi »
+    const bornes = { today, freshSince };
+    const releve = (iso) => ({ theaters: [], fetchedAt: iso });
+
+    t('journée passée → jetée', Object.keys(pruneSnapshot({
+        '111:2026-08-15': releve('2026-08-15T20:00:00.000Z'),
+        '111:2026-08-16': releve('2026-08-15T20:00:00.000Z'),
+    }, bornes)), ['111:2026-08-16']);
+
+    // Les salles ont renouvelé leur programmation depuis : l'entrée parle d'une grille qui n'existe
+    // plus, et elle serait affichée telle quelle avant même le premier appel réseau.
+    t('relevé d\'avant le dernier mercredi → jeté', pruneSnapshot({
+        '111:2026-08-20': releve('2026-08-11T20:00:00.000Z'),
+    }, bornes), {});
+
+    // Un instantané qu'on ne sait pas dater ne peut pas être annoncé comme daté : on ne le montre pas.
+    t('payload sans horodatage → jeté', pruneSnapshot({
+        '111:2026-08-20': { theaters: [] },
+    }, bornes), {});
+    t('horodatage illisible → jeté', pruneSnapshot({
+        '111:2026-08-20': releve('hier soir'),
+    }, bornes), {});
+    t('clé qui n\'est pas film:date → jetée', pruneSnapshot({
+        'bidon': releve('2026-08-15T20:00:00.000Z'),
+        '111:16-08-2026': releve('2026-08-15T20:00:00.000Z'),
+    }, bornes), {});
+
+    // Le plafond garde les journées les plus proches — celles qu'on ouvre en premier.
+    t('plafond : les journées proches d\'abord', Object.keys(pruneSnapshot({
+        '111:2026-08-22': releve('2026-08-15T20:00:00.000Z'),
+        '111:2026-08-16': releve('2026-08-15T20:00:00.000Z'),
+        '111:2026-08-19': releve('2026-08-15T20:00:00.000Z'),
+    }, { ...bornes, max: 2 })), ['111:2026-08-16', '111:2026-08-19']);
+
+    // À date égale, le relevé le plus récent gagne.
+    t('à date égale, le relevé le plus récent', Object.keys(pruneSnapshot({
+        '222:2026-08-16': releve('2026-08-15T18:00:00.000Z'),
+        '111:2026-08-16': releve('2026-08-15T21:00:00.000Z'),
+    }, { ...bornes, max: 1 })), ['111:2026-08-16']);
+
+    t('instantané absent → objet vide', pruneSnapshot(null, bornes), {});
+
+    console.log('\n\x1b[1mstampForDisplay — ne pas faire passer hier pour maintenant\x1b[0m');
+
+    const maintenant = new Date('2026-08-16T14:00:00');
+    t('même jour → heure nue', stampForDisplay(new Date('2026-08-16T09:05:00').toISOString(), maintenant), 'à 09:05');
+    t('la veille → dit « hier »', stampForDisplay(new Date('2026-08-15T21:34:00').toISOString(), maintenant), 'hier à 21:34');
+    t('plus ancien → date complète', stampForDisplay(new Date('2026-08-13T21:34:00').toISOString(), maintenant), 'le 13/08 à 21:34');
+    t('horodatage illisible → null', stampForDisplay('jamais', maintenant), null);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

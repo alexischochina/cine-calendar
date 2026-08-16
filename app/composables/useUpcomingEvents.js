@@ -49,7 +49,9 @@ const CHECKABLE_STATES = ['unseen', 'inTheaters'];
 
 export function useUpcomingEvents() {
     const { movies } = useMovieCalendar();
-    const { resolveAllocineIds, loadShowtimes, payloadFor, forget } = useShowtimes();
+    // ⚠️ `livePayloadFor` : tout ce qui sort d'ici part dans `calendar.events`. Un `nextDate` relu
+    // depuis l'instantané écrirait une avant-première qui n'existe plus.
+    const { resolveAllocineIds, loadShowtimes, livePayloadFor, forget } = useShowtimes();
     const { loadEvents } = useTheaterEvents();
     const { syncEvents } = useSeanceEvents();
 
@@ -101,7 +103,7 @@ export function useUpcomingEvents() {
 
             // Films dont la première séance parisienne tombe dans l'horizon **et** avant leur sortie.
             const withPreviews = checkable.filter((movie) => {
-                const next = String(payloadFor(movie, today)?.nextDate ?? '').slice(0, 10);
+                const next = String(livePayloadFor(movie, today)?.nextDate ?? '').slice(0, 10);
                 return isPreviewDate(next, movie, horizon);
             });
 
@@ -151,7 +153,7 @@ export function useUpcomingEvents() {
     // Journées d'avant-première d'un film : de la première séance repérée (`nextDate` d'aujourd'hui)
     // jusqu'à la veille de sa sortie, bornées par l'horizon et par `MAX_PREVIEW_DAYS`.
     const previewDays = async (movie, today, horizon) => {
-        const first = String(payloadFor(movie, today)?.nextDate ?? '').slice(0, 10);
+        const first = String(livePayloadFor(movie, today)?.nextDate ?? '').slice(0, 10);
         if (!isPreviewDate(first, movie, horizon)) return [];
 
         const days = [];
@@ -165,7 +167,7 @@ export function useUpcomingEvents() {
             // Salles intra-muros ce jour-là : `nextDate` est calculé sur Paris **et sa couronne** (cf.
             // `PARIS_LOCALIZATION`), il peut donc désigner un jour où le film ne joue qu'en banlieue.
             // Et les journées suivantes, elles, sont de simples suppositions — la plupart seront vides.
-            if (payloadFor(movie, date)?.theaters?.length) days.push(date);
+            if (livePayloadFor(movie, date)?.theaters?.length) days.push(date);
         }
         return days;
     };
@@ -188,7 +190,7 @@ export function useUpcomingEvents() {
                 const movie = byId.get(film.id);
                 if (!movie || movieEvents(movie, bounds).some(e => e.date === date)) continue;
 
-                const payload = payloadFor(movie, date);
+                const payload = livePayloadFor(movie, date);
                 // Aucune salle intra-muros ce jour-là : `nextDate` désignait la couronne. Rien à annoncer.
                 const theaters = (payload?.theaters ?? []).filter(t => t.name);
                 if (!theaters.length) continue;
