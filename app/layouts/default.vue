@@ -9,7 +9,7 @@ const {
 } = useMovieCalendar()
 
 const {
-    currentYear, selectedYear, viewMode,
+    currentYear, selectedYear, viewMode, isLibrary,
     selectYear, selectView, goToMovie, goToSeances, onScrollToToday, onSearch,
 } = useCalendarNav()
 
@@ -105,12 +105,13 @@ onBeforeUnmount(() => {
         <NavSideNav class="shell-rail -left" :years="yearList" :active-year="selectedYear" :view-mode="viewMode"
                     @select-year="onSelectYear" @select-view="selectView" />
 
-        <!-- En-tête mobile : titre + pastille année + segmented Timeline|Stats -->
+        <!-- En-tête mobile : titre + pastille année (vues de la liste seulement) + bande d'onglets -->
         <div class="shell-mobilehead">
             <div class="top">
                 <div class="brand">Ma cinémathèque</div>
-                <button class="year-pill" type="button" aria-label="Choisir l'année" aria-haspopup="true"
-                        :aria-expanded="mobileYearMenu" @click="mobileYearMenu = !mobileYearMenu">
+                <button class="year-pill" :class="{ '-hidden': !isLibrary }" type="button"
+                        aria-label="Choisir l'année" aria-haspopup="true" :aria-expanded="mobileYearMenu"
+                        @click="mobileYearMenu = !mobileYearMenu">
                     {{ selectedYearLabel }}<Svg name="chevron" class="chev" aria-hidden="true" />
                 </button>
             </div>
@@ -246,6 +247,11 @@ onBeforeUnmount(() => {
             letter-spacing: -.05rem;
         }
 
+        // La pastille ne pilote que Timeline / Stats mais reste **dans le flux** ailleurs : c'est
+        // elle qui donne sa hauteur à la rangée, et la retirer faisait remonter toute la page de
+        // quelques pixels à chaque changement d'onglet. `visibility` plutôt qu'un `min-height`
+        // chiffré à la main (le chevron est plus haut que la ligne de texte, le calcul était faux
+        // d'1 px) — et le bouton sort quand même du tab order.
         > .year-pill {
             display: flex;
             align-items: center;
@@ -257,8 +263,17 @@ onBeforeUnmount(() => {
             color: $color-text-dim;
             font: $bold 1.2rem/1 $font-mono;
             cursor: pointer;
+            transition: opacity .2s ease, visibility .2s;
+            @include focusRing();
 
             > .chev { width: 1.3rem; height: 1.3rem; }
+
+            // `visibility` dans la transition : bascule discrète, elle attend donc la fin de
+            // l'opacité. Même durée que le crossfade des vues.
+            &.-hidden {
+                visibility: hidden;
+                opacity: 0;
+            }
         }
     }
 }
