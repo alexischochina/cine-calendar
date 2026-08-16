@@ -1,4 +1,18 @@
 // Année + vue dérivées de la route, navigation et scroll. Partagé layout ↔ pages.
+
+// Vues qui vivent hors année, et leur route. **Source unique** de cette liste : la dupliquer la
+// ferait diverger au prochain onglet ajouté, et le symptôme serait une navigation vers
+// `/2026/evenements`, qui n'existe pas.
+//
+// Hors de la fonction pour que la partition soit lisible sans instancier le composable : le rail
+// gauche reçoit sa vue en prop et ne peut pas passer par le `computed` lié à la route.
+const YEARLESS_VIEWS = { seances: '/seances', events: '/evenements' }
+
+// « Vues ville » (Séances, Événements) contre « vues de la liste » (Timeline, Stats) : les deux
+// familles n'ont pas le même contexte dans le rail ni le même en-tête mobile.
+export const isYearlessView = (mode) => Boolean(YEARLESS_VIEWS[mode])
+export const isLibraryView = (mode) => !isYearlessView(mode)
+
 export function useCalendarNav() {
     const route = useRoute()
     const { movies } = useMovieCalendar()
@@ -52,10 +66,9 @@ export function useCalendarNav() {
 
     const goToEvents = () => navigateTo('/evenements')
 
-    // Vues qui vivent hors année, et leur route. C'est la **source unique** de cette liste : la
-    // dupliquer entre `selectYear` et `selectView` les ferait diverger au prochain onglet ajouté, et
-    // le symptôme serait une navigation vers `/2026/evenements`, qui n'existe pas.
-    const YEARLESS_VIEWS = { seances: '/seances', events: '/evenements' }
+    // La même partition, liée à la route — pour les appelants sans `viewMode` sous la main.
+    const isCity = computed(() => isYearlessView(viewMode.value))
+    const isLibrary = computed(() => !isCity.value)
 
     const selectYear = async (year) => {
         // `/2026/seances` n'existe pas : choisir une année depuis une vue hors année ramène sur sa
@@ -85,6 +98,8 @@ export function useCalendarNav() {
         currentYear,
         selectedYear,
         viewMode,
+        isLibrary,
+        isCity,
         yearOfMovie,
         goToMovie,
         goToSeances,
