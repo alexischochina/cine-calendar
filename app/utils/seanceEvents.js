@@ -250,9 +250,8 @@ export const groupEventsByDay = (entries) => {
     return [...byDay.values()];
 };
 
-// Film à faire remonter dans la rubrique « Événements à venir » : un événement devant lui, et un film
-// pas encore vu. ⚠️ Le test sur `state` n'est pas redondant : la rubrique couvre aussi des films qui
-// ne sont pas `inTheaters` du tout (une avant-première a lieu *avant* la sortie), donc rien ne
-// garantit que l'état exclue `'seen'`.
+// Rubrique « Événements à venir » : la règle nue de `shared/utils/seanceScope.js`, **plus** la garde
+// de fraîcheur du relevé qu'applique `movieEvents`. C'est cette garde, et elle seule, qui sépare le
+// périmètre de la vue de celui du préchauffage.
 export const hasUpcomingEvent = (movie, bounds) =>
-    movie?.state !== 'seen' && movieEvents(movie, bounds).length > 0;
+    hasDatedEventFrom(movie, bounds.today) && movieEvents(movie, bounds).length > 0;

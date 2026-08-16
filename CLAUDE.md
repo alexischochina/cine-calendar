@@ -53,6 +53,12 @@ production et le dev suivant échoue sur `#internal/nuxt/paths`. Nettoyer par
 **Séances & Événements (Allociné + exploitants) :**
 - Horaires parisiens depuis Allociné (`server/utils/allocine.js`), deux caches durables
   (`showtimes_cache`, `theater_events_cache`) et un cache L1 de visite (`useShowtimes`).
+- Le cache durable est **préchauffé** par une tâche planifiée (`server/api/cron/warm.js`, déclenchée
+  par `.github/workflows/warm-showtimes.yml`), pour que le visiteur ne paie plus l'aller-retour
+  Allociné. ⚠️ Sa cadence **suit** le TTL de `showtimesFreshness.js`, elle ne l'autorise pas à
+  s'allonger : changer l'un sans l'autre laisse une fenêtre froide ou fait mentir la vue.
+- Le cycle qui sort chez Allociné vit dans `server/utils/refreshShowtimes.js` — **source unique**,
+  partagée par la route à la demande et par le cron. Une divergence ici s'écrirait en base.
 - ⚠️ **Deux endpoints Allociné, deux jeux de champs** : celui par film porte les horaires mais aucun
   marqueur d'événement ; celui par salle les porte. D'où une seconde passe ciblée (`useTheaterEvents`),
   qui rapproche les séances par `internalId`.
@@ -81,11 +87,19 @@ TMD_TOKEN=          # TMDB bearer token
 NUXT_API_KEY=       # TMDB API key
 NUXT_API_BASE_URL=  # TMDB API base URL
 NUXT_API_IMG_URL=   # TMDB image CDN base URL
+NUXT_CRON_SECRET=   # secret du préchauffage — vide = /api/cron/warm éteinte (503), jamais ouverte
 ```
+
+Requis **par l'app et par les scripts** :
+```
+NUXT_SUPABASE_SECRET_KEY=  # clé service-role, contourne RLS — repli : SUPABASE_SERVICE_KEY, SUPABASE_KEY
+```
+⚠️ Plus « scripts uniquement » depuis le préchauffage : `server/api/cron/warm.js` en a besoin — une
+tâche planifiée n'a pas de session, et les politiques RLS de `showtimes_cache` / `cinemas` sont
+réservées à `authenticated`. Elle doit donc exister **sur l'hébergement**, pas seulement en local.
 
 Requis **par les scripts uniquement** (`scripts/`), jamais lus par Nuxt :
 ```
-NUXT_SUPABASE_SECRET_KEY=  # clé service-role, contourne RLS — repli : SUPABASE_SERVICE_KEY, SUPABASE_KEY
 PRIM_TOKEN=                # Île-de-France Mobilités, pour scripts/transit-times.mjs
 HOME_LAT=                  # domicile, pour le calcul des temps de trajet
 HOME_LNG=
@@ -106,6 +120,11 @@ Allociné ou les exploitants depuis l'IP du déploiement. Les routes qui ne font
 le plus chaud du projet — mais elles appellent `rateLimit(event)`
 (`server/utils/rateLimit.js`) : ce qui restait ouvert n'était pas la donnée, c'était la dépense en
 invocations serverless. Compteur en mémoire d'instance, donc écrêtage de l'abus trivial, pas un WAF.
+
+⚠️ **Exception : `server/api/cron/warm.js`.** Elle sort sur le réseau mais ne peut pas appeler
+`requireUser` — une tâche planifiée n'a pas de session. Elle se garde par un **secret partagé**
+(`NUXT_CRON_SECRET`, comparé à durée constante) et **échoue fermée** : secret non configuré → 503,
+jamais un accès ouvert. Toute future route sans visiteur devant elle suit ce modèle, pas le silence.
 
 **Règles partagées entre l'app, le serveur et les scripts** — `shared/utils/` est auto-importé des
 deux côtés depuis Nuxt 3.14 et sans dépendance, donc importable aussi par un script Node nu. Trois

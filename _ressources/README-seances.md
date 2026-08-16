@@ -746,12 +746,16 @@ shared/utils/cineWeek.js           semaine ciné — source unique app + serveur
 
 server/api/allocine/resolve.js     titre TMDB → allocine_id (recherche interne Allociné, cache 12 h)
 server/api/allocine/showtimes.js   lecture GROUPÉE du cache — ne sort jamais sur le réseau
-server/api/allocine/refresh.js     rafraîchit UN (film, date) — la seule route qui appelle Allociné
+server/api/allocine/refresh.js     rafraîchit UN (film, date) à la demande du navigateur
+server/api/cron/warm.js            préchauffage planifié — même cœur, sans visiteur qui attend
+server/utils/refreshShowtimes.js   LE cycle qui sort chez Allociné, partagé par les deux ci-dessus
 server/utils/allocine.js           SOURCE UNIQUE de vérité du format Allociné
-server/utils/showtimesFreshness.js règle de fraîcheur partagée par les deux routes
+server/utils/showtimesFreshness.js règle de fraîcheur partagée par les routes et le cron
 server/utils/promisePool.js        copie serveur du pool de concurrence
 
-scripts/test-seances-rules.mjs     70 tests des règles pures  →  npm test
+.github/workflows/warm-showtimes.yml  les deux cadences du préchauffage
+
+scripts/test-seances-rules.mjs     307 tests des règles pures →  npm test
 scripts/check-seances.mjs          contrôle de santé          →  npm run check:seances
 scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ```
@@ -759,12 +763,17 @@ scripts/spikes/cinefil.mjs          mesure de la seconde source (cf. plus bas)
 ### Les règles pures sont testées
 
 ```bash
-npm test        # 30 assertions, aucune dépendance réseau ni base, < 1 s
+npm test        # 307 assertions, aucune dépendance réseau ni base, < 1 s
 ```
 
-Trois familles, toutes importées **du code réel** (aucune copie) : le report des salles disparues
-(`carryOverMissing`), les repères de la semaine ciné (`cineWeek`) et les filtres / tri /
-regroupements (`seancesGrouping`).
+Neuf familles, toutes importées **du code réel** (aucune copie) — la liste à jour vit en tête de
+`scripts/test-seances-rules.mjs`. La dernière arrivée : la fraîcheur anticipée du préchauffage
+(`isShowtimesFresh` avec son horizon) et le périmètre partagé (`seanceScope`).
+
+⚠️ `showtimesFreshness.js` lit `isoDay` / `lastWednesday` comme des **globales** — c'est l'auto-import
+Nitro de `shared/utils/`. Ne pas « corriger » ça par un import relatif : Nitro le résout depuis son
+bundle et non depuis la source, ce qui casse *toutes* les routes serveur d'un coup. Le script de test
+pose les deux sur `globalThis`, exactement comme Nitro.
 
 Pourquoi celles-là et pas d'autres : elles sont **pures** — donc triviales à tester — et leurs
 erreurs sont **silencieuses**. Un cache qui perd une salle, un film qui reste « en salle » de trop,
@@ -778,6 +787,67 @@ ce projet a passé sa journée à traquer à la main.
 |---|---|---|---|
 | **L1** | `useState` clé `allocineId:date` | la visite | changer de jour puis revenir ne refetch rien (0,6 Mo pour 7 jours) |
 | **L2** | table `showtimes_cache` | durable, partagé | survit au cold start Vercel, que le cache mémoire Nitro ne sait pas faire |
+
+### Le préchauffage planifié — `/api/cron/warm`
+
+Le TTL est de 2 h (aujourd'hui, demain) et 3 h (au-delà). Un utilisateur qui passe deux ou trois
+fois dans la journée tombait donc presque toujours sur un cache expiré, et payait l'aller-retour
+Allociné — une quinzaine de sorties réseau — avant de voir quoi que ce soit. La tâche planifiée fait
+payer ce coût à un cron plutôt qu'à lui.
+
+⚠️ **Ce n'est pas une invitation à relâcher le TTL.** Préchauffer tous les trois jours n'aurait de
+sens qu'en allongeant `FRESH_NEAR` / `FRESH_FAR` d'autant — et c'est exactement le bug documenté en
+tête de `showtimesFreshness.js`. La cadence **suit** le TTL, elle ne le remplace pas.
+
+Deux périmètres, deux cadences (`.github/workflows/warm-showtimes.yml`) :
+
+| Périmètre | Journées | Cadence | Pourquoi |
+|---|---|---|---|
+| `near` | aujourd'hui, demain | toutes les 2 h, 6h→20h UTC | la grille bouge en cours de journée ; personne ne consulte à 4 h du matin |
+| `far` | J+2 → J+6 | 2 ×/jour | fenêtre d'ouverture des ventes, qui bouge par à-coups — cinq journées, donc cinq fois le coût |
+
+La route juge la fraîcheur à `maintenant + cadence` (`isShowtimesFresh(fetchedAt, date, at)`) et non
+au présent : la question est « cette entrée tiendra-t-elle jusqu'à mon prochain passage ? ». Sans ça,
+une entrée écrite par une **visite** 30 minutes avant le cron est jugée fraîche, ignorée, et expire
+une heure et demie plus tard — sur le dos du visiteur suivant.
+
+> Conséquence à connaître : la cadence étant calée sur le TTL, `skipped` reste **0 par
+> construction**. Ce n'est pas un réglage à corriger, c'est le prix de « le visiteur ne tombe jamais
+> sur un cache froid ». Mesuré : `near` = 30 rafraîchissements en ~2,5 s, `far` = 75 en ~4 s.
+
+Deux réglages, une fois :
+
+```
+Vercel → Settings → Environments → Production → Environment Variables
+    NUXT_CRON_SECRET            secret partagé, généré par `openssl rand -hex 24`
+    NUXT_SUPABASE_SECRET_KEY    clé service-role — n'était jusque-là que locale
+
+GitHub → Settings → Secrets and variables → Actions
+    onglet Secrets   : CRON_SECRET   même valeur que NUXT_CRON_SECRET
+    onglet Variables : SITE_URL      ex. https://cine-calendar.vercel.app
+```
+
+⚠️ **Redéployer après avoir posé les variables Vercel** : elles sont injectées dans l'environnement de
+la fonction au déploiement, pas à chaud. Tant qu'on n'a pas redéployé, la route répond 503.
+
+⚠️ **Vercel Deployment Protection.** Le projet a « Vercel Authentication » activé : certaines URLs
+exigent une session Vercel, qu'un runner GitHub n'a pas. Le mur répond alors une page HTML
+d'authentification — donc un 401 **qui ne vient pas de la route**, et qu'on lirait à tort comme un
+`CRON_SECRET` erroné. En Standard Protection le domaine de production reste ouvert et il n'y a rien à
+faire ; sinon, générer un secret dans *Settings → Deployment Protection → Protection Bypass for
+Automation* et le poser dans GitHub sous `VERCEL_AUTOMATION_BYPASS_SECRET`. Le workflow envoie alors
+l'en-tête `x-vercel-protection-bypass` ; le secret est **optionnel**, son absence ne change rien.
+
+La clé service-role est nécessaire parce qu'un cron n'a pas de session et que les politiques RLS de
+`showtimes_cache` et `cinemas` sont réservées à `authenticated`. Sans `NUXT_CRON_SECRET`, la route
+répond 503 : elle sort sur le réseau, elle ne s'ouvre donc pas faute de configuration, elle s'éteint.
+
+⚠️ Deux limites de GitHub Actions : les crons peuvent être décalés de plusieurs minutes aux heures
+chargées (sans conséquence, l'horizon de fraîcheur absorbe), et les workflows planifiés sont
+**désactivés après 60 jours sans activité** sur le dépôt.
+
+Ce que ça ne couvre pas : la liste des films vient de Supabase à chaque chargement, et cette
+requête-là reste. Cache chaud, le plancher est de ~2 allers-retours Supabase.
 
 ### Pourquoi deux routes plutôt qu'une
 

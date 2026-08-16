@@ -44,6 +44,9 @@ export default defineNuxtConfig({
         apiKey: '',
         apiBaseUrl: '',
         apiImgUrl: '',
+        // Secret partagé avec la tâche planifiée de préchauffage (`server/api/cron/warm.js`).
+        // Surchargé au runtime par `NUXT_CRON_SECRET` : vide = route éteinte, jamais ouverte.
+        cronSecret: '',
         public: {
             siteUrl: '',
         },

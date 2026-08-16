@@ -21,7 +21,7 @@
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
-import { carryOverMissing } from '../server/utils/showtimesFreshness.js';
+import { carryOverMissing, isShowtimesFresh } from '../server/utils/showtimesFreshness.js';
 import { isoDay, lastWednesday, SEANCES_HORIZON_DAYS } from '../shared/utils/cineWeek.js';
 import {
     applyFilters, groupByFilm, groupByCinema, countShowtimes,
@@ -46,7 +46,20 @@ import {
     movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips, entryKinds, entryKey,
 } from '../app/utils/seanceEvents.js';
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
+import { hasDatedEventFrom, isSeanceFilm } from '../shared/utils/seanceScope.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
+
+// --- Auto-imports simulés ------------------------------------------------------------------------
+//
+// Les fichiers testés vivent dans Nuxt ou Nitro, qui leur injectent `shared/utils/` sans `import` ;
+// chargés en Node nu ils lèvent un `ReferenceError` loin de la cause. À compléter dès qu'un fichier
+// testé ici lit un nouveau `shared/utils/`.
+//
+// ⚠️ **Ne pas "corriger" par un import relatif côté production** : Nitro résout ces chemins depuis son
+// bundle, ce qui casse *toutes* les routes serveur d'un coup.
+globalThis.isoDay = isoDay;                          // ← server/utils/showtimesFreshness.js
+globalThis.lastWednesday = lastWednesday;            // ← server/utils/showtimesFreshness.js
+globalThis.hasDatedEventFrom = hasDatedEventFrom;
 
 let pass = 0, fail = 0;
 
@@ -891,6 +904,76 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
     t('identité d\'une entrée = journée + salle',
         entryKey({ date: '2026-08-17', cinema: 'MK2 Bibliothèque' }), '2026-08-17|MK2 Bibliothèque');
     t('salle absente → la journée suffit', entryKey({ date: '2026-08-17' }), '2026-08-17|');
+}
+
+// --- 10. Fraîcheur anticipée ---------------------------------------------------------------------
+//
+// Règle ajoutée avec le préchauffage planifié (`server/api/cron/warm.js`). Elle a le profil de défaut
+// du reste de ce fichier : elle échoue en **affichant du faux** plutôt qu'en levant quoi que ce soit
+// — un cron qui ne rafraîchit jamais rien, un film que le préchauffage laisse au visiteur.
+{
+    console.log('\n\x1b[1mfraîcheur anticipée — ce qui expirera avant le prochain passage\x1b[0m');
+
+    const HEURE = 60 * 60 * 1000;
+    // Postérieur au dernier mercredi par construction : sans ça, un test lancé un mercredi matin
+    // basculerait sur la règle de renouvellement des grilles et mesurerait autre chose.
+    const recent = new Date(Math.max(lastWednesday() + 60_000, Date.now() - 30 * 60 * 1000)).toISOString();
+
+    t('journée proche, relevé récent → frais maintenant', isShowtimesFresh(recent, isoDay(0)), true);
+    // Le cœur du préchauffage : jugée à l'horizon du prochain passage, la même entrée est à refaire.
+    // Sans ce comportement, un cron aligné sur le TTL laisse systématiquement une fenêtre froide.
+    t('… mais périmée à l\'horizon du prochain passage', isShowtimesFresh(recent, isoDay(0), Date.now() + 2 * HEURE), false);
+
+    t('journée lointaine, TTL plus long → frais maintenant', isShowtimesFresh(recent, isoDay(4)), true);
+    t('… et périmée à trois heures d\'ici', isShowtimesFresh(recent, isoDay(4), Date.now() + 3 * HEURE), false);
+
+    // ⚠️ La règle du mercredi ne s'anticipe pas : elle se juge toujours au présent, sinon tout le
+    // catalogue serait rafraîchi chaque mardi soir.
+    const avantMercredi = new Date(lastWednesday() - HEURE).toISOString();
+    t('relevé d\'avant le dernier mercredi → jamais frais', isShowtimesFresh(avantMercredi, isoDay(0)), false);
+    t('… y compris sans horizon', isShowtimesFresh(avantMercredi, isoDay(0), Date.now()), false);
+    t('horodatage illisible → pas frais', isShowtimesFresh('bientôt', isoDay(0)), false);
+
+    console.log('\n\x1b[1mseanceScope — le cron doit préchauffer un SUR-ensemble de la vue\x1b[0m');
+
+    // L'invariant qui justifie l'extraction dans `shared/` : si le périmètre du préchauffage devenait
+    // plus étroit que celui de la vue, des films sortiraient du cron sans une erreur ni un log — et le
+    // visiteur repaierait l'attente qu'on vient de supprimer. On vérifie donc l'**inclusion**, pas
+    // l'égalité : le cron a le droit d'en préchauffer plus, jamais moins.
+    const jourRef = "2026-08-16";
+    const bornesVue = { today: jourRef, freshSince: Date.parse("2026-08-12T00:00:00.000Z") };
+    const releveFrais = '2026-08-15T10:00:00.000Z';
+    const releveVieux = '2026-08-11T10:00:00.000Z';   // d'avant le « mercredi »
+    const avecEvent = (extra) => ({
+        state: 'unseen', events_checked_at: releveFrais,
+        events: [{ date: '2026-08-18', labels: ['Avant-première'] }],
+        ...extra,
+    });
+
+    const casLimites = [
+        ['film en salle sans événement', { state: 'inTheaters', events: [] }],
+        ['avant-première avant la sortie (pas inTheaters)', avecEvent({})],
+        ['relevé d\'événement périmé', avecEvent({ events_checked_at: releveVieux })],
+        ['événement déjà passé', avecEvent({ events: [{ date: '2026-08-15', labels: ['Avant-première'] }] })],
+        ['événement sans libellé', avecEvent({ events: [{ date: '2026-08-18', labels: [] }] })],
+        ['film vu', avecEvent({ state: 'seen' })],
+        ['film sans rien', { state: 'unseen', events: [] }],
+    ];
+
+    for (const [label, movie] of casLimites) {
+        // `hasUpcomingEvent || inTheaters` est exactement le `seanceFilms` de `useMovieCalendar`.
+        const vue = movie.state === 'inTheaters' || hasUpcomingEvent(movie, bornesVue);
+        const cron = isSeanceFilm(movie, jourRef);
+        t(`${label} : vue ⊆ cron`, !vue || cron, true);
+    }
+
+    // La seule divergence tolérée, et dans le bon sens : le cron ignore la garde de fraîcheur du
+    // relevé, donc il préchauffe un film que la vue ne mettra pas encore en avant.
+    t('relevé périmé → hors de la vue, dans le cron',
+        [hasUpcomingEvent(avecEvent({ events_checked_at: releveVieux }), bornesVue),
+            isSeanceFilm(avecEvent({ events_checked_at: releveVieux }), jourRef)], [false, true]);
+
+    t('la règle nue ignore les films vus', hasDatedEventFrom(avecEvent({ state: "seen" }), jourRef), false);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

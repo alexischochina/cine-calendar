@@ -3,6 +3,9 @@
 // Une seule définition : les deux routes doivent trancher exactement pareil, sans quoi la lecture
 // déclarerait « à rafraîchir » ce que le rafraîchissement juge encore bon, et on tournerait en rond.
 
+// ⚠️ `isoDay` / `lastWednesday` viennent de l'auto-import Nitro de `shared/utils/cineWeek.js`. **Ne
+// pas les importer en relatif** : Nitro résout ce chemin depuis son bundle, ce qui casse *toutes* les
+// routes serveur d'un coup. Le script de test les pose sur `globalThis`, comme Nitro.
 const HOUR = 60 * 60 * 1000;
 const FRESH_NEAR = 2 * HOUR;   // aujourd'hui et demain : ça bouge encore (séances ajoutées, complets)
 
@@ -34,11 +37,18 @@ export const carryOverMissing = (previous, fresh, previousFetchedAt) => {
         .filter(theater => Date.parse(theater.unconfirmedSince) > cutoff);
 };
 
-export const isShowtimesFresh = (fetchedAt, date) => {
+// `at` : instant auquel on juge, par défaut maintenant. Le préchauffage le porte dans le futur —
+// « cette entrée tiendra-t-elle jusqu'à mon prochain passage ? » — pour rafraîchir ce qui expirerait
+// entre deux passages. Sans lui, une entrée écrite par une visite juste après le cron est encore
+// fraîche au cron suivant, donc ignorée, et expire dans la foulée sur le dos du premier visiteur.
+//
+// ⚠️ La règle du mercredi se juge **toujours** au présent : l'anticiper rafraîchirait tout le
+// catalogue chaque mardi soir.
+export const isShowtimesFresh = (fetchedAt, date, at = Date.now()) => {
     const written = Date.parse(fetchedAt);
     if (!Number.isFinite(written)) return false;
     if (written < lastWednesday()) return false;
 
     const ttl = (date === isoDay(0) || date === isoDay(1)) ? FRESH_NEAR : FRESH_FAR;
-    return Date.now() - written < ttl;
+    return at - written < ttl;
 };
