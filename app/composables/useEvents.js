@@ -13,7 +13,7 @@
 // vue Séances, gratuit ensuite grâce au L2. Relevé **séquentiel**, la page se remplit au fur et à mesure.
 
 export function useEvents() {
-    const { movies, eventBounds } = useMovieCalendar();
+    const { movies } = useMovieCalendar();
     const { resolveAllocineIds, loadShowtimes } = useShowtimes();
     const { loadEvents } = useTheaterEvents();
     const { syncEvents } = useSeanceEvents();
@@ -35,28 +35,9 @@ export function useEvents() {
         Array.from({ length: SEANCES_HORIZON_DAYS }, (_, i) => isoDay(i))
     );
 
-    // Films à événement, triés par imminence. Un film y figure qu'il soit à l'affiche ou pas — une
-    // avant-première a lieu *avant* la sortie, c'est le cas que la page doit surtout montrer.
-    //
-    // ⚠️ Les entrées sont rendues **brutes**, au grain (journée, salle), et non regroupées par journée
-    // comme le fait le rail. C'est le texte libre de l'exploitant qui l'impose : il est attaché à une
-    // salle précise. Fusionner la journée oblige à n'en garder qu'un (cf. `groupEventsByDay`), si bien
-    // qu'une avant-première dans trois UGC affichait la précision de l'un des trois sur la ligne des
-    // trois — et taisait celle des autres. La page groupe ce qu'elle veut, elle ne peut pas dégrouper
-    // ce qu'on lui a déjà fondu.
-    const films = computed(() => {
-        const bounds = eventBounds();
-        return movies.value
-            .filter(m => hasUpcomingEvent(m, bounds))
-            .map(m => ({ movie: m, entries: movieEvents(m, bounds) }))
-            .sort((a, b) =>
-                String(a.entries[0]?.date).localeCompare(String(b.entries[0]?.date))
-                || String(a.movie.title).localeCompare(String(b.movie.title)));
-    });
-
-    const nbEvents = computed(() =>
-        films.value.reduce((n, f) => n + f.entries.length, 0)
-    );
+    // La moitié **lecture**, sortie dans `useEventFilms` pour que le rail puisse l'utiliser sans
+    // monter au passage toute la chaîne de relevé ci-dessus.
+    const { films, nbEvents } = useEventFilms();
 
     // Relevé de la semaine. `force` ignore la mémoire de session (bouton « Actualiser »).
     const scan = async ({ force = false } = {}) => {
