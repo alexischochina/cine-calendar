@@ -561,6 +561,17 @@ d'un film à venir. Un film déjà à l'affiche qui a un ciné-club samedi n'ét
 ouvrait le samedi dans la vue Séances. Cette page a précisément pour objet de ne rien manquer sur la
 semaine, donc le balayage complet s'y justifie — et nulle part ailleurs.
 
+**Qui est balayé.** Les films `inTheaters`, plus les **sorties de la semaine ciné encore `unseen`**
+(`isFreshRelease`, `shared/utils/seanceScope.js`). Ce second lot bouchait un trou franc : l'état ne
+bascule qu'au contrôle hebdomadaire, qui ne regarde que la journée d'aujourd'hui, si bien qu'un film
+sorti mercredi et resté `unseen` — relevé raté, retrait sur horizon vide, hoquet Allociné — traversait
+la semaine sans que ses six autres journées soient regardées **par personne** : `useUpcomingEvents`
+s'arrête à la sortie, le balayage ne prenait que les `inTheaters`. La règle est bornée des deux côtés,
+et c'est tout son intérêt : avant le mercredi c'est l'affaire du contrôle hebdomadaire, après aujourd'hui
+celle de `useUpcomingEvents`, qui sait le faire en une requête par film là où le balayage en coûte sept.
+Elle est partagée avec le préchauffage (`scopeFilms` dans `warm.js`), sinon le visiteur repaierait les
+sept journées de ces films-là.
+
 Coût à froid : 7 journées × (~12 films + ~25 salles), soit l'équivalent exact de cliquer les sept jours
 de la vue Séances. Le cache L2 le rend gratuit ensuite (même règle de fraîcheur), et un retour sur
 l'onglet le même jour ne rebalaie pas. Le relevé est **séquentiel**, hors du chemin d'affichage, et la

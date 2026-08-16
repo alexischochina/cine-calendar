@@ -23,7 +23,7 @@
 
 import { carryOverMissing, isShowtimesFresh } from '../server/utils/showtimesFreshness.js';
 import { pruneSnapshot, stampForDisplay } from '../app/utils/seancesSnapshot.js';
-import { isoDay, lastWednesday, SEANCES_HORIZON_DAYS } from '../shared/utils/cineWeek.js';
+import { isoDay, lastWednesday, lastWednesdayDay, SEANCES_HORIZON_DAYS } from '../shared/utils/cineWeek.js';
 import {
     applyFilters, groupByFilm, groupByCinema, countShowtimes,
     isCardEligible, arrondissementFromZip, arrondissementLabel,
@@ -47,7 +47,7 @@ import {
     movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips, entryKinds, entryKey,
 } from '../app/utils/seanceEvents.js';
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
-import { hasDatedEventFrom, isSeanceFilm } from '../shared/utils/seanceScope.js';
+import { hasDatedEventFrom, isSeanceFilm, isFreshRelease } from '../shared/utils/seanceScope.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
 import { parseLetterboxdFilm, isLetterboxdDirectorUrl } from '../shared/utils/letterboxdFilm.js';
@@ -118,6 +118,14 @@ console.log('\n\x1b[1mcineWeek — repères partagés app / serveur / scripts\x1
     t('lastWednesday tombe un mercredi', w.getDay(), 3);
     t('   … à minuit', [w.getHours(), w.getMinutes(), w.getSeconds()], [0, 0, 0]);
     t('   … et dans les 7 derniers jours', Date.now() - w.getTime() < 7 * 24 * 3600 * 1000, true);
+
+    // Les deux repères doivent désigner **le même** mercredi : une reconversion maison par
+    // `toISOString()` décalerait d'un jour le soir à Paris, et le périmètre sauterait un film.
+    t('lastWednesdayDay a le format YYYY-MM-DD', /^\d{4}-\d{2}-\d{2}$/.test(lastWednesdayDay()), true);
+    t('   … et désigne le même jour que lastWednesday',
+        lastWednesdayDay(),
+        `${w.getFullYear()}-${String(w.getMonth() + 1).padStart(2, '0')}-${String(w.getDate()).padStart(2, '0')}`);
+    t('   … jamais après aujourd\'hui', lastWednesdayDay() <= isoDay(0), true);
 }
 
 // --- 3. Filtres, tri, regroupements -------------------------------------------------------------
@@ -980,6 +988,28 @@ console.log('\n\x1b[1minTheaters — retirer sans se tromper, garder sans mentir
             isSeanceFilm(avecEvent({ events_checked_at: releveVieux }), jourRef)], [false, true]);
 
     t('la règle nue ignore les films vus', hasDatedEventFrom(avecEvent({ state: "seen" }), jourRef), false);
+
+    // `isFreshRelease` — les sorties de la semaine restées `unseen`, que ni le contrôle hebdomadaire ni
+    // `useUpcomingEvents` ne relevaient. `jourRef` est un dimanche, son mercredi ciné est le 12.
+    const mercredi = '2026-08-12';
+    const sortie = (extra) => ({ media: 'cinema', state: 'unseen', release_date: mercredi, ...extra });
+
+    t('sortie du mercredi, pas encore basculée', isFreshRelease(sortie({}), mercredi, jourRef), true);
+    t('sortie du jour même', isFreshRelease(sortie({ release_date: jourRef }), mercredi, jourRef), true);
+    t('sortie de la semaine précédente → contrôle hebdomadaire',
+        isFreshRelease(sortie({ release_date: '2026-08-11' }), mercredi, jourRef), false);
+    t('sortie à venir → useUpcomingEvents, une requête au lieu de sept',
+        isFreshRelease(sortie({ release_date: '2026-08-19' }), mercredi, jourRef), false);
+    t('déjà en salle → déjà dans le périmètre', isFreshRelease(sortie({ state: 'inTheaters' }), mercredi, jourRef), false);
+    t('film vu', isFreshRelease(sortie({ state: 'seen' }), mercredi, jourRef), false);
+    t('état choisi par l\'utilisateur', isFreshRelease(sortie({ state: 'downloadable' }), mercredi, jourRef), false);
+    t('film hors cinéma', isFreshRelease(sortie({ media: 'vod' }), mercredi, jourRef), false);
+    t('sans date de sortie', isFreshRelease(sortie({ release_date: null }), mercredi, jourRef), false);
+
+    // L'invariant du dessus, étendu : ce que le relevé de la vue Événements balaie doit être dans le
+    // périmètre du cron, sans quoi le visiteur repaie sept journées d'Allociné.
+    t('sortie fraîche : relevé ⊆ cron',
+        isSeanceFilm(sortie({}), jourRef) || isFreshRelease(sortie({}), mercredi, jourRef), true);
 
     console.log('\n\x1b[1mpruneSnapshot — n\'afficher que ce qu\'on sait dater\x1b[0m');
 

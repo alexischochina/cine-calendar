@@ -57,7 +57,12 @@ export function useEvents() {
             // reviendrait à ne jamais rafraîchir les films dont on sait déjà qu'ils ont un événement —
             // donc à ne jamais voir disparaître un événement déprogrammé, ni apparaître une deuxième
             // date sur un film déjà repéré.
-            const list = movies.value.filter(m => m.state === 'inTheaters');
+            //
+            // Plus les sorties de la semaine encore `unseen` (`isFreshRelease`) : un film qui a raté sa
+            // bascule « en salle » n'était relevé par personne. Règle partagée avec le préchauffage.
+            const weekStart = lastWednesdayDay();
+            const list = movies.value.filter(m =>
+                m.state === 'inTheaters' || isFreshRelease(m, weekStart, today));
             if (list.length) {
                 await resolveAllocineIds(list);
 

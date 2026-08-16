@@ -38,9 +38,28 @@ const digest = (value) => createHash('sha256').update(String(value ?? ''), 'utf8
 
 const secretMatches = (given, expected) => timingSafeEqual(digest(given), digest(expected));
 
-// Périmètre : les films de la vue Séances. Règle partagée avec elle (`shared/utils/seanceScope.js`),
-// où le sur-ensemble volontaire est expliqué et testé.
-const scopeFilms = (rows, today) => rows.filter(m => m.allocine_id && isSeanceFilm(m, today));
+// Date de sortie **effective** : l'override manuel gagne sur la date TMDB. Sans ça, un film redaté à la
+// main serait balayé par la vue Événements et jamais préchauffé. La ligne est remaniée comme le fait
+// l'app (`effectiveDate` dans `useMovieCalendar`), même paire de champs — deux conventions pour la même
+// notion divergeraient au premier partage d'une règle datée.
+//
+// ⚠️ `manual_release_date` est une colonne `date` : PostgREST rend `"2026-08-12"`, donc `slice` est
+// exact. Le jour où elle passerait en `timestamptz`, c'est ici qu'il faudrait convertir en heure
+// locale, sinon les sorties du soir se lisent la veille.
+const withEffectiveDate = (row) => (row.manual_release_date
+    ? { ...row, release_date: String(row.manual_release_date).slice(0, 10), _tmdbReleaseDate: row.release_date ?? null }
+    : row);
+
+// Périmètre : les films de la vue Séances, plus les sorties de la semaine encore `unseen` — celles que
+// le relevé de la vue Événements balaie sur sept journées (cf. `useEvents`). Règles partagées avec
+// elles (`shared/utils/seanceScope.js`), où le sur-ensemble volontaire est expliqué et testé.
+//
+// ⚠️ `allocine_id` filtré d'abord : la résolution de date tournerait sinon sur les ~440 lignes du
+// calendrier pour n'en garder qu'une vingtaine, dix fois par jour.
+const scopeFilms = (rows, today, weekStart) => rows
+    .filter(m => m.allocine_id)
+    .map(withEffectiveDate)
+    .filter(m => isSeanceFilm(m, today) || isFreshRelease(m, weekStart, today));
 
 export default defineEventHandler(async (event) => {
     // Avant la garde du secret : un martèlement anonyme finit en 401, mais après avoir réveillé la
@@ -84,16 +103,17 @@ export default defineEventHandler(async (event) => {
 
     const { data: rows, error } = await client
         .from('calendar')
-        // Strictement ce que lit `isSeanceFilm`. ⚠️ Lecture de tout le calendrier, rejouée à chaque
-        // tranche : une colonne de plus ici se paie dix fois par jour.
-        .select('allocine_id, state, events');
+        // Strictement ce que lisent `isSeanceFilm` et `isFreshRelease` (dates comprises, cf.
+        // `withEffectiveDate`). ⚠️ Lecture de tout le calendrier, rejouée à chaque tranche : une
+        // colonne de plus ici se paie dix fois par jour.
+        .select('allocine_id, state, events, media, release_date, manual_release_date');
 
     if (error) {
         console.error('[cron] Lecture du calendrier échouée:', error.message);
         throw createError({ statusCode: 502, statusMessage: 'Calendar unreadable' });
     }
 
-    const films = scopeFilms(rows ?? [], today);
+    const films = scopeFilms(rows ?? [], today, lastWednesdayDay());
     const ids = [...new Set(films.map(m => m.allocine_id))];
 
     if (!ids.length) {
