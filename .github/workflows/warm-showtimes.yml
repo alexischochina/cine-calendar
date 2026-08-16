@@ -1,0 +1,137 @@
+# Préchauffage du cache de séances — appelle `/api/cron/warm` pour que le cache Supabase soit déjà
+# chaud quand quelqu'un ouvre `/seances`, au lieu de faire payer l'aller-retour Allociné au visiteur.
+#
+# Pourquoi GitHub Actions et pas un cron Vercel : le plan Hobby ne déclenche qu'une fois par jour,
+# ce qui ne couvre pas les journées proches (TTL 2 h). Ici la cadence est libre et gratuite.
+#
+# ⚠️ La cadence **doit** rester d'accord avec les `everyMs` de `SCOPES` dans
+# `server/api/cron/warm.js` : c'est l'horizon qui décide quelles entrées rafraîchir. Changer l'un sans
+# l'autre laisse une fenêtre froide (cron trop lent) ou refait des sorties pour rien (trop rapide).
+#
+# Réglages à poser une fois dans le dépôt (Settings → Secrets and variables → Actions) :
+#   onglet Secrets   : CRON_SECRET                       la même valeur que NUXT_CRON_SECRET sur Vercel
+#   onglet Variables : SITE_URL                          ex. https://cine-calendar.vercel.app
+#   onglet Secrets   : VERCEL_AUTOMATION_BYPASS_SECRET   OPTIONNEL, cf. plus bas
+#
+# Le troisième n'est nécessaire que si Vercel Deployment Protection intercepte l'URL de `SITE_URL`
+# (« Vercel Authentication » activé sur le projet). Symptôme : le workflow échoue sur du HTML
+# d'authentification Vercel au lieu du JSON de la route. Le secret se génère dans
+# Vercel → Settings → Deployment Protection → Protection Bypass for Automation.
+#
+# ⚠️ Deux limites de GitHub Actions : les crons peuvent être décalés de plusieurs minutes aux heures
+# chargées (sans conséquence, l'horizon de fraîcheur absorbe), et les workflows planifiés sont
+# **désactivés après 60 jours sans activité** sur le dépôt.
+
+name: Préchauffage des séances
+
+on:
+  schedule:
+    # `near` — aujourd'hui et demain, toutes les 2 h en heures éveillées (6h→20h UTC = 8h→22h Paris).
+    - cron: '0 6-21/2 * * *'
+    # `far` — J+2 → J+6, deux passages. ⚠️ 5h40 et 17h40, soit **12 h pile** : c'est l'`everyMs` de
+    # `far`. Déplacer un passage sans corriger `everyMs` rouvre une fenêtre froide.
+    - cron: '40 5,17 * * *'
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Périmètre à préchauffer'
+        required: true
+        default: near
+        type: choice
+        options: [near, far, all]
+
+# Un seul passage à la fois : deux crons qui se chevauchent doubleraient les sorties réseau.
+concurrency:
+  group: warm-showtimes
+  cancel-in-progress: false
+
+jobs:
+  warm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Choisir le périmètre
+        id: scope
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          set -euo pipefail
+
+          # ⚠️ Discriminé sur la **minute** du cron (`near` à l'heure pile, `far` à :40), pas sur sa
+          # ligne entière : la recopier ici à chaque changement d'horaire s'oublie, et l'oubli ne casse
+          # rien de visible — `far` tourne avec le périmètre `near`, J+2→J+6 n'est plus préchauffé.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "value=${{ inputs.scope }}" >> "$GITHUB_OUTPUT"
+          elif [ "${SCHEDULE%% *}" = "40" ]; then
+            echo "value=far" >> "$GITHUB_OUTPUT"
+          else
+            echo "value=near" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Préchauffer
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          VERCEL_BYPASS: ${{ secrets.VERCEL_AUTOMATION_BYPASS_SECRET }}
+          SCOPE: ${{ steps.scope.outputs.value }}
+        run: |
+          set -euo pipefail
+
+          # Échouer ici plutôt que d'envoyer une requête anonyme sur une URL vide : un workflow vert
+          # qui n'a rien préchauffé est pire qu'un workflow rouge.
+          : "${SITE_URL:?SITE_URL manquant — Settings → Variables → Actions}"
+          : "${CRON_SECRET:?CRON_SECRET manquant — Settings → Secrets → Actions}"
+
+          # Deployment Protection : sur une URL protégée, le mur Vercel répond une page HTML
+          # d'authentification — un 401 qui ne vient PAS de notre route, et qu'on lirait à tort comme un
+          # secret erroné. Le contournement est optionnel (inutile sur le domaine de production) ;
+          # Vercel ignore l'en-tête quand il ne sert pas.
+          BYPASS=()
+          if [ -n "${VERCEL_BYPASS:-}" ]; then
+            BYPASS=(-H "x-vercel-protection-bypass: ${VERCEL_BYPASS}")
+          fi
+
+          # `far` est découpé par journée (`?days=`) pour tenir dans la durée maximale d'une fonction :
+          # un dépassement couperait le passage en plein milieu. Cadence et horizon inchangés.
+          if [ "${SCOPE}" = "far" ]; then
+            SLICES="2 3 4 5 6"
+          else
+            SLICES=""
+          fi
+
+          warm() {
+            # `--fail-with-body` : un 4xx/5xx fait échouer l'appel **et** montre le corps, sinon une
+            # route mal configurée passe pour un succès silencieux.
+            #
+            # ⚠️ `${BYPASS[@]+…}` : sous `set -u`, développer un tableau vide est une erreur en
+            # bash < 4.4. Le runner est en bash 5, mais l'idiome portable coûte trois caractères.
+            #
+            # ⚠️ Statut capturé et **renvoyé explicitement** : une fonction rend le code de sa dernière
+            # commande, donc le `echo` écrasait celui de `curl` par un 0 — appelée derrière un `||`
+            # elle réussissait toujours, et un préchauffage en panne sortait vert.
+            status=0
+            curl --fail-with-body -sS --max-time 300 \
+              -H "Authorization: Bearer ${CRON_SECRET}" ${BYPASS[@]+"${BYPASS[@]}"} "$1" || status=$?
+            echo
+            return "${status}"
+          }
+
+          # ⚠️ `|| fails=…` plutôt qu'un `set -e` qui avorte : un hoquet sur J+2 emportait J+3 → J+6,
+          # et le passage suivant est douze heures plus tard. Chaque tranche est indépendante ; l'étape
+          # échoue à la fin, en nommant ce qui a raté.
+          fails=0
+
+          if [ -n "${SLICES}" ]; then
+            for day in ${SLICES}; do
+              warm "${SITE_URL%/}/api/cron/warm?scope=${SCOPE}&days=${day}" \
+                || { echo "::error::Préchauffage échoué pour J+${day} (périmètre ${SCOPE})"; fails=$((fails + 1)); }
+            done
+          else
+            warm "${SITE_URL%/}/api/cron/warm?scope=${SCOPE}" \
+              || { echo "::error::Préchauffage échoué (périmètre ${SCOPE})"; fails=$((fails + 1)); }
+          fi
+
+          if [ "${fails}" -ne 0 ]; then
+            echo "::error::${fails} appel(s) de préchauffage en échec."
+            exit 1
+          fi

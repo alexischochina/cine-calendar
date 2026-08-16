@@ -19,11 +19,26 @@ const {data} = await useFetch(url)
 
 const bestResults = computed(() => data.value ? data.value.results.slice(0, 5) : []);
 
+const listboxId = useId();
+const activeIndex = ref(-1);
+const suggestionsDismissed = ref(false);
+
+const suggestionsOpen = computed(() =>
+    !movieSelected.value && !suggestionsDismissed.value && !!movieTitle.value && bestResults.value.length > 0);
+
+const activeSuggestionId = computed(() =>
+    activeIndex.value >= 0 ? `${listboxId}-option-${activeIndex.value}` : undefined);
+
+// Les résultats se renouvellent à chaque frappe : un index conservé désignerait un autre film.
+watch(bestResults, () => { activeIndex.value = -1; });
+
 const resetForm = () => {
     movieTitle.value = '';
     movieId.value = 0;
     movieSelected.value = false;
     selectedMedia.value = 'cinema';
+    activeIndex.value = -1;
+    suggestionsDismissed.value = false;
     nextTick(() => movieInput.value?.focus());
 }
 
@@ -81,6 +96,10 @@ const addMovie = async () => {
         };
         resetForm();
         emit('movie-added', newEntry)
+        // Ici plutôt qu'à la réception de `movie-added` : le layout `bare` émet sans écouter.
+        // Après l'emit et sans `await` — l'insert est acquis, et le slug deviné s'affiche en
+        // attendant plutôt que de retenir la fermeture du formulaire jusqu'à 8 s.
+        void resolveLetterboxdDirectors(client, newEntry);
     } catch (error) {
         console.error("Erreur lors de l'insertion:", error.message);
     }
@@ -92,7 +111,32 @@ const setMovieInfos = (title, id) => {
     movieTitle.value = title;
     movieId.value = id;
     movieSelected.value = true;
+    activeIndex.value = -1;
     nextTick(() => movieInput.value?.focus());
+}
+
+const onInput = () => {
+    movieSelected.value = false;
+    suggestionsDismissed.value = false;
+}
+
+const moveActive = (step) => {
+    if (!suggestionsOpen.value) return;
+    const count = bestResults.value.length;
+    activeIndex.value = activeIndex.value === -1
+        ? (step > 0 ? 0 : count - 1)
+        : (activeIndex.value + step + count) % count;
+}
+
+const dismissSuggestions = () => {
+    suggestionsDismissed.value = true;
+    activeIndex.value = -1;
+}
+
+const onEnter = () => {
+    const active = suggestionsOpen.value ? bestResults.value[activeIndex.value] : null;
+    if (active) return setMovieInfos(active.title, active.id);
+    if (movieSelected.value) addMovie();
 }
 
 const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
@@ -103,28 +147,35 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
         <div class="form-content flex -align-center">
             <input ref="movieInput" type="text" name="movie" id="movie" class="text-input input-body"
                    placeholder="Titre du film" aria-label="Titre du film à ajouter" v-model="movieTitle" autocomplete="off"
-                   @input="movieSelected = false"
-                   @keydown.enter.prevent="movieSelected && addMovie()">
+                   role="combobox" aria-autocomplete="list" :aria-expanded="suggestionsOpen"
+                   :aria-controls="listboxId" :aria-activedescendant="activeSuggestionId"
+                   @input="onInput"
+                   @keydown.down.prevent="moveActive(1)"
+                   @keydown.up.prevent="moveActive(-1)"
+                   @keydown.escape="dismissSuggestions"
+                   @keydown.enter.prevent="onEnter">
             <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" open-direction="bottom"/>
             <button class="input-btn" type="button" @click="addMovie" aria-label="Ajouter le film">
                 <Svg name="add"/>
             </button>
         </div>
-        <div class="suggestions-container" v-if="!movieSelected && movieTitle">
-            <button v-for="movie in bestResults" :key="movie.id" class="btn suggestion input-body"
-                    @click="setMovieInfos(movie.title, movie.id)">
+        <ul class="suggestions-container" v-if="suggestionsOpen" :id="listboxId" role="listbox"
+            aria-label="Suggestions de films">
+            <li v-for="(movie, index) in bestResults" :key="movie.id" class="suggestion input-body"
+                :id="`${listboxId}-option-${index}`" role="option"
+                :aria-selected="index === activeIndex" :class="{ '-active': index === activeIndex }"
+                @mouseenter="activeIndex = index"
+                @click="setMovieInfos(movie.title, movie.id)">
                 <span class="movie-title">{{ movie.title }}</span>
                 <span class="small-body release-date">{{ getReleaseYear(movie.release_date) }}</span>
-            </button>
-        </div>
+            </li>
+        </ul>
     </form>
 </template>
 
 <style lang="scss" scoped>
 .form-content {
     gap: .5rem;
-    position: relative;
-    z-index: 950;
 }
 
 .text-input {
@@ -137,27 +188,37 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
     font: $normal 1.4rem/1 $font-body;
 }
 
+// Le bloc conteneur est `.nav-header`, pas le formulaire (contrat noté dans `nav/Header.vue`) :
+// c'est ce qui donne au panneau la largeur de la barre entière.
 .suggestions-container {
     background-color: $color-surface-2;
     border: 1px solid $color-border-5;
-    width: calc(var(--search-bar-width) + 3rem);
-    height: auto;
     position: absolute;
-    bottom: 0;
     left: 0;
-    z-index: 900;
+    right: 0;
+    bottom: calc(100% + 1rem);
     border-radius: 1.4rem;
     overflow: hidden;
-    padding: 0 0 var(--search-bar-height);
     box-shadow: 0 18px 44px rgba(0, 0, 0, .6);
 }
 
 .suggestion {
-    width: 100%;
+    display: flex;
+    align-items: baseline;
+    gap: .8rem;
     padding: 1.1rem 1.4rem;
-    border-bottom: solid 1px $color-border-2;
-    text-align: left;
+    cursor: pointer;
     transition: background-color .2s linear;
+
+    & + & {
+        border-top: solid 1px $color-border-2;
+    }
+
+    // Pas de `:hover` : souris et clavier passent tous deux par `-active`, sinon le surlignage
+    // visuel et l'option annoncée par `aria-activedescendant` peuvent désigner deux films.
+    &.-active {
+        background-color: $color-hover-strong;
+    }
 }
 
 .movie-title {
@@ -166,7 +227,6 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
 }
 
 .release-date {
-    margin-left: .6rem;
     color: $color-text-weaker;
     font-family: $font-mono;
 }
@@ -192,10 +252,6 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
         background-color: $color-hover;
         color: $color-text-dim;
     }
-
-    .suggestion:hover {
-        background-color: $color-hover-strong;
-    }
 }
 
 @media (max-width: 767px) {
@@ -212,12 +268,6 @@ const getReleaseYear = (releaseDate) => new Date(releaseDate).getFullYear();
         flex: 1;
         width: auto;
         min-width: 0;
-    }
-
-    .suggestions-container {
-        left: 0;
-        right: 0;
-        width: auto;
     }
 }
 </style>

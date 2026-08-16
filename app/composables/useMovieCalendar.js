@@ -52,9 +52,15 @@ export function useMovieCalendar() {
 
         // Sorties cinéma de l'année en cours, déjà sorties, non vues → « en salle maintenant ».
         // Garde-fou `>= currentYear` : on ne (re)flague jamais un film d'une année précédente.
+        //
+        // ⚠️ Promotion **optimiste et provisoire** : elle ne vaut que tant qu'Allociné n'a rien dit.
+        // Dès qu'une ligne a été contrôlée (`in_theaters_checked_at`), `useInTheatersSync` est seul
+        // à décider — sans cette garde, un film retiré de l'affiche par le contrôle serait re-flaggé
+        // au chargement suivant, puis re-retiré la semaine d'après : un va-et-vient perpétuel.
         const toUpdate = movieList.filter(m =>
             m.media === 'cinema' &&
             m.state === 'unseen' &&
+            !m.in_theaters_checked_at &&
             m.release_date &&
             m.release_date <= todayStr &&
             yearOf(m.release_date) >= currentYear
@@ -101,7 +107,7 @@ export function useMovieCalendar() {
         }
 
         // `release_date` local = date effective (triable) ; `_tmdbReleaseDate` conserve
-        // la date TMDB stockée en base (pour la revérif Step 6 et le retrait d'un override manuel).
+        // la date TMDB stockée en base (pour `recheckUpcomingCinema` et le retrait d'un override).
         const withDates = data.map(movie => ({
             ...movie,
             _tmdbReleaseDate: movie.release_date || null,
@@ -133,8 +139,6 @@ export function useMovieCalendar() {
             try {
                 const meta = await $fetch(`/api/movies/${movie.movie_id}/full`);
                 const fresh = meta.release_date || null;
-                // Films à venir : titre/poster peuvent encore bouger côté TMDB → on les rafraîchit
-                // aussi (l'appel /full les renvoie déjà, coût nul).
                 const patch = {};
                 if (fresh !== (movie._tmdbReleaseDate || null)) patch.release_date = fresh;
                 if (meta.title && meta.title !== movie.title) patch.title = meta.title;
@@ -204,6 +208,10 @@ export function useMovieCalendar() {
         // Gate sur l'ancienneté du dernier check (jamais checké OU périmé > 7 j). Un film jamais
         // noté avec succès n'est pas horodaté (voir plus bas) → il repasse ici à chaque ouverture
         // jusqu'à obtenir une note ; les films notés sont mis en cache 7 j.
+        //
+        // ⚠️ Ne **pas** y ajouter « ou les liens réalisateurs manquent » : sans porte de sortie, un
+        // film que Letterboxd ne crédite pas repasserait à chaque ouverture, pour toujours. Ces
+        // liens sont acquis à l'insertion et par le backfill ; ici ils sont ramassés au passage.
         const toCheck = movies.value.filter(m =>
             m.state !== 'seen' &&
             m.release_date &&
@@ -217,21 +225,22 @@ export function useMovieCalendar() {
         const patches = new Map();
         await promisePool(toCheck.map(movie => async () => {
             try {
-                const { rating } = await $fetch(`/api/movies/${movie.movie_id}/letterboxd`);
-                let patch;
+                const { rating, directors } = await $fetch(`/api/movies/${movie.movie_id}/letterboxd`);
+                let patch = null;
                 if (rating != null) {
                     patch = { letterboxd_rating: rating, letterboxd_rating_at: nowIso };
                 } else if (movie.letterboxd_rating != null) {
                     // Scrape transitoirement raté mais note déjà en base : on la garde et on
                     // repousse le prochain check en rafraîchissant seulement l'horodatage.
                     patch = { letterboxd_rating_at: nowIso };
-                } else {
-                    // Jamais de note obtenue → on n'horodate pas : nouvelle tentative à la
-                    // prochaine ouverture (au lieu d'un cache « vide » de 7 j).
-                    return;
                 }
-                await client.from('calendar').update(patch).eq('id', movie.id);
-                patches.set(movie.id, patch);
+                // Écrits même si la note manque : les liens, eux, ne périment pas.
+                if (directors?.length) patch = { ...patch, letterboxd_directors: directors };
+                // Ni note ni liens → on n'horodate pas : nouvelle tentative à la prochaine ouverture.
+                if (!patch) return;
+
+                const applied = await patchCalendarRow(client, movie.id, patch);
+                if (applied) patches.set(movie.id, applied);
             } catch (e) {
                 console.error('Refresh note Letterboxd échoué pour', movie.movie_id, e);
             }
@@ -303,7 +312,7 @@ export function useMovieCalendar() {
             .single();
         if (error) { console.error('Insert film catchup échoué:', error.message); return null; }
 
-        return {
+        const entry = {
             id: inserted.id,
             movie_id: movieId,
             media,
@@ -319,6 +328,10 @@ export function useMovieCalendar() {
             countries: meta.countries,
             tmdb_vote: meta.vote_average,
         };
+        // Second point d'insertion — l'autre est nav/MovieAddForm. Sans `await` : l'ajout ne doit pas
+        // attendre Letterboxd.
+        void resolveLetterboxdDirectors(client, entry);
+        return entry;
     }
 
     const handleMovieExists = (event) => event.detail?.movieId
@@ -341,18 +354,62 @@ export function useMovieCalendar() {
         sortMovies(movies.value);
     }
 
-    // Films actuellement en salle (rail droit desktop + bande mobile), triés par date.
-    const cinemaNow = computed(() =>
-        movies.value
-            .filter(m => m.state === 'inTheaters')
+    // Bornes de lecture des événements datés. ⚠️ Lues à chaque réévaluation et non capturées, pour
+    // suivre le jour et la semaine — mais elles ne bougent pas d'elles-mêmes tant que la liste ne
+    // change pas.
+    const eventBounds = () => ({ freshSince: lastWednesday(), today: isoDay(0) })
+
+    // Rubrique « Événements à venir » du rail : les films qui ont une séance événement devant eux —
+    // avant-première, séance unique, label de programmation — triés par imminence.
+    //
+    // ⚠️ Ces films ne sont **pas** forcément `inTheaters`, et c'est tout l'intérêt de la rubrique : une
+    // avant-première a lieu *avant* la sortie (cf. `useUpcomingEvents`). Filtrer sur l'état, comme le
+    // fait `cinemaNow`, les aurait tous manqués.
+    const eventSoon = computed(() => {
+        const bounds = eventBounds()
+        return movies.value
+            .filter(m => hasUpcomingEvent(m, bounds))
+            .sort((a, b) => {
+                const [ea, eb] = [nextMovieEvent(a, bounds), nextMovieEvent(b, bounds)]
+                return String(ea?.date).localeCompare(String(eb?.date))
+                    || String(a.title).localeCompare(String(b.title))
+            })
+    })
+
+    // Films actuellement en salle (rail droit desktop + bande mobile). L'état est tenu à jour par
+    // `useInTheatersSync` : ce sont les films qui ont au moins une séance à Paris dans les 7 jours
+    // qui viennent, donc exactement ceux que la vue Séances sait montrer.
+    //
+    // Ceux que la rubrique « Événements à venir » a pris en charge en sortent : les afficher aux deux
+    // endroits ferait lire deux fois le même film au même endroit de l'écran, et la version datée est
+    // strictement plus informative.
+    const cinemaNow = computed(() => {
+        const featured = new Set(eventSoon.value.map(m => m.id))
+        return movies.value
+            .filter(m => m.state === 'inTheaters' && !featured.has(m.id))
             .sort((a, b) => new Date(a.release_date) - new Date(b.release_date))
-    )
+    })
+
+    // Périmètre de la vue Séances : **les deux rubriques du rail réunies**, celles à événement devant.
+    //
+    // ⚠️ Et surtout pas `cinemaNow` seul, qui retire les films pris en charge par « Événements à venir »
+    // pour ne pas les afficher deux fois : le film ouvrait alors `/seances?film=…` sans y être trouvé,
+    // donc ni cadré ni chargé.
+    const seanceFilms = computed(() => {
+        const out = [...eventSoon.value]
+        const seen = new Set(out.map(m => m.id))
+        for (const m of cinemaNow.value) if (!seen.has(m.id)) out.push(m)
+        return out
+    })
 
     return {
         movies,
         sortedMovies,
         moviesWithoutDate,
         cinemaNow,
+        eventSoon,
+        seanceFilms,
+        eventBounds,
         getMovies,
         sortMovies,
         handleMovieAdded,

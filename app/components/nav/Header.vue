@@ -89,9 +89,11 @@ const scrollToToday = () => {
 </template>
 
 <style lang="scss" scoped>
+// ⚠️ `position: fixed` fait de `.nav-header` le bloc conteneur du panneau de suggestions de
+// `NavMovieAddForm`. Positionner un élément intermédiaire (`.add-form-wrapper`, `.add-form`) le
+// recalerait silencieusement sur la largeur du formulaire.
 .nav-header {
     --search-bar-width: 34rem;
-    --search-bar-height: 5.5rem;
     z-index: 999;
     position: fixed;
     bottom: 2rem;

@@ -36,6 +36,16 @@
     transform: translate(-50%, -50%);
 }
 
+// Intitulé de rubrique du rail gauche. Partagé entre `NavSideNav` et `NavViewTabs` : leurs rubriques
+// se suivent dans la même colonne, une divergence entre deux définitions s'y verrait à l'œil.
+@mixin railHeading() {
+    padding-left: .2rem;
+    color: $color-text-weak;
+    font: $bold 1rem/1 $font-body;
+    letter-spacing: .13rem;
+    text-transform: uppercase;
+}
+
 @mixin hideScrollbar() {
     -ms-overflow-style: none;
     scrollbar-width: none;

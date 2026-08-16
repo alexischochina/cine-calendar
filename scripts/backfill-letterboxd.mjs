@@ -1,12 +1,12 @@
-// Script one-shot de backfill des notes Letterboxd (plan 2608031000).
+// Script de backfill des données Letterboxd (plans 2608031000 et 2608161000).
 //
-// Parcourt les lignes `calendar` non vues et déjà sorties dont la note Letterboxd est
-// absente ou périmée (> 7 j), scrape le JSON-LD de letterboxd.com/tmdb/{id}/ (concurrence
-// limitée à 8) et écrit letterboxd_rating + letterboxd_rating_at en base. Idempotent :
-// relançable sans effet de bord (les notes fraîches sont ignorées).
-//
-// À lancer après la migration SQL (colonnes letterboxd_rating / letterboxd_rating_at),
-// pour éviter d'attendre la population paresseuse à la première ouverture de la vue Stats.
+// Deux choses, lues dans le **même** JSON-LD de letterboxd.com/tmdb/{id}/ (une requête par film,
+// concurrence limitée à 8) :
+//   - la note, pour les lignes non vues et déjà sorties dont la note est absente ou périmée (> 7 j) ;
+//   - les liens réalisateurs, pour **toute** ligne qui a un réalisateur et pas encore ses liens —
+//     y compris les films vus et à venir, que la vue Stats ne rafraîchit jamais mais que la
+//     timeline affiche.
+// Idempotent, relançable sans effet de bord. À lancer après les migrations SQL correspondantes.
 //
 // Usage :
 //   node scripts/backfill-letterboxd.mjs           # écrit en base
@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
 import { promisePool } from '../app/utils/promisePool.js';
+import { parseLetterboxdFilm } from '../shared/utils/letterboxdFilm.js';
 
 // --- chargement .env minimal (pas de dépendance dotenv) ---
 const loadEnv = () => {
@@ -42,58 +43,78 @@ if (!SUPABASE_URL || !SUPABASE_KEY) {
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// Même extraction que server/api/movies/[id]/letterboxd.js : JSON-LD aggregateRating.
-const extractRating = (html) => {
-    const match = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
-    if (!match) return null;
-    const raw = match[1].replace(/\/\*\s*<!\[CDATA\[\s*\*\//, '').replace(/\/\*\s*\]\]>\s*\*\//, '').trim();
-    let data;
-    try { data = JSON.parse(raw); } catch { return null; }
-    const rating = Number(data?.aggregateRating?.ratingValue);
-    return Number.isFinite(rating) ? rating : null;
-};
-
-const fetchRating = async (movieId) => {
+const fetchFilm = async (movieId) => {
     const res = await fetch(`https://letterboxd.com/tmdb/${movieId}/`, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; cine-calendar/1.0)' },
     });
-    if (!res.ok) return null;
-    return extractRating(await res.text());
+    if (!res.ok) return { rating: null, count: null, directors: [] };
+    return parseLetterboxdFilm(await res.text());
+};
+
+// PostgREST plafonne les réponses (`max-rows`, 1000 par défaut) : sans pagination, une bibliothèque
+// qui dépasse ce seuil serait traitée en partie pendant que le script annonce « Terminé ».
+const PAGE = 500;
+
+const fetchAllRows = async () => {
+    const rows = [];
+    for (let from = 0; ; from += PAGE) {
+        const { data, error } = await supabase
+            .from('calendar')
+            .select('id, movie_id, title, state, release_date, director, letterboxd_rating_at, letterboxd_directors')
+            .order('id', { ascending: true })
+            .range(from, from + PAGE - 1);
+        if (error) throw new Error(error.message);
+        rows.push(...data);
+        if (data.length < PAGE) return rows;
+    }
 };
 
 const run = async () => {
     const today = new Date().toISOString().slice(0, 10);
-    const staleBefore = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const staleBefore = Date.now() - 7 * 24 * 60 * 60 * 1000;
 
-    // Non vus, déjà sortis, note absente ou périmée (> 7 j).
-    const { data: rows, error } = await supabase
-        .from('calendar')
-        .select('id, movie_id, title, letterboxd_rating_at')
-        .neq('state', 'seen')
-        .not('release_date', 'is', null)
-        .lte('release_date', today)
-        .or(`letterboxd_rating_at.is.null,letterboxd_rating_at.lt.${staleBefore}`);
-
-    if (error) {
-        console.error('Lecture Supabase échouée :', error.message);
+    let rows;
+    try {
+        rows = await fetchAllRows();
+    } catch (e) {
+        console.error('Lecture Supabase échouée :', e.message);
         process.exit(1);
     }
 
-    console.log(`${rows.length} ligne(s) à backfiller${DRY_RUN ? ' (dry-run)' : ''}.`);
-    if (!rows.length) return;
+    // Deux raisons distinctes de sortir chez Letterboxd, une seule requête quand les deux valent.
+    // ⚠️ Comparaison sur des instants, pas sur des chaînes : PostgREST sérialise en `…+00:00` là où
+    // `toISOString()` produit `…Z`, et `'+' < 'Z'` ferait passer un horodatage identique pour périmé.
+    const needsRating = (r) => r.state !== 'seen'
+        && r.release_date && r.release_date <= today
+        && (!r.letterboxd_rating_at || new Date(r.letterboxd_rating_at).getTime() < staleBefore);
+    const needsDirectors = (r) => Boolean(r.director) && !r.letterboxd_directors?.length;
+
+    const todo = rows.filter(r => needsRating(r) || needsDirectors(r));
+    console.log(`${todo.length} ligne(s) à backfiller sur ${rows.length}${DRY_RUN ? ' (dry-run)' : ''}.`);
+    console.log(`  dont note : ${todo.filter(needsRating).length} | dont réalisateurs : ${todo.filter(needsDirectors).length}`);
+    if (!todo.length) return;
 
     const nowIso = new Date().toISOString();
     let ok = 0, failed = 0;
-    const tasks = rows.map((row) => async () => {
+    const tasks = todo.map((row) => async () => {
         try {
-            const rating = await fetchRating(row.movie_id);
+            const { rating, directors } = await fetchFilm(row.movie_id);
+
+            const patch = {};
+            if (needsRating(row)) {
+                // Scrape raté mais note déjà en base : on la garde et on repousse le prochain check.
+                // Jamais notée → on n'horodate pas.
+                if (rating != null) patch.letterboxd_rating = rating;
+                if (rating != null || row.letterboxd_rating_at) patch.letterboxd_rating_at = nowIso;
+            }
+            if (needsDirectors(row) && directors.length) patch.letterboxd_directors = directors;
+            if (!Object.keys(patch).length) return;
+
             if (DRY_RUN) {
-                console.log(`  [dry] ${row.movie_id} → ${row.title ?? '?'} | note: ${rating ?? '—'}`);
+                const links = patch.letterboxd_directors?.map(d => d.url.split('/director/')[1].replace('/', '')).join(', ');
+                console.log(`  [dry] ${row.movie_id} → ${row.title ?? '?'} | note: ${patch.letterboxd_rating ?? '—'} | réals: ${links ?? '—'}`);
             } else {
-                const { error: upErr } = await supabase
-                    .from('calendar')
-                    .update({ letterboxd_rating: rating, letterboxd_rating_at: nowIso })
-                    .eq('id', row.id);
+                const { error: upErr } = await supabase.from('calendar').update(patch).eq('id', row.id);
                 if (upErr) throw new Error(upErr.message);
             }
             ok++;
@@ -104,7 +125,7 @@ const run = async () => {
     });
 
     await promisePool(tasks, 8);
-    console.log(`Terminé : ${ok} ok, ${failed} échec(s).`);
+    console.log(`Terminé : ${ok} écrite(s), ${failed} échec(s).`);
 };
 
 run();

@@ -7,7 +7,9 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "test": "node scripts/test-seances-rules.mjs",
+    "check:seances": "node scripts/check-seances.mjs"
   },
   "dependencies": {
     "@nuxt-modules/compression": "^0.1.0",

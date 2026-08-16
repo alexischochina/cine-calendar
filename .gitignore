@@ -20,6 +20,14 @@ logs
 
 # Local env files
 .env
-.env
 !.env.example
 .claude
+
+# Matériau d'enquête brut : consulté une fois, jamais relu, cité nulle part dans le code.
+# Le README porte les conclusions qu'on en a tirées — les images elles-mêmes n'ont plus rien à dire.
+#
+# ⚠️ Le critère est « cité ou pas », pas le poids. `_ressources/tmpl/*.html` pèse ~1,1 Mo et reste
+# suivi : ce sont les maquettes dont les composants se réclament nommément (« Décalque de
+# SeancesSeanceGroup », « comme la maquette »), donc la seule référence permettant de vérifier une
+# intégration. Les exclure au motif de leur taille rendrait ces commentaires invérifiables.
+_ressources/reddit-posts/
