@@ -124,11 +124,26 @@ export function useYearStats(movies, year) {
         return map;
     });
 
-    // Max de films vus par pays — échelle de l'intensité de couleur de la carte. Vaut 0 si aucun
-    // film vu (le garde-fou division-par-0 est côté carte : `Math.max(1, maxSeen)`).
-    const maxSeen = computed(() =>
-        Math.max(0, ...Object.values(countryMap.value).map(b => b.seen))
-    );
+    // Les deux agrégats tirés de `countryMap` en UNE passe :
+    //  - `maxSeen` : max de films vus par pays, échelle de l'intensité de couleur de la carte.
+    //    Vaut 0 si aucun film vu (le garde-fou division-par-0 est côté carte : `Math.max(1, …)`).
+    //  - `coverage` : nombre de pays où au moins un film a été VU, rapporté au nombre total de
+    //    pays représentés dans l'année (vus + à voir).
+    // Dérivés de `countryMap` et non de `yearMovies` : mêmes règles de comptage que la carte,
+    // donc un film multi-pays compte dans chacun de ses pays, sans définition concurrente.
+    const countryTotals = computed(() => {
+        const buckets = Object.values(countryMap.value);
+        let maxSeen = 0;
+        let visited = 0;
+        for (const b of buckets) {
+            if (b.seen > maxSeen) maxSeen = b.seen;
+            if (b.seen > 0) visited++;
+        }
+        return { maxSeen, coverage: { seen: visited, total: buckets.length } };
+    });
+
+    const maxSeen = computed(() => countryTotals.value.maxSeen);
+    const countryCoverage = computed(() => countryTotals.value.coverage);
 
     // 12 mois : films du mois répartis en vus-au-ciné / vus-en-streaming / pas-vus.
     // `total` = tous les films du mois ; `seen` = cinemaSeen + streamingSeen.
@@ -162,6 +177,7 @@ export function useYearStats(movies, year) {
         topGenres,
         topCountries,
         countryMap,
+        countryCoverage,
         maxSeen,
         monthly,
     };

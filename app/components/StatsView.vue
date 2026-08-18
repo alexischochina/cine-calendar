@@ -23,7 +23,7 @@ const emit = defineEmits(['go-to-movie', 'toggle-catchup', 'add-catchup-movie'])
 const {
     total, seen, toWatch, seenRatio,
     cinema, streaming, cinemaRatio,
-    topGenres, topCountries, countryMap, maxSeen, monthly,
+    topGenres, topCountries, countryMap, countryCoverage, maxSeen, monthly,
 } = useYearStats(() => props.movies, () => props.year);
 
 const yearLabel = computed(() => props.year === null ? 'Sans date' : String(props.year));
@@ -94,7 +94,8 @@ watch(() => props.year, () => { openStat.value = null; });
 
             <!-- 8. Carte du monde — pleine largeur, client-only (carto hors SSR/prerender) -->
             <ClientOnly>
-                <StatsWorldMap class="worldmap" :country-map="countryMap" :max-seen="maxSeen" />
+                <StatsWorldMap class="worldmap" :country-map="countryMap" :coverage="countryCoverage"
+                               :max-seen="maxSeen" />
             </ClientOnly>
         </div>
     </div>

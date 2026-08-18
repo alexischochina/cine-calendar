@@ -14,6 +14,8 @@ import { interpolateRgb } from 'd3-interpolate';
 const props = defineProps({
     // { [iso2]: { iso, name, numericId, seen, todo, total, movies[] } } — cf. useYearStats.
     countryMap: { type: Object, default: () => ({}) },
+    // { seen, total } — pays avec au moins un film vu / pays représentés dans l'année.
+    coverage: { type: Object, default: () => ({ seen: 0, total: 0 }) },
     maxSeen: { type: Number, default: 0 },
 });
 
@@ -167,7 +169,13 @@ const posterUrl = (path) => /^\/[A-Za-z0-9]+\.(jpg|jpeg|png|webp)$/i.test(path |
 <template>
     <section class="stats-worldmap card" aria-label="Carte du monde des films de l'année">
         <div class="head">
-            <div class="label">Carte du monde</div>
+            <div class="title">
+                <div class="label">Carte du monde</div>
+                <p v-if="coverage.total" class="coverage" role="img"
+                   :aria-label="`${coverage.seen} pays sur ${coverage.total} avec au moins un film vu`">
+                    <span class="dot" />Pays visités <b>{{ coverage.seen }}</b><span class="tot">/{{ coverage.total }}</span>
+                </p>
+            </div>
             <div class="legend" aria-hidden="true">
                 <span class="cap">moins</span>
                 <span v-for="c in LEGEND" :key="c" class="sw" :style="{ background: c }" />
@@ -238,11 +246,49 @@ const posterUrl = (path) => /^\/[A-Za-z0-9]+\.(jpg|jpeg|png|webp)$/i.test(path |
         gap: 1rem;
         margin-bottom: 1.6rem;
 
-        > .label {
-            color: $color-text-weak;
-            font: $bold 1.1rem/1 $font-body;
-            letter-spacing: .12rem;
-            text-transform: uppercase;
+        > .title {
+            display: flex;
+            flex-direction: column;
+            gap: .8rem;
+
+            > .label {
+                color: $color-text-weak;
+                font: $bold 1.1rem/1 $font-body;
+                letter-spacing: .12rem;
+                text-transform: uppercase;
+            }
+
+            // Couverture « Pays visités X/Y » — même vocabulaire visuel que la légende
+            // des barres de ratio (StatsMeter) : pastille + libellé atténué + valeur en gras.
+            // `$color-text-quiet` et non `$color-text-weak` pour le dénominateur : c'est du
+            // texte, donc seuil AA requis (cf. note de `_variables.scss`).
+            // Flux inline (et non flex comme la légende de StatsMeter) : c'est ce qui garde
+            // « 12/30 » soudé, là où un `gap` séparerait la barre de ses deux nombres.
+            > .coverage {
+                color: $color-text-dim;
+                font: $medium 1.2rem/1 $font-body;
+
+                > .dot {
+                    display: inline-block;
+                    width: 1rem;
+                    height: 1rem;
+                    margin-right: .6rem;
+                    border-radius: 3px;
+                    background: $color-green;
+                    vertical-align: middle;
+                }
+
+                > b {
+                    color: $color-text;
+                    font-weight: $bold;
+                    font-variant-numeric: tabular-nums;
+                }
+
+                > .tot {
+                    color: $color-text-quiet;
+                    font-variant-numeric: tabular-nums;
+                }
+            }
         }
 
         > .legend {
