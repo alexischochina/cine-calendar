@@ -55,7 +55,7 @@ const favoriteCinemas = computed(() => Object.values(cinemas.value ?? {})
 
 <template>
     <aside class="side-nav scr">
-        <div class="brand">Ma cinémathèque</div>
+        <div class="brand">Cinégenda</div>
 
         <NavViewTabs :view-mode="viewMode" :event-count="nbEvents"
                      @select-view="emits('select-view', $event)" />

@@ -62,7 +62,7 @@ const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABAS
 
 // User-Agent **identifiable**, et pas un navigateur déguisé : c'est le minimum qu'on doit à un site
 // perso qu'on interroge sans lui avoir demandé. Même chaîne que les autres scripts du projet.
-const UA = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+const UA = 'Mozilla/5.0 (compatible; cinegenda/1.0)';
 const PARIS = 115755;
 const PCI = 'https://www.paris-cine.info';
 

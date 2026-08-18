@@ -11,7 +11,7 @@ useHead({
     htmlAttrs: {
         lang: 'fr'
     },
-    titleTemplate: (title) => title ? `${title} — CinéCal` : 'CinéCal',
+    titleTemplate: (title) => title ? `${title} — Cinégenda` : 'Cinégenda',
     link: [
         {rel: 'icon', type: 'image/png', sizes: '96x96', href: '/favicon/favicon-96x96.png'},
         {rel: 'icon', type: 'image/svg+xml', href: '/favicon/favicon.svg'},
@@ -25,11 +25,11 @@ useHead({
         {name: 'theme-color', content: '#ec008b'},
         {name: 'description', content: 'Mon calendrier de films perso — suis tes sorties ciné et séries au fil des mois.'},
         {property: 'og:type', content: 'website'},
-        {property: 'og:title', content: 'CinéCal'},
+        {property: 'og:title', content: 'Cinégenda'},
         {property: 'og:description', content: 'Mon calendrier de films perso — suis tes sorties ciné et séries au fil des mois.'},
         {property: 'og:image', content: `${baseUrl}/og-image.jpg`},
         {name: 'twitter:card', content: 'summary_large_image'},
-        {name: 'twitter:title', content: 'CinéCal'},
+        {name: 'twitter:title', content: 'Cinégenda'},
         {name: 'twitter:description', content: 'Mon calendrier de films perso — suis tes sorties ciné et séries au fil des mois.'},
         {name: 'twitter:image', content: `${baseUrl}/og-image.jpg`},
     ]

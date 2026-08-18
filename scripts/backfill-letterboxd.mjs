@@ -45,7 +45,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const fetchFilm = async (movieId) => {
     const res = await fetch(`https://letterboxd.com/tmdb/${movieId}/`, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; cine-calendar/1.0)' },
+        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; cinegenda/1.0)' },
     });
     if (!res.ok) return { rating: null, count: null, directors: [] };
     return parseLetterboxdFilm(await res.text());

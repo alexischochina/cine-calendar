@@ -108,7 +108,7 @@ onBeforeUnmount(() => {
         <!-- En-tête mobile : titre + pastille année (vues de la liste seulement) + bande d'onglets -->
         <div class="shell-mobilehead">
             <div class="top">
-                <div class="brand">Ma cinémathèque</div>
+                <div class="brand">Cinégenda</div>
                 <button class="year-pill" :class="{ '-hidden': !isLibrary }" type="button"
                         aria-label="Choisir l'année" aria-haspopup="true" :aria-expanded="mobileYearMenu"
                         @click="mobileYearMenu = !mobileYearMenu">

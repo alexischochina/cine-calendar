@@ -18,7 +18,7 @@ import { normalize, sentences, truncateDetail, metaContent, mentionsDate, isEven
 
 const MK2_ORIGIN = 'https://www.mk2.com';
 // ⚠️ User-Agent **honnête**, jamais une chaîne de navigateur — cf. `allocine.js`.
-const USER_AGENT = 'cine-calendar/1.0';
+const USER_AGENT = 'cinegenda/1.0';
 const TIMEOUT = 8000;
 
 // Cache mémoire d'instance, opportuniste (cf. `dulac.js`).

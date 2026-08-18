@@ -46,7 +46,7 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 // Même identité que le client (`server/utils/allocine.js`) : un contrôle de santé qui ne se
 // présenterait pas comme l'app ne contrôlerait pas ce que l'app subit.
-const UA = 'cine-calendar/1.0';
+const UA = 'cinegenda/1.0';
 const PARIS = 115755;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {

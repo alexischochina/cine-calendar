@@ -22,7 +22,7 @@ const ALLOCINE_ORIGIN = 'https://www.allocine.fr';
 // première brique d'un contournement, et n'apporte rien : les quatre sources du projet (Allociné,
 // UGC, Dulac, MK2) répondent exactement pareil avec ou sans (vérifié le 15/08/2026, même statut et
 // même charge utile à l'octet près).
-const USER_AGENT = 'cine-calendar/1.0';
+const USER_AGENT = 'cinegenda/1.0';
 const TIMEOUT = 8000;
 const SHOWTIME_CONCURRENCY = 4;
 

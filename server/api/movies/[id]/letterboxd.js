@@ -13,7 +13,7 @@ const fetchLetterboxdFilm = defineCachedFunction(async (id) => {
     try {
         // Timeout dur : une fiche lente ne doit pas laisser la connexion sortante ouverte.
         const html = await $fetch(`https://letterboxd.com/tmdb/${id}/`, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; cine-calendar/1.0)' },
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; cinegenda/1.0)' },
             signal: AbortSignal.timeout(8000),
         });
 

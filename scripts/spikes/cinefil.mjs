@@ -22,7 +22,7 @@
 
 import { isoDay, SEANCES_HORIZON_DAYS } from '../../shared/utils/cineWeek.js';
 
-const UA = 'Mozilla/5.0 (compatible; cine-calendar/1.0)';
+const UA = 'Mozilla/5.0 (compatible; cinegenda/1.0)';
 const PARIS = 115755;
 const DAYS = SEANCES_HORIZON_DAYS;
 

@@ -13,7 +13,7 @@ import { normalize } from './exhibitorText.js';
 
 const UGC_ORIGIN = 'https://www.ugc.fr';
 // ⚠️ User-Agent **honnête**, jamais une chaîne de navigateur — cf. `allocine.js`.
-const USER_AGENT = 'cine-calendar/1.0';
+const USER_AGENT = 'cinegenda/1.0';
 const TIMEOUT = 8000;
 
 // Les 11 salles UGC de Paris intra-muros, relevées dans leur propre liste

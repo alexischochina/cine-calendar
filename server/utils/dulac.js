@@ -19,7 +19,7 @@ import { normalize, escapeRe, fold, truncateDetail, isEventHeadline } from './ex
 
 const DULAC_ORIGIN = 'https://www.dulaccinemas.com';
 // ⚠️ User-Agent **honnête**, jamais une chaîne de navigateur — cf. `allocine.js`.
-const USER_AGENT = 'cine-calendar/1.0';
+const USER_AGENT = 'cinegenda/1.0';
 const TIMEOUT = 8000;
 
 // Le sitemap ne bouge qu'au rythme des publications de Dulac, et une vague de relevés enchaîne
