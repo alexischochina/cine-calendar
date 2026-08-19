@@ -8,7 +8,7 @@
 // un film qui reste « en salle » de trop, un mercredi mal calculé ne lèvent aucune exception, ils
 // affichent simplement quelque chose de faux.
 //
-// Neuf familles, toutes importées depuis le code réel (aucune copie) :
+// Dix familles, toutes importées depuis le code réel (aucune copie) :
 //   1. `carryOverMissing`     — report des salles disparues (server/utils/showtimesFreshness.js)
 //   2. `cineWeek`             — semaine ciné partagée app/serveur/scripts (shared/utils/cineWeek.js)
 //   3. `seancesGrouping`      — filtres, tri, regroupements (app/utils/seancesGrouping.js)
@@ -18,6 +18,7 @@
 //   7. `exploitants`          — libellés Dulac / MK2 / UGC (server/utils/{dulac,mk2,ugc,…}.js)
 //   8. `inTheaters`           — qui est « en salle » (app/utils/inTheaters.js)
 //   9. gardes                 — schéma PostgREST et dates locales (shared/utils, app/utils)
+//  10. `movieSearch`         — quel film la recherche ouvre dans la timeline (app/utils/movieSearch.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -51,6 +52,7 @@ import { hasDatedEventFrom, isSeanceFilm, isFreshRelease } from '../shared/utils
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
 import { parseLetterboxdFilm, isLetterboxdDirectorUrl } from '../shared/utils/letterboxdFilm.js';
+import { bestSearchMatch, closestToToday } from '../app/utils/movieSearch.js';
 
 // --- Auto-imports simulés ------------------------------------------------------------------------
 //
@@ -1175,6 +1177,60 @@ console.log('\n\x1b[1misLetterboxdDirectorUrl — la dernière ligne de défense
     t('URL douteuse en base → ignorée au rendu',
         directorLinks('X', [{ name: 'X', url: 'javascript:alert(1)' }]).map(d => d.url),
         ['https://letterboxd.com/director/x/']);
+}
+
+console.log('\n\x1b[1mmovieSearch — quel film la recherche ouvre\x1b[0m');
+{
+    // Horloge figée : « à venir » et « passé » dépendent du jour, pas le test.
+    const NOW = new Date('2026-08-19T12:00:00');
+
+    // Les formes que prend « pas de date » en base : colonne nulle, chaîne vide, chaîne illisible.
+    const undatedNull = { movie_id: 1, title: 'Sans date null', release_date: null };
+    const undatedEmpty = { movie_id: 2, title: 'Sans date vide', release_date: '' };
+    const undatedJunk = { movie_id: 3, title: 'Sans date illisible', release_date: 'n/a' };
+    const soon = { movie_id: 4, title: 'Bientôt', release_date: '2026-09-01' };
+    const later = { movie_id: 5, title: 'Plus tard', release_date: '2027-03-01' };
+    const old = { movie_id: 6, title: 'Ancien', release_date: '2019-04-01' };
+    const recent = { movie_id: 7, title: 'Récent', release_date: '2026-08-01' };
+
+    const all = [undatedNull, undatedEmpty, undatedJunk, soon, later, old, recent];
+    const found = (term, list = all) => bestSearchMatch(list, term, NOW)?.title ?? null;
+
+    // Le bug d'origine : un film de la section « Sans date » était introuvable, la recherche restait
+    // muette quelle que soit la forme du champ vide.
+    t('sans date (null) trouvé', found('sans date null'), 'Sans date null');
+    t('sans date (chaîne vide) trouvé', found('sans date vide'), 'Sans date vide');
+    t('sans date (date illisible) trouvé', found('sans date illisible'), 'Sans date illisible');
+
+    t('à venir le plus proche gagne', found('t'), 'Bientôt');
+    t('daté prioritaire sur sans-date',
+        found('x', [{ movie_id: 8, title: 'x sans date', release_date: null },
+                    { movie_id: 9, title: 'x daté', release_date: '2026-12-01' }]), 'x daté');
+    t('passé le plus récent quand aucun futur',
+        found('n', [old, recent]), 'Récent');
+    t('sans-date retenu s\'il est le seul candidat',
+        found('sans date null', [undatedNull, soon, old]), 'Sans date null');
+
+    t('deux sans-date → ordre de la liste',
+        found('sans date', [undatedEmpty, undatedNull]), 'Sans date vide');
+
+    t('casse ignorée', found('BIENTÔT'), 'Bientôt');
+    t('terme inconnu → null', found('introuvable'), null);
+    t('terme vide → null', found(''), null);
+    t('terme blanc → null', found('   '), null);
+    t('terme absent → null', found(undefined), null);
+    t('liste vide → null', found('bientôt', []), null);
+    t('titre absent → ignoré sans throw',
+        found('bientôt', [{ movie_id: 10, release_date: null }, soon]), 'Bientôt');
+
+    // `closestToToday` (bouton « aujourd'hui ») ignore les sans-date : rien ne les situe.
+    const closest = (list) => closestToToday(list, NOW)?.title ?? null;
+    t('le passé le plus récent', closest([old, recent, soon]), 'Récent');
+    t('aucun passé → le futur le plus proche', closest([soon, later]), 'Bientôt');
+    t('sortie du jour comptée comme passée',
+        closest([{ movie_id: 11, title: 'Aujourd\'hui', release_date: '2026-08-19' }, later]), 'Aujourd\'hui');
+    t('aucun daté → null', closest([undatedNull, undatedEmpty, undatedJunk]), null);
+    t('liste vide → null', closest([]), null);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

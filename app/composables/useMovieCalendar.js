@@ -23,14 +23,14 @@ export function useMovieCalendar() {
             return stateMatch && mediaMatch;
         });
 
-        moviesWithoutDate.value = filtered.filter(m => !m.release_date || isNaN(new Date(m.release_date)));
+        const dated = filtered
+            .map(movie => ({ movie, date: releaseDateOf(movie) }))
+            .filter(entry => entry.date !== null)
+            .sort((a, b) => a.date - b.date);
 
-        const byDate = [...filtered]
-            .filter(m => m.release_date && !isNaN(new Date(m.release_date)))
-            .sort((a, b) => new Date(a.release_date) - new Date(b.release_date));
+        moviesWithoutDate.value = filtered.filter(m => releaseDateOf(m) === null);
 
-        byDate.forEach((movie) => {
-            const date = new Date(movie.release_date);
+        dated.forEach(({ movie, date }) => {
             const year = date.getFullYear();
             const month = new Intl.DateTimeFormat('fr-FR', { month: 'long' }).format(date);
             const day = date.getDate();
