@@ -8,7 +8,7 @@
 // un film qui reste « en salle » de trop, un mercredi mal calculé ne lèvent aucune exception, ils
 // affichent simplement quelque chose de faux.
 //
-// Dix familles, toutes importées depuis le code réel (aucune copie) :
+// Onze familles, toutes importées depuis le code réel (aucune copie) :
 //   1. `carryOverMissing`     — report des salles disparues (server/utils/showtimesFreshness.js)
 //   2. `cineWeek`             — semaine ciné partagée app/serveur/scripts (shared/utils/cineWeek.js)
 //   3. `seancesGrouping`      — filtres, tri, regroupements (app/utils/seancesGrouping.js)
@@ -19,6 +19,7 @@
 //   8. `inTheaters`           — qui est « en salle » (app/utils/inTheaters.js)
 //   9. gardes                 — schéma PostgREST et dates locales (shared/utils, app/utils)
 //  10. `movieSearch`         — quel film la recherche ouvre dans la timeline (app/utils/movieSearch.js)
+//  11. `movieFilters`        — quels filtres masquent un film (app/utils/movieFilters.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -53,6 +54,7 @@ import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
 import { parseLetterboxdFilm, isLetterboxdDirectorUrl } from '../shared/utils/letterboxdFilm.js';
 import { bestSearchMatch, closestToToday } from '../app/utils/movieSearch.js';
+import { matchesFilters, blockingFilters } from '../app/utils/movieFilters.js';
 
 // --- Auto-imports simulés ------------------------------------------------------------------------
 //
@@ -1231,6 +1233,31 @@ console.log('\n\x1b[1mmovieSearch — quel film la recherche ouvre\x1b[0m');
         closest([{ movie_id: 11, title: 'Aujourd\'hui', release_date: '2026-08-19' }, later]), 'Aujourd\'hui');
     t('aucun daté → null', closest([undatedNull, undatedEmpty, undatedJunk]), null);
     t('liste vide → null', closest([]), null);
+}
+
+console.log('\n\x1b[1mmovieFilters — quels filtres masquent un film\x1b[0m');
+{
+    const film = { movie_id: 1, title: 'X', media: 'cinema', state: 'to-watch' };
+    const none = { state: null, media: null };
+
+    t('aucun filtre → visible', matchesFilters(film, none), true);
+    t('aucun filtre → rien ne bloque', blockingFilters(film, none), []);
+    t('filtre concordant → visible', matchesFilters(film, { state: null, media: 'cinema' }), true);
+    t('filtre discordant → masqué', matchesFilters(film, { state: null, media: 'streaming' }), false);
+
+    // C'est ce tableau que `onSearch` lève.
+    t('un seul filtre bloque → lui seul est levé',
+        blockingFilters(film, { state: 'to-watch', media: 'streaming' }), ['media']);
+    t('les deux bloquent → les deux levés',
+        blockingFilters(film, { state: 'watched', media: 'streaming' }), ['state', 'media']);
+    t('filtres absents → rien ne bloque', blockingFilters(film, undefined), []);
+
+    // Les deux fonctions ne doivent jamais se contredire.
+    const cases = [none, { state: 'watched', media: null }, { state: null, media: 'cinema' },
+                   { state: 'to-watch', media: 'streaming' }];
+    t('cohérence matchesFilters ⇔ blockingFilters vide',
+        cases.map(f => blockingFilters(film, f).length === 0 === matchesFilters(film, f)),
+        cases.map(() => true));
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

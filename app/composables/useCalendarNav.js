@@ -15,6 +15,7 @@ export const isLibraryView = (mode) => !isYearlessView(mode)
 
 export function useCalendarNav() {
     const route = useRoute()
+    const store = useMoviesStore()
     const { movies } = useMovieCalendar()
     const { scrollToMovie, scrollToTop, closestMovie, searchMovie } = useMovieScroll(movies)
 
@@ -91,7 +92,14 @@ export function useCalendarNav() {
 
     const onSearch = (event) => {
         const best = searchMovie(event.detail?.term)
-        if (best) goToMovie(best.movie_id)
+        if (!best) return
+
+        // La recherche gagne sur les filtres : `searchMovie` cherche dans la liste entière, alors que
+        // la timeline n'affiche que ce que les filtres laissent passer — sans cette levée, un titre
+        // masqué mène à « Aucun film ne correspond. ». Seuls les filtres qui bloquent sont levés.
+        for (const key of blockingFilters(best, store.filters)) store.filters[key] = null
+
+        goToMovie(best.movie_id)
     }
 
     return {

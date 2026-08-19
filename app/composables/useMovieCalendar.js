@@ -17,11 +17,7 @@ export function useMovieCalendar() {
     const sortMovies = (list) => {
         const sorted = {};
 
-        const filtered = list.filter(m => {
-            const stateMatch = !store.filters.state || m.state === store.filters.state;
-            const mediaMatch = !store.filters.media || m.media === store.filters.media;
-            return stateMatch && mediaMatch;
-        });
+        const filtered = list.filter(m => matchesFilters(m, store.filters));
 
         const dated = filtered
             .map(movie => ({ movie, date: releaseDateOf(movie) }))
