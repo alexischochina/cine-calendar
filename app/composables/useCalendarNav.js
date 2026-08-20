@@ -18,6 +18,7 @@ export function useCalendarNav() {
     const store = useMoviesStore()
     const { movies } = useMovieCalendar()
     const { scrollToMovie, scrollToTop, closestMovie, searchMovie } = useMovieScroll(movies)
+    const { announceMovie, clearHighlight } = useMovieHighlight()
 
     const currentYear = new Date().getFullYear()
 
@@ -44,12 +45,20 @@ export function useCalendarNav() {
     const viewMode = computed(() => VIEW_BY_ROUTE[String(route.name || '')] ?? 'timeline')
 
     // Navigue vers la timeline de l'année du film, puis scrolle jusqu'à lui.
-    const goToMovie = async (movieId) => {
+    //
+    // `highlight` : deux pulsations sur la ligne d'arrivée, plus son annonce parlée. Réservé aux trajets
+    // où on **cherchait** ce film — un scroll ordinaire arrive sur une ligne qu'on regardait déjà.
+    const goToMovie = async (movieId, { highlight = false } = {}) => {
         const movie = movies.value.find(m => m.movie_id === Number(movieId))
         if (!movie) return
-        await navigateTo(`/${yearToSlug(yearOfMovie(movie))}/timeline`)
+        const year = yearOfMovie(movie)
+        // Annoncé avant le voyage : la marque visuelle attend que le scroll se pose, un lecteur d'écran
+        // n'a aucune raison d'attendre avec elle.
+        if (highlight && movie.title) announceMovie(
+            `« ${movie.title} » trouvé dans ${year === null ? 'la section « Sans date »' : year}`)
+        await navigateTo(`/${yearToSlug(year)}/timeline`)
         await nextTick()
-        scrollToMovie(movieId)
+        scrollToMovie(movieId, { highlight })
     }
 
     // Le rail → la vue Séances, cadrée sur ce film. L'identifiant passe par l'URL (et non par un
@@ -72,6 +81,7 @@ export function useCalendarNav() {
     const isLibrary = computed(() => !isCity.value)
 
     const selectYear = async (year) => {
+        clearHighlight()
         // `/2026/seances` n'existe pas : choisir une année depuis une vue hors année ramène sur sa
         // timeline.
         const mode = YEARLESS_VIEWS[viewMode.value] ? 'timeline' : viewMode.value
@@ -80,9 +90,12 @@ export function useCalendarNav() {
         scrollToTop()
     }
 
-    const selectView = (mode) => YEARLESS_VIEWS[mode]
-        ? navigateTo(YEARLESS_VIEWS[mode])
-        : navigateTo(`/${yearToSlug(selectedYear.value)}/${mode}`)
+    const selectView = (mode) => {
+        clearHighlight()
+        return YEARLESS_VIEWS[mode]
+            ? navigateTo(YEARLESS_VIEWS[mode])
+            : navigateTo(`/${yearToSlug(selectedYear.value)}/${mode}`)
+    }
 
     const onScrollToToday = async () => {
         const target = closestMovie()
@@ -99,7 +112,7 @@ export function useCalendarNav() {
         // masqué mène à « Aucun film ne correspond. ». Seuls les filtres qui bloquent sont levés.
         for (const key of blockingFilters(best, store.filters)) store.filters[key] = null
 
-        goToMovie(best.movie_id)
+        goToMovie(best.movie_id, { highlight: true })
     }
 
     return {

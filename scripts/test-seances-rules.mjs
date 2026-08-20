@@ -20,6 +20,7 @@
 //   9. gardes                 — schéma PostgREST et dates locales (shared/utils, app/utils)
 //  10. `movieSearch`         — quel film la recherche ouvre dans la timeline (app/utils/movieSearch.js)
 //  11. `movieFilters`        — quels filtres masquent un film (app/utils/movieFilters.js)
+//  12. `viewport`           — la ligne est-elle déjà à l'écran ? (app/utils/viewport.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -55,6 +56,7 @@ import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.j
 import { parseLetterboxdFilm, isLetterboxdDirectorUrl } from '../shared/utils/letterboxdFilm.js';
 import { bestSearchMatch, closestToToday } from '../app/utils/movieSearch.js';
 import { matchesFilters, blockingFilters } from '../app/utils/movieFilters.js';
+import { isFullyVisible } from '../app/utils/viewport.js';
 
 // --- Auto-imports simulés ------------------------------------------------------------------------
 //
@@ -1258,6 +1260,40 @@ console.log('\n\x1b[1mmovieFilters — quels filtres masquent un film\x1b[0m');
     t('cohérence matchesFilters ⇔ blockingFilters vide',
         cases.map(f => blockingFilters(film, f).length === 0 === matchesFilters(film, f)),
         cases.map(() => true));
+}
+
+console.log('\n\x1b[1mviewport — la ligne est-elle déjà à l\'écran\x1b[0m');
+{
+    const H = 800;
+    const row = (top, height = 90) => ({ top, bottom: top + height });
+
+    // Le cas qui décide : ligne sous les yeux → on marque tout de suite, pas après une durée de scroll
+    // qui n'aura pas lieu.
+    t('ligne en plein milieu → visible', isFullyVisible(row(300), H), true);
+    t('ligne au-dessus du champ → non', isFullyVisible(row(-200), H), false);
+    t('ligne en dessous du champ → non', isFullyVisible(row(900), H), false);
+    t('ligne à cheval sur le haut → non', isFullyVisible(row(-10), H), false);
+    t('ligne à cheval sur le bas → non', isFullyVisible(row(740), H), false);
+
+    // Bornes exactes : collée en haut / en bas, sans marge, ça compte comme visible.
+    t('collée au bord haut → visible', isFullyVisible(row(0), H), true);
+    t('collée au bord bas → visible', isFullyVisible(row(710), H), true);
+    t('dépasse d\'un pixel en bas → non', isFullyVisible(row(711), H), false);
+
+    // La marge est là pour l'en-tête `sticky` et la nav flottante : « visible » en coordonnées mais
+    // couverte en vrai.
+    t('sous l\'en-tête sticky → non malgré top >= 0', isFullyVisible(row(40), H, 120), false);
+    t('derrière la nav flottante → non', isFullyVisible(row(650), H, 120), false);
+    t('dégagée des deux bandes → visible', isFullyVisible(row(300), H, 120), true);
+    t('pile sur la marge haute → visible', isFullyVisible(row(120), H, 120), true);
+
+    // Plus haute que le viewport : jamais entièrement visible, donc jamais la branche rapide.
+    t('plus haute que l\'écran → non', isFullyVisible(row(0, 1200), H), false);
+
+    // Entrées absentes : la branche lente, jamais une exception (élément détaché, hauteur inconnue).
+    t('rect absent → non', isFullyVisible(null, H), false);
+    t('hauteur inconnue → non', isFullyVisible(row(300), undefined), false);
+    t('coordonnées non finies → non', isFullyVisible({ top: NaN, bottom: NaN }, H), false);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

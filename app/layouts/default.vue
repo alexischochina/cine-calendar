@@ -17,6 +17,7 @@ const { syncInTheaters } = useInTheatersSync()
 const { syncUpcomingEvents } = useUpcomingEvents()
 
 const { catchupNotice } = useCatchupFlow()
+const { highlightMessage } = useMovieHighlight()
 const { dispatchMovieAdded, dispatchMovieExists, dispatchScrollToToday, dispatchSearchMovie } = useNavEvents()
 
 const mobileYearMenu = ref(false)
@@ -50,7 +51,8 @@ const onMovieAdded = async (event) => {
 
 const onMovieExists = (event) => {
     const movieId = handleMovieExists(event)
-    if (movieId) goToMovie(movieId)
+    // Même besoin que la recherche : on vient de chercher ce titre pour l'ajouter, il y était déjà.
+    if (movieId) goToMovie(movieId, { highlight: true })
 }
 
 // Notes Letterboxd rafraîchies au passage en Stats / changement d'année en Stats.
@@ -130,6 +132,10 @@ onBeforeUnmount(() => {
                             :movies="cinemaNow" :event-movies="eventSoon" @select-movie="goToSeances" />
         </Transition>
 
+        <!-- Équivalent parlé de la ligne marquée par une recherche. Toujours rendue, jamais derrière un
+             `v-if` : une région live insérée en même temps que son texte n'est pas annoncée. -->
+        <p class="sr" role="status">{{ highlightMessage }}</p>
+
         <!-- Notice « ajouté à la liste à rattraper de <année> » -->
         <Transition name="notice">
             <div v-if="catchupNotice" class="catchup-notice" role="status">
@@ -155,6 +161,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style lang="scss" scoped>
+// Contenu lu par les lecteurs d'écran (cf. `srOnly` dans `assets/styles/_a11y.scss`).
+.sr { @include srOnly; }
+
 .timeline-shell {
     position: relative; // contexte du rail overlay
     display: flex;

@@ -88,6 +88,10 @@ const isInTheaters = computed(() => selectedState.value === 'inTheaters');
 // Une entrée cliquable par personne, chacune portant son `sep` — sans quoi le gabarit empile trois
 // `<template>` pour un `v-if="i"`.
 const directors = computed(() => directorLinks(props.director, props.letterboxdDirectors));
+// Marque « c'est cette ligne » posée par une recherche : elle vient du rendu, pas d'une classe ajoutée
+// sur le DOM, qu'un patch du `:class` ci-dessous effacerait (cf. `useMovieHighlight`).
+const { highlightedMovieId, clearMovieFlash } = useMovieHighlight();
+const isFlashing = computed(() => highlightedMovieId.value === props.movieId);
 // Repli quand le réalisateur est inconnu : un libellé, jamais un lien.
 const subFallback = computed(() => {
     if (selectedState.value === 'seen') return MEDIA_LABELS[selectedMedia.value] || 'Streaming';
@@ -98,8 +102,11 @@ const subFallback = computed(() => {
 </script>
 
 <template>
+    <!-- `.self` : `animationend` remonte, et `MovieActionsBtn` anime son popover à l'intérieur de la
+         ligne — sans le modificateur, ouvrir le menu ⋯ couperait le clignotement. -->
     <div class="movie-list-item"
-         :class="[`-${selectedMedia}`, `-state-${selectedState}`, `-id-${props.movieId}`]">
+         :class="[`-${selectedMedia}`, `-state-${selectedState}`, `-id-${props.movieId}`, { '-flash': isFlashing }]"
+         @animationend.self="clearMovieFlash(props.movieId)">
         <div class="day">{{ props.releaseDay }}</div>
         <NuxtImg v-if="props.posterPath" :src="`https://image.tmdb.org/t/p/w342${props.posterPath}`"
                  :alt="props.title ? `Affiche du film ${props.title}` : ''" class="poster" loading="lazy" />
@@ -153,6 +160,25 @@ const subFallback = computed(() => {
     &.-state-seen:is(.-streaming, .-netflix, .-primeVideo, .-disney\+, .-vod) {
         --accent: #{$color-yellow};
         background: rgba($color-yellow, .14);
+    }
+
+    // Ligne d'arrivée d'une recherche : deux pulsations pour dire « c'est là ». La durée n'existe qu'ici,
+    // la ligne retirant la marque à la fin de l'animation.
+    //
+    // `box-shadow: inset` plutôt qu'un `background` animé : la teinte se **superpose** au fond de l'état
+    // au lieu de l'écraser, donc la pulsation se voit sur les quatre variantes sans une règle par état,
+    // et rien ne touche à la boîte.
+    //
+    // ⚠️ Un `::after` en `opacity` serait compositable, mais au-dessus du contenu il voile le titre, et
+    // le passer dessous (`z-index: -1`) demande un contexte d'empilement sur la ligne — qui enfermerait
+    // le popover de `MovieActionsBtn` **sous** les lignes suivantes.
+    &.-flash {
+        animation: flash-target .55s ease-in-out 2;
+    }
+
+    // Mouvement réduit : une seule montée-descente lente — on retire le battement, pas le repère.
+    @media (prefers-reduced-motion: reduce) {
+        &.-flash { animation: flash-target 1.4s ease-in-out 1; }
     }
 
     > .day {
@@ -276,5 +302,9 @@ const subFallback = computed(() => {
         .sub,
         .badge { display: none; }
     }
+}
+
+@keyframes flash-target {
+    50% { box-shadow: inset 0 0 0 100vmax rgba($color-primary, .3); }
 }
 </style>

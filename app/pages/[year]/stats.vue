@@ -11,5 +11,5 @@ const { onAddCatchupMovie } = useCatchupFlow()
 
 <template>
     <StatsView :movies="movies" :year="selectedYear"
-               @go-to-movie="goToMovie" @toggle-catchup="setCatchup" @add-catchup-movie="onAddCatchupMovie" />
+               @go-to-movie="(id) => goToMovie(id)" @toggle-catchup="setCatchup" @add-catchup-movie="onAddCatchupMovie" />
 </template>
