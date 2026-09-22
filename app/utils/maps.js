@@ -13,16 +13,29 @@
 // Mode transport en commun par défaut (`travelmode=transit` / `dirflg=r`) : c'est la même unité que
 // le `transit_minutes` affiché juste à côté, il serait incohérent d'ouvrir un itinéraire en voiture.
 
-// Destination : les coordonnées dès que la salle est géocodée, sinon « nom, code postal Paris ».
+// Destination : les coordonnées dès que la salle est géocodée, sinon « nom, code postal, commune ».
 // Les coordonnées d'abord parce que les adresses d'Allociné ne sont pas toujours des adresses
 // (« 30 Rue Saint-André des Arts : caisse, salles 1 & 2 - 12 rue Gît-le-Cœur ») : ce sont
 // précisément celles que `scripts/geocode-cinemas.mjs` a déjà démêlées, et un couple lat/lng ne
 // laisse aucune place à l'ambiguïté.
+//
+// ⚠️⚠️ La commune vient de la salle (`cinema.city`), elle n'est **plus écrite en dur**. Ce repli
+// portait « Paris » en constante, ce qui était juste tant qu'il n'y avait qu'une ville et devenait
+// faux à la première salle troyenne : l'itinéraire aurait pointé « CGR Troyes, 10000, Paris » et
+// envoyé à 150 km. Un lien de carte qui se trompe de ville est pire qu'un lien absent — on le suit.
+//
+// ⚠️ Ce chemin sert surtout aux salles **pas encore géocodées**, donc précisément aux nouvelles,
+// donc aux troyennes tant que `scripts/geocode-cinemas.mjs` n'est pas repassé. Il n'est pas
+// marginal.
+//
+// Commune absente (entrées de cache écrites avant la colonne `city`) : on l'omet plutôt que de
+// deviner. « Le Champo, 75005 » reste sans ambiguïté pour un géocodeur — un code postal désigne une
+// commune et une seule.
 const destination = (cinema) => {
     const { lat, lng } = cinema ?? {};
     if (Number.isFinite(lat) && Number.isFinite(lng)) return `${lat},${lng}`;
 
-    return [cinema?.name, cinema?.zip, 'Paris'].filter(Boolean).join(', ');
+    return [cinema?.name, cinema?.zip, cinema?.city].filter(Boolean).join(', ');
 };
 
 // iPadOS 13+ se présente comme un Mac : l'écran tactile est ce qui les sépare. Un Mac reste sur

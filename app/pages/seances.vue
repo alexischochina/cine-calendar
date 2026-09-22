@@ -1,12 +1,17 @@
 <script setup>
-// Vue « Séances » : où voir, à Paris, les films de ma liste encore à l'affiche.
+// Vue « Séances » : où voir, dans **ma ville**, les films de ma liste encore à l'affiche.
 // Route à la racine et non sous `/[year]/` — la vue ne dépend d'aucune année : donc pas de
 // middleware `valid-year`, et pas de `key` (rien à réutiliser entre années).
+//
+// ⚠️ Aucun nom de ville en dur dans cette page : titre, en-tête, messages d'état et mention de
+// source viennent tous de `cityInfo`, c'est-à-dire du profil. Ils étaient écrits « Paris » en
+// constante, ce qui s'affichait tel quel à un compte troyen.
 definePageMeta({ middleware: ['auth'] })
-useHead({ title: 'Séances à Paris' })
+const { cityInfo } = useProfile()
+useHead({ title: () => `Séances à ${cityInfo.value.label}` })
 
 const {
-    days, dayIndex, group, timeSlot, customRange, ugcOnly, openCard, focusFilmId,
+    days, dayIndex, group, timeSlot, customRange, ugcOnly, cardFilterApplies, openCard, focusFilmId,
     loading, error, stale, silentCinemas, hasUnconfirmed, films, focusFilm, unresolved, byFilm, byCinema,
     nbFilms, nbSeances, nbEvents, hiddenByCard, hiddenByTime, hiddenEvents, nextDate, updatedAt,
     load, retry, refreshDay, selectDay, toggleFavorite, jumpToNextAvailableDay, syncToday, refreshCinemas,
@@ -177,7 +182,7 @@ watch(focusKey, (now, before) => {
 <template>
     <div class="seances-page scr">
         <div class="head">
-            <h1 class="title">Séances à Paris</h1>
+            <h1 class="title">Séances à {{ cityInfo.label }}</h1>
             <!-- `aria-live` ici plutôt que sur la liste : changer de jour ou de filtre remplace tout
                  le contenu en silence, et ce sous-titre est justement le résumé de ce qui a changé.
                  Annoncer la liste entière serait assourdissant. -->
@@ -198,6 +203,7 @@ watch(focusKey, (now, before) => {
 
         <SeancesSeanceFilters class="filters" :group="group" :time-slot="timeSlot"
                               :custom-range="customRange" :ugc-only="ugcOnly"
+                              :card-filter-applies="cardFilterApplies"
                               @update:group="group = $event" @update:time-slot="timeSlot = $event"
                               @update:custom-range="customRange = $event"
                               @update:ugc-only="ugcOnly = $event" />
@@ -208,7 +214,7 @@ watch(focusKey, (now, before) => {
         <p v-if="hiddenEvents" class="warn -event">
             {{ hiddenEvents }} séance{{ hiddenEvents > 1 ? 's' : '' }} événement hors carte UGC
             (une avant-première n'est pas couverte) — masquée{{ hiddenEvents > 1 ? 's' : '' }} par le pré-filtre.
-            <button class="link" type="button" @click="ugcOnly = false">Ouvrir à tout Paris</button>
+            <button class="link" type="button" @click="ugcOnly = false">Ouvrir à toutes les salles</button>
         </p>
 
         <!-- Horaires servis depuis une entrée périmée : on les montre quand même (mieux qu'une page
@@ -246,15 +252,15 @@ watch(focusKey, (now, before) => {
              « En salle » étant désormais contrôlé sur les séances Allociné, il n'y a plus rien à
              faire à la main — on le dit, plutôt que d'envoyer marquer des films dans la timeline. -->
         <div v-else-if="!films.length" class="state">
-            <p class="msg">Aucun film de ta liste n'est actuellement à l'affiche à Paris.</p>
+            <p class="msg">Aucun film de ta liste n'est actuellement à l'affiche à {{ cityInfo.label }}.</p>
             <p class="hint">La liste se met à jour toute seule chaque semaine, à partir des séances Allociné.</p>
         </div>
 
         <!-- 4. Le pré-filtre carte a tout mangé : message distinct, avec la sortie de secours. -->
         <div v-else-if="!buckets.length && hiddenByCard > 0" class="state">
             <p class="msg">Aucune séance acceptant la carte UGC pour ces critères.</p>
-            <p class="hint">{{ hiddenByCard }} séance{{ hiddenByCard > 1 ? 's' : '' }} dans les autres salles parisiennes.</p>
-            <button class="action" type="button" @click="ugcOnly = false">Ouvrir à tout Paris</button>
+            <p class="hint">{{ hiddenByCard }} séance{{ hiddenByCard > 1 ? 's' : '' }} dans les autres salles.</p>
+            <button class="action" type="button" @click="ugcOnly = false">Ouvrir à toutes les salles</button>
         </div>
 
         <!-- 4 bis. Le filtre horaire a tout mangé : on le dit et on rouvre la journée d'un clic,
@@ -294,7 +300,7 @@ watch(focusKey, (now, before) => {
              bouton, dont le libellé bascule à chaque chargement — la région annoncerait
              « Actualisation… » en boucle et noierait la seule information qui compte. -->
         <p class="source">
-            Séances Allociné · Paris intra-muros<span v-if="updatedAt" aria-live="polite"> · relevé {{ updatedAt }}</span>
+            Séances Allociné · {{ cityInfo.scopeLabel }}<span v-if="updatedAt" aria-live="polite"> · relevé {{ updatedAt }}</span>
             <!-- `aria-disabled` plutôt que `disabled` : un bouton désactivé sort du parcours clavier au
                  moment où l'utilisateur vient de l'actionner, et le focus retombe en début de page. -->
             <button class="refresh" type="button" :aria-disabled="loading" @click="loading || refreshDay()">

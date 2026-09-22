@@ -51,6 +51,13 @@ const favoriteCinemas = computed(() => Object.values(cinemas.value ?? {})
     .filter(c => c.favorite)
     .sort((a, b) => (a.arrondissement ?? 99) - (b.arrondissement ?? 99)
         || String(a.name).localeCompare(String(b.name))));
+
+// ⚠️ Le référentiel `cinemas` ne porte pas la commune, seulement l'arrondissement — on ne peut donc
+// pas offrir ici le repli « commune » de la vue Séances (cf. `placeOf`). Hors d'une ville à
+// arrondissements, ce rail n'affiche que le nom de la salle : c'est une dégradation acceptée, pas un
+// oubli. L'alternative — afficher un arrondissement toujours vide — ne dirait rien de plus.
+const { cityInfo } = useProfile();
+const showsArrondissement = computed(() => cityInfo.value.groupsByArrondissement);
 </script>
 
 <template>
@@ -93,7 +100,7 @@ const favoriteCinemas = computed(() => Object.values(cinemas.value ?? {})
                     </button>
                     <div class="info">
                         <div class="name">{{ cinema.name }}</div>
-                        <div v-if="cinema.arrondissement" class="arr">{{ arrondissementLabel(cinema.arrondissement) }} arr.</div>
+                        <div v-if="showsArrondissement && cinema.arrondissement" class="arr">{{ arrondissementLabel(cinema.arrondissement) }} arr.</div>
                     </div>
                 </li>
             </ul>

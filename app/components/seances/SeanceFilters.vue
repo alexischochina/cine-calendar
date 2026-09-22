@@ -13,6 +13,9 @@ const props = defineProps({
     timeSlot: { type: String, default: 'all' },
     customRange: { type: Array, default: null },
     ugcOnly: { type: Boolean, default: true },
+    // Cette ville a-t-elle des salles acceptant la carte ? Faux à Troyes, où le bouton disparaît
+    // plutôt que de proposer un filtre qui ne peut que vider la page (cf. `useSeances`).
+    cardFilterApplies: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(['update:group', 'update:timeSlot', 'update:customRange', 'update:ugcOnly']);
@@ -183,11 +186,13 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Le libellé annonce l'état courant sans ambiguïté : sans ça, « 0 séance » à cause du
-             pré-filtre se lit comme un bug plutôt que comme un filtre. -->
-        <button type="button" class="card" :class="{ '-on': ugcOnly }" :aria-pressed="ugcOnly"
-                @click="emit('update:ugcOnly', !ugcOnly)">
+             pré-filtre se lit comme un bug plutôt que comme un filtre.
+             ⚠️ Masqué là où aucune salle n'accepte la carte : le proposer n'y offrirait qu'un moyen
+             de vider la page. -->
+        <button v-if="cardFilterApplies" type="button" class="card" :class="{ '-on': ugcOnly }"
+                :aria-pressed="ugcOnly" @click="emit('update:ugcOnly', !ugcOnly)">
             <span class="dot" aria-hidden="true" />
-            {{ ugcOnly ? 'Carte UGC uniquement' : 'Tout Paris' }}
+            {{ ugcOnly ? 'Carte UGC uniquement' : 'Toutes les salles' }}
         </button>
 
         <!-- Popin de plage libre. Le clic sur le fond annule : rien n'est appliqué avant « OK »,

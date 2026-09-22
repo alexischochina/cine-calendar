@@ -28,7 +28,11 @@ const props = defineProps({
 
 const emit = defineEmits(['select-view']);
 
-const GROUPS = [
+// ⚠️ Le libellé du second groupe suit la ville de l'utilisateur. Il disait « À Paris » en dur, ce qui
+// s'affichait tel quel à un compte troyen — le rail annonçait une ville, la vue en montrait une autre.
+const { cityInfo } = useProfile();
+
+const GROUPS = computed(() => [
     {
         label: 'Ma liste',
         tabs: [
@@ -37,15 +41,15 @@ const GROUPS = [
         ],
     },
     {
-        label: 'À Paris',
+        label: `À ${cityInfo.value.label}`,
         tabs: [
             { mode: 'seances', icon: 'ticket', label: 'Séances' },
             { mode: 'events', icon: 'star', label: 'Événements' },
         ],
     },
-];
+]);
 
-const TABS = GROUPS.flatMap(g => g.tabs);
+const TABS = computed(() => GROUPS.value.flatMap(g => g.tabs));
 
 // Recentrage de l'onglet actif : les quatre pilules demandent ~470 px pour 375 px d'écran, donc
 // « Événements » démarre hors champ. Sans ça, arriver sur /evenements affiche une bande où aucun

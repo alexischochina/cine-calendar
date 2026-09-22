@@ -23,6 +23,10 @@
 
 export function useSeances() {
     const { seanceFilms } = useMovieCalendar();
+    // Les capacités de la ville de l'utilisateur : carte UGC, temps de trajet, arrondissements.
+    // Ce ne sont pas des réglages mais des faits — à Troyes, aucune salle n'accepte la carte UGC et
+    // le `transit_minutes` du référentiel est calculé depuis un domicile parisien.
+    const { cityInfo } = useProfile();
     const {
         payloadFor, livePayloadFor, wireSnapshot,
         resolveAllocineIds, loadShowtimes, forgetDay, forgetBefore,
@@ -41,6 +45,18 @@ export function useSeances() {
     const timeSlot = useState('seancesSlot', () => 'all');
     const customRange = useState('seancesCustomRange', () => null);
     const ugcOnly = useState('seancesUgcOnly', () => true);      // pré-filtre carte, actif par défaut
+
+    // ⚠️ **Le filtre est neutralisé là où aucune salle n'accepte la carte.** Il est actif par défaut,
+    // et `useCinemas` note déjà ce que ça coûte quand `accepts_ugc` est illisible : « une page vide
+    // alors que le pré-filtre carte est actif par défaut ». À Troyes, ce n'est pas une panne mais
+    // l'état normal — aucune salle n'a la carte — donc masquer le bouton sans neutraliser l'état
+    // aurait donné une vue vide sans même le contrôle permettant de comprendre pourquoi.
+    //
+    // L'état `ugcOnly` est laissé tel quel plutôt que forcé à `false` : il est partagé entre visites
+    // (`useState`), et le remettre à zéro perdrait le choix d'un utilisateur parisien qui changerait
+    // de ville. On ne touche qu'à son **effet**.
+    const cardFilterApplies = computed(() => cityInfo.value.hasUgcCard);
+    const effectiveUgcOnly = computed(() => ugcOnly.value && cardFilterApplies.value);
     const openCard = useState('seancesOpenCard', () => null);
 
     // Film mis au premier plan par un clic depuis « Au ciné en ce moment » (`/seances?film=<tmdbId>`).
@@ -250,11 +266,23 @@ export function useSeances() {
                         zip: theater.zip,
                         circuit: theater.circuit,
                         arrondissement: arr,
+                        // La commune, pour les villes sans arrondissements. Absente des entrées de
+                        // cache écrites avant `2609221215` — toutes parisiennes, donc sans usage.
+                        city: theater.city ?? null,
+                        // Repère géographique **déjà résolu** : arrondissement à Paris, commune
+                        // ailleurs. Résolu ici et pas dans le `.vue`, comme le reste — les
+                        // composants ne font que rendre ce qui sort d'ici.
+                        place: placeOf({ arrondissement: arr, city: theater.city ?? null }, cityInfo.value),
                         acceptsUgc: known.accepts_ugc === true,
                         // Trajet porte-à-porte, pré-calculé côté serveur : le domicile ne bougeant
                         // pas, c'est une constante par salle. Rien à calculer ici, et surtout
                         // aucune coordonnée personnelle à exposer au navigateur.
-                        transitMinutes: known.transit_minutes ?? null,
+                        // ⚠️ Mis à `null` hors des villes qui en ont : `transit_minutes` est calculé
+                        // depuis **un** domicile (`scripts/transit-times.mjs`, `HOME_LAT`/`HOME_LNG`),
+                        // qui est parisien. L'afficher à Troyes annoncerait un trajet depuis Paris
+                        // comme s'il partait de chez soi — un chiffre faux, et crédible, donc pire
+                        // qu'une absence.
+                        transitMinutes: cityInfo.value.hasTransitTimes ? (known.transit_minutes ?? null) : null,
                         favorite: known.favorite === true,
                         // Position géocodée, pour l'itinéraire. Absente tant que
                         // `scripts/geocode-cinemas.mjs` n'est pas passé sur une salle : `maps.js`
@@ -281,7 +309,7 @@ export function useSeances() {
     // aussi avec `false` pour compter ce que le pré-filtre carte masque.
     const filters = (card) => ({ card, range: timeRange.value });
 
-    const filtered = computed(() => applyFilters(entries.value, filters(ugcOnly.value)));
+    const filtered = computed(() => applyFilters(entries.value, filters(effectiveUgcOnly.value)));
 
     const byFilm = computed(() => groupByFilm(filtered.value));
     const byCinema = computed(() => groupByCinema(filtered.value));
@@ -293,14 +321,14 @@ export function useSeances() {
     // Ce que le pré-filtre carte masque, à filtres égaux : distingue « rien ce jour-là » de « le filtre
     // a tout mangé », sans quoi l'écran vide se lit comme un bug.
     const hiddenByCard = computed(() =>
-        ugcOnly.value ? countMatching(entries.value, filters(false)) - nbSeances.value : 0
+        effectiveUgcOnly.value ? countMatching(entries.value, filters(false)) - nbSeances.value : 0
     );
 
     // Même raisonnement pour la plage horaire. ⚠️ Levée sur la base des filtres courants (`...filters`)
     // et non d'un littéral : un filtre ajouté plus tard s'y appliquera sans qu'on y repense.
     const hiddenByTime = computed(() =>
         timeRange.value
-            ? countMatching(entries.value, { ...filters(ugcOnly.value), range: null }) - nbSeances.value
+            ? countMatching(entries.value, { ...filters(effectiveUgcOnly.value), range: null }) - nbSeances.value
             : 0
     );
 
@@ -308,7 +336,7 @@ export function useSeances() {
     // n'est pas couverte par la carte, et le pré-filtre est actif par défaut. Sans ce décompte, le badge
     // du rail enverrait sur une page où l'événement est introuvable, sans un mot.
     const hiddenEvents = computed(() =>
-        ugcOnly.value ? countMatchingEvents(entries.value, filters(false)) - nbEvents.value : 0
+        effectiveUgcOnly.value ? countMatchingEvents(entries.value, filters(false)) - nbEvents.value : 0
     );
 
     // Au moins une salle affichée n'est plus confirmée par la source. Signalé une fois pour la page
@@ -346,7 +374,7 @@ export function useSeances() {
 
     return {
         // état
-        days, dayIndex, selectedDay, group, timeSlot, customRange, ugcOnly, openCard,
+        days, dayIndex, selectedDay, group, timeSlot, customRange, ugcOnly, cardFilterApplies, openCard,
         focusFilmId, loading, error, stale, silentCinemas, hasUnconfirmed,
         // données
         films, focusFilm, unresolved, byFilm, byCinema, nbFilms, nbSeances, nbEvents,

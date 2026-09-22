@@ -34,10 +34,15 @@ const title = computed(() => props.mode === 'film' ? props.bucket.movie.title : 
 // de panneau sans compteur global ni génération aléatoire, qui différerait entre serveur et client.
 const panelId = computed(() => `seances-panel-${props.bucket.key}`);
 
-// « 3e arr. · 24 min » — le temps de trajet disparaît si la salle n'est pas encore géocodée : on
-// n'affiche pas de tiret de remplissage.
+// « 3e arr. · 24 min » à Paris, « Pont-Sainte-Marie » à Troyes — les deux morceaux disparaissent
+// tout seuls quand ils n'ont rien à dire : `place` est `null` si la ville n'a pas de repère connu,
+// et `transitMinutes` est `null` si la salle n'est pas géocodée **ou** si la ville n'a pas de temps
+// de trajet. On n'affiche jamais de tiret de remplissage.
+//
+// ⚠️ Les deux sont résolus dans `useSeances`, pas ici : c'est là que vit la ville. Ce composant ne
+// fait que les assembler.
 const placeLabel = (cinema) => [
-    cinema.arrondissement ? `${arrondissementLabel(cinema.arrondissement)} arr.` : null,
+    cinema.place,
     formatTransit(cinema.transitMinutes),
 ].filter(Boolean).join(' · ');
 

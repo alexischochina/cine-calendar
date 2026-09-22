@@ -10,6 +10,9 @@
 //   - « Par jour » répond à « qu'est-ce qu'il y a ce soir », la question du samedi après-midi.
 // Aucun des deux ne déclenche de requête : tout est dérivé du relevé déjà fait.
 definePageMeta({ middleware: ['auth'] })
+
+// Le périmètre annoncé en pied de page suit la ville du profil, jamais un nom en dur.
+const { cityInfo } = useProfile()
 useHead({ title: 'Événements' })
 
 const { films, scanning, scanned, days, scan } = useEvents()
@@ -135,7 +138,7 @@ onMounted(() => scan())
         </div>
 
         <p class="source">
-            Séances Allociné · Paris intra-muros
+            Séances Allociné · {{ cityInfo.scopeLabel }}
             <button class="refresh" type="button" :disabled="scanning" @click="scan({ force: true })">
                 {{ scanning ? 'Relevé…' : 'Actualiser' }}
             </button>
