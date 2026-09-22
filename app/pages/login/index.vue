@@ -28,117 +28,124 @@ async function signIn() {
 </script>
 
 <template>
-    <div class="page-login">
+    <div class="page-login flex -align-center -justify-center">
         <div class="card">
-            <h1 class="logo">Ciné<span>Cal</span></h1>
-            <form @submit.prevent="signIn" class="form">
-                <div class="field">
-                    <label for="email">Email</label>
-                    <input id="email" type="email" v-model="email" placeholder="you@example.com" autocomplete="email" />
+            <h1 class="logo title-2">Ciné<span class="accent">genda</span></h1>
+
+            <form class="form flex -direction-column" @submit.prevent="signIn">
+                <div class="field flex -direction-column">
+                    <label class="label small-body" for="email">Email</label>
+                    <input id="email" v-model="email" class="text-input input-body" type="email"
+                           placeholder="toi@exemple.fr" autocomplete="email" />
                 </div>
-                <div class="field">
-                    <label for="password">Mot de passe</label>
-                    <input id="password" type="password" v-model="password" placeholder="••••••••" autocomplete="current-password" />
+
+                <div class="field flex -direction-column">
+                    <label class="label small-body" for="password">Mot de passe</label>
+                    <input id="password" v-model="password" class="text-input input-body" type="password"
+                           placeholder="••••••••" autocomplete="current-password" />
                 </div>
-                <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
-                <button type="submit" class="submit-btn" :disabled="loading">
+
+                <p v-if="errorMsg" class="error small-body">{{ errorMsg }}</p>
+
+                <button type="submit" class="btn submit-btn input-body" :disabled="loading">
                     {{ loading ? 'Connexion…' : 'Se connecter' }}
                 </button>
+
+                <NuxtLink class="alt-link small-body" to="/register">Créer un compte</NuxtLink>
             </form>
         </div>
     </div>
 </template>
 
 <style lang="scss" scoped>
+// ⚠️ **`btn` sur chaque `<button>` porteur de texte, et ce n'est pas décoratif.**
+// `components/_btn.scss` fait `button { @extend .ico-btn }`, et `.ico-btn:not(.btn)` pose
+// `font-size: 0` — le projet suppose qu'un bouton est une icône tant qu'on ne dit pas l'inverse.
+// Sans `btn`, le libellé est bien dans le DOM mais rendu à 0 px : invisible, et indétectable par un
+// test qui lit `textContent`. C'est exactement ce qui est arrivé ici.
+//
+// ⚠️ Et `.ico-btn:not(.btn)` (0,2,0) l'emporte sur `.input-body` (0,1,0) : la classe utilitaire de
+// typo ne rattrape pas l'oubli. Seul `btn` le fait.
+// Cette page était la seule du dépôt hors design system : `$font-do-hyeon` et `$font-futura` n'y
+// servaient qu'ici (leurs deux uniques occurrences sur 132 références de fonte), les tailles étaient
+// codées en dur là où le reste du dépôt pose `class="text-input input-body"`, et le logo affichait
+// encore « CinéCal » alors que l'application s'appelle « Cinégenda » depuis `b50030e`.
+//
+// ⚠️ Aucune propriété typographique ici : `title-2`, `input-body` et `small-body` sont posées en
+// markup. Et aucune classe utilitaire n'est utilisée comme sélecteur.
 .page-login {
     min-height: 100dvh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: $color-xdark-grey;
+    background-color: $color-bg;
     padding: 2rem;
 }
 
 .card {
-    background-color: $color-dark-grey;
-    border-radius: 1.2rem;
-    padding: 4rem 3.5rem;
+    background-color: $color-surface-2;
+    border: 1px solid $color-border-3;
+    border-radius: 1.6rem;
+    padding: 4rem 3.2rem;
     width: 100%;
-    max-width: 38rem;
+    max-width: 40rem;
     display: flex;
     flex-direction: column;
     gap: 3rem;
 }
 
 .logo {
-    font-family: $font-do-hyeon;
-    font-size: 3.2rem;
-    color: $color-white;
+    color: $color-text;
     text-align: center;
-    letter-spacing: 0.05em;
 
-    span {
+    > .accent {
         color: $color-primary;
     }
 }
 
 .form {
-    display: flex;
-    flex-direction: column;
     gap: 1.6rem;
 }
 
 .field {
-    display: flex;
-    flex-direction: column;
-    gap: .6rem;
+    gap: .8rem;
+}
 
-    label {
-        font-size: 1.2rem;
-        color: rgba($color-white, .5);
-        text-transform: uppercase;
-        letter-spacing: .08em;
+.label {
+    color: $color-text-muted;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.text-input {
+    background-color: $color-surface-4;
+    border: 1px solid $color-border-4;
+    border-radius: .8rem;
+    padding: 1rem 1.6rem;
+    color: $color-text-body;
+    width: 100%;
+    transition: border-color .15s ease;
+
+    &::placeholder {
+        color: $color-text-weak;
     }
 
-    input {
-        background-color: $color-xdark-grey;
-        border: 1px solid rgba($color-white, .08);
-        border-radius: .6rem;
-        padding: 1.1rem 1.4rem;
-        color: $color-white;
-        font-size: 1.5rem;
-        width: 100%;
-        transition: border-color .15s ease;
-
-        &::placeholder {
-            color: rgba($color-white, .25);
-        }
-
-        &:focus {
-            outline: none;
-            border-color: $color-primary;
-        }
+    &:focus {
+        outline: none;
+        border-color: $color-primary;
     }
 }
 
 .error {
-    font-size: 1.3rem;
-    color: #ff6b6b;
-    background-color: rgba(#ff6b6b, .1);
-    border-radius: .5rem;
-    padding: .8rem 1.2rem;
+    color: $color-primary-lighter;
+    background-color: $color-danger-bg;
+    border-radius: .8rem;
+    padding: .8rem 1.6rem;
 }
 
 .submit-btn {
-    margin-top: .4rem;
+    margin-top: .8rem;
     background-color: $color-primary;
     color: $color-white;
-    font-family: $font-futura;
-    font-size: 1.4rem;
-    font-weight: $semi-bold;
-    letter-spacing: .06em;
-    padding: 1.2rem;
-    border-radius: .6rem;
+    padding: 1.6rem;
+    border-radius: .8rem;
     width: 100%;
     transition: opacity .15s ease;
 
@@ -150,6 +157,18 @@ async function signIn() {
     @media (hover: hover) {
         &:hover:not(:disabled) {
             opacity: .85;
+        }
+    }
+}
+
+.alt-link {
+    color: $color-text-muted;
+    text-align: center;
+    transition: color .15s ease;
+
+    @media (hover: hover) {
+        &:hover {
+            color: $color-primary-light;
         }
     }
 }
