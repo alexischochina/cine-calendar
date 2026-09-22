@@ -21,6 +21,7 @@
 //  10. `movieSearch`         — quel film la recherche ouvre dans la timeline (app/utils/movieSearch.js)
 //  11. `movieFilters`        — quels filtres masquent un film (app/utils/movieFilters.js)
 //  12. `viewport`           — la ligne est-elle déjà à l'écran ? (app/utils/viewport.js)
+//  13. `cities`             — périmètre et capacités d'une ville (shared/utils/cities.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -31,7 +32,7 @@ import {
     applyFilters, groupByFilm, groupByCinema, countShowtimes,
     isCardEligible, arrondissementFromZip, arrondissementLabel,
     minutesOfShowtime, slotRange, inTimeRange, rangeLabel, timeLabel, sanitizeRange,
-    countMatching, countMatchingEvents,
+    countMatching, countMatchingEvents, placeOf,
 } from '../app/utils/seancesGrouping.js';
 // ⚠️ `allocine.js` s'appuie sur des globales Nitro (`$fetch`, `promisePool`) — mais uniquement à
 // l'intérieur de ses fonctions réseau, jamais au chargement du module. Les deux fonctions importées ici
@@ -50,6 +51,7 @@ import {
     movieEvents, nextMovieEvent, hasUpcomingEvent, eventChips, entryKinds, entryKey,
 } from '../app/utils/seanceEvents.js';
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
+import { CITIES, CITY_KEYS, DEFAULT_CITY, isCityKey, cityOf, cityConfig, belongsToCity } from '../shared/utils/cities.js';
 import { hasDatedEventFrom, isSeanceFilm, isFreshRelease } from '../shared/utils/seanceScope.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
@@ -1294,6 +1296,100 @@ console.log('\n\x1b[1mviewport — la ligne est-elle déjà à l\'écran\x1b[0m'
     t('rect absent → non', isFullyVisible(null, H), false);
     t('hauteur inconnue → non', isFullyVisible(row(300), undefined), false);
     t('coordonnées non finies → non', isFullyVisible({ top: NaN, bottom: NaN }, H), false);
+}
+
+// --- 13. Villes : périmètre des salles et capacités ----------------------------------------------
+//
+// Ces règles décident **trois** choses d'un coup : la localisation demandée à Allociné, les salles
+// qu'on garde de sa réponse, et la partition du cache où le résultat est écrit. Une erreur ici ne
+// lève rien — elle affiche les salles d'une ville sous l'étiquette d'une autre.
+console.log('\n\x1b[1mcities — périmètre et capacités d\'une ville\x1b[0m');
+{
+    t('deux villes connues', CITY_KEYS, ['paris', 'troyes']);
+    t('défaut = paris', DEFAULT_CITY, 'paris');
+
+    // `cityOf` est le seul point d'entrée : indexer `CITIES` en direct rendrait `undefined`, et
+    // l'appelant lirait `undefined.allocineLocalization` — une panne serveur là où on veut une vue.
+    t('cityOf(paris)', cityOf('paris'), 'paris');
+    t('cityOf(troyes)', cityOf('troyes'), 'troyes');
+    t('cityOf(inconnue) → repli', cityOf('lyon'), 'paris');
+    t('cityOf(undefined) → repli', cityOf(undefined), 'paris');
+    t('cityOf(null) → repli', cityOf(null), 'paris');
+    // Les valeurs viennent d'une colonne contrainte en minuscules : la casse n'est pas tolérée, et
+    // c'est volontaire — mieux vaut replier que d'accepter une forme qui ne devrait pas exister.
+    t('cityOf(TROYES) → repli', cityOf('TROYES'), 'paris');
+
+    t('isCityKey(troyes)', isCityKey('troyes'), true);
+    t('isCityKey(lyon)', isCityKey('lyon'), false);
+    t('isCityKey(undefined)', isCityKey(undefined), false);
+    // ⚠️ Garde contre la pollution de prototype : `'constructor'` est une propriété héritée de tout
+    // objet. Un `in` ou un `CITIES[x] !== undefined` l'aurait laissée passer, et l'inscription
+    // aurait accepté une « ville » nommée constructor.
+    t('isCityKey(constructor) → non', isCityKey('constructor'), false);
+    t('isCityKey(toString) → non', isCityKey('toString'), false);
+
+    // Les localisations Allociné, relevées le 22/09/2026. Si l'une change, la vue se vide sans
+    // erreur — d'où le test, qui fige la valeur constatée.
+    t('localisation Paris', cityConfig('paris').allocineLocalization, 115755);
+    t('localisation Troyes', cityConfig('troyes').allocineLocalization, 87008);
+    t('cityConfig replie comme cityOf', cityConfig('lyon').key, 'paris');
+
+    // Paris : préfixe de code postal. La localisation ratisse toute la couronne, donc ce filtre
+    // n'est pas cosmétique — 73 salles rendues dont 22 seulement en 75xxx sur un blockbuster.
+    t('Paris garde 75001', belongsToCity({ code: 'C0159', zip: '75001' }, 'paris'), true);
+    t('Paris garde 75116 (Passy)', belongsToCity({ code: 'C0102', zip: '75116' }, 'paris'), true);
+    t('Paris écarte la banlieue 93100', belongsToCity({ code: 'B0180', zip: '93100' }, 'paris'), false);
+    t('Paris écarte 78000', belongsToCity({ code: 'B0181', zip: '78000' }, 'paris'), false);
+    // ⚠️ `startsWith` et non une inclusion : un code postal contenant « 75 » ailleurs (17500) ne
+    // doit pas entrer.
+    t('Paris écarte 17500', belongsToCity({ code: 'P0100', zip: '17500' }, 'paris'), false);
+
+    // Troyes : liste blanche de deux codes, **pas** un préfixe `10`. Les deux donneraient le même
+    // résultat aujourd'hui ; le préfixe laisserait entrer sans préavis toute salle auboise.
+    t('Troyes garde le CGR', belongsToCity({ code: 'P0983', zip: '10000' }, 'troyes'), true);
+    t('Troyes garde l\'Utopia (Pont-Sainte-Marie)', belongsToCity({ code: 'W1015', zip: '10150' }, 'troyes'), true);
+    t('Troyes écarte une salle auboise inconnue', belongsToCity({ code: 'Z9999', zip: '10000' }, 'troyes'), false);
+    t('Troyes écarte une salle parisienne', belongsToCity({ code: 'C0159', zip: '75001' }, 'troyes'), false);
+    // La casse du code ne doit pas faire disparaître une salle de la vue.
+    t('Troyes tolère la casse du code', belongsToCity({ code: 'p0983', zip: '10000' }, 'troyes'), true);
+    t('salle sans code → non', belongsToCity({ zip: '10000' }, 'troyes'), false);
+    t('salle nulle → non', belongsToCity(null, 'troyes'), false);
+    t('salle nulle à Paris → non', belongsToCity(null, 'paris'), false);
+
+    // Les capacités : des faits sur le terrain, pas des réglages. Elles pilotent ce que l'interface
+    // montre — filtre carte UGC, temps de trajet, regroupement par arrondissement.
+    t('Paris a la carte UGC', CITIES.paris.hasUgcCard, true);
+    t('Troyes n\'a pas la carte UGC', CITIES.troyes.hasUgcCard, false);
+    t('Paris a des temps de trajet', CITIES.paris.hasTransitTimes, true);
+    t('Troyes n\'en a pas', CITIES.troyes.hasTransitTimes, false);
+    t('Paris groupe par arrondissement', CITIES.paris.groupsByArrondissement, true);
+    t('Troyes non', CITIES.troyes.groupsByArrondissement, false);
+}
+
+// --- 13 bis. Le repère géographique affiché -----------------------------------------------------
+console.log('\n\x1b[1mplaceOf — arrondissement à Paris, commune ailleurs\x1b[0m');
+{
+    const paris = cityConfig('paris');
+    const troyes = cityConfig('troyes');
+
+    t('Paris → arrondissement', placeOf({ arrondissement: 3, city: 'Paris' }, paris), '3e arr.');
+    t('Paris → 1er, pas 1e', placeOf({ arrondissement: 1, city: 'Paris' }, paris), '1er arr.');
+    // Salle pas encore géocodée : on n'affiche rien plutôt qu'un tiret de remplissage.
+    t('Paris sans arrondissement → null', placeOf({ arrondissement: null, city: 'Paris' }, paris), null);
+
+    t('Troyes → commune', placeOf({ arrondissement: null, city: 'Pont-Sainte-Marie' }, troyes), 'Pont-Sainte-Marie');
+    t('Troyes → commune du CGR', placeOf({ arrondissement: null, city: 'Troyes' }, troyes), 'Troyes');
+    // ⚠️ Entrée de cache écrite avant la colonne `city` : pas de commune connue, on se tait.
+    t('Troyes sans commune → null', placeOf({ arrondissement: null }, troyes), null);
+    // Un arrondissement traînant sur une salle non parisienne ne doit pas s'afficher.
+    t('Troyes ignore un arrondissement parasite', placeOf({ arrondissement: 3, city: 'Troyes' }, troyes), 'Troyes');
+
+    t('salle nulle → null', placeOf(null, paris), null);
+    // Config absente : même repli que `cityOf` / `cityConfig`, c'est-à-dire Paris — donc
+    // l'arrondissement. Deux replis différents pour la même donnée manquante produiraient un
+    // affichage incohérent sans jamais lever d'erreur.
+    t('config absente → se comporte comme Paris', placeOf({ arrondissement: 3, city: 'Paris' }, undefined), '3e arr.');
+    t('config absente sans arrondissement → null', placeOf({ city: 'Troyes' }, undefined), null);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

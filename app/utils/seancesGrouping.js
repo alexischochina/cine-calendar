@@ -138,6 +138,29 @@ export const arrondissementFromZip = (zip) => {
     return n >= 1 && n <= 20 ? n : null;
 };
 
+// Le repère géographique d'une salle, selon ce que la ville sait dire d'elle-même.
+//
+// Paris a des arrondissements et ils sont le repère naturel ; Troyes n'en a pas, et son seul repère
+// utile est la commune — le CGR est à Troyes, l'Utopia à Pont-Sainte-Marie, et c'est exactement la
+// distinction qu'on veut voir avant de traverser.
+//
+// ⚠️ Rend `null` plutôt qu'un texte de remplissage quand rien n'est connu : la vue ne montre alors
+// que le nom, ce qui est honnête. Un « — » ou un code postal nu ferait croire à une donnée manquante
+// là où il n'y a simplement rien à dire.
+// ⚠️ Config absente → on se comporte comme Paris, et **pas** comme « ville sans arrondissements ».
+// C'est le même repli que `cityOf` et `cityConfig` dans `shared/utils/cities.js`, et l'uniformité
+// compte plus que le choix lui-même : deux replis différents pour la même donnée manquante, c'est
+// exactement le genre d'écart qui produit un affichage incohérent sans jamais lever d'erreur.
+// Le `?.` seul aurait fait basculer une config absente dans la branche « commune », en silence.
+export const placeOf = (cinema, cityInfo) => {
+    const groupsByArrondissement = cityInfo ? cityInfo.groupsByArrondissement === true : true;
+
+    if (groupsByArrondissement) {
+        return cinema?.arrondissement ? `${arrondissementLabel(cinema.arrondissement)} arr.` : null;
+    }
+    return cinema?.city ?? null;
+};
+
 export const countShowtimes = (list) => list.reduce((n, e) => n + e.showtimes.length, 0);
 
 // Combien de séances passeraient ces filtres, sans allouer les entrées filtrées — les décomptes « ce
