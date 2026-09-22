@@ -31,3 +31,6 @@ logs
 # SeancesSeanceGroup », « comme la maquette »), donc la seule référence permettant de vérifier une
 # intégration. Les exclure au motif de leur taille rendrait ces commentaires invérifiables.
 _ressources/reddit-posts/
+
+# Sauvegardes de base avant migration : volumineuses, et ce sont des données, pas du code.
+_ressources/backups/
