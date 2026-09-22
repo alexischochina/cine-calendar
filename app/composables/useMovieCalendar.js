@@ -1,5 +1,8 @@
 export function useMovieCalendar() {
     const client = useSupabaseClient()
+    // Le propriétaire des lignes créées ici. RLS couvre déjà les lectures et les modifications
+    // (`user_id = auth.uid()`) ; seule l'insertion doit dire explicitement pour qui elle écrit.
+    const user = useSupabaseUser()
     const store = useMoviesStore()
     // State singleton (useState) partagé entre layout et pages.
     const movies = useState('movies', () => [])
@@ -290,6 +293,9 @@ export function useMovieCalendar() {
         const { data: inserted, error } = await client
             .from('calendar')
             .insert({
+                // Cf. la note du jumeau dans `nav/MovieAddForm.vue` : explicite, pas laissé au
+                // `default auth.uid()` de la colonne.
+                user_id: user.value?.id,
                 movie_id: movieId,
                 media,
                 state: 'unseen',

@@ -14,6 +14,15 @@
 // et une clé Supabase avec droit d'update : NUXT_SUPABASE_SECRET_KEY (recommandé,
 // contourne la RLS) sinon fallback SUPABASE_KEY (anon — l'update échouera si la RLS
 // exige un user authentifié).
+//
+// ⚠️ **Ce script travaille sur les lignes de TOUS les comptes, et c'est voulu.** Il tourne en
+// service-role, que RLS ne regarde pas. Ce qu'il écrit — titre, affiche, date de sortie,
+// réalisateur, genres, pays — décrit le **film**, pas le rapport d'un utilisateur au film : deux
+// comptes qui suivent le même film doivent en lire les mêmes métadonnées. Cloisonner par `user_id`
+// ici n'apporterait rien et ferait au contraire retélécharger TMDB une fois par compte.
+//
+// La frontière est ailleurs, et elle est nette : ce qui appartient à un compte, c'est `state`,
+// `media`, `catchup`, `manual_release_date`. Aucun script ne doit les toucher en masse.
 
 import { readFileSync } from 'node:fs';
 import { createClient } from '@supabase/supabase-js';
