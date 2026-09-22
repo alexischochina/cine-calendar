@@ -42,16 +42,17 @@ loadEnv();
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_KEY;
 const PRIM_TOKEN = process.env.PRIM_TOKEN;
-// Repli sur les anciens noms pour ne pas casser un `.env` existant, mais signalé : tant qu'ils y
-// traînent, le piège décrit en tête est encore armé.
-const LEGACY_HOME = process.env.NUXT_PUBLIC_HOME_LAT || process.env.NUXT_PUBLIC_HOME_LNG;
-if (LEGACY_HOME) {
-    console.warn('⚠️  NUXT_PUBLIC_HOME_LAT / NUXT_PUBLIC_HOME_LNG sont dépréciés : renomme-les en HOME_LAT / HOME_LNG dans .env.');
-    console.warn('    Le préfixe NUXT_PUBLIC_ expose une variable au navigateur dès qu\'une clé correspondante existe dans runtimeConfig.public.');
-}
-
-const HOME_LAT = Number(process.env.HOME_LAT ?? process.env.NUXT_PUBLIC_HOME_LAT);
-const HOME_LNG = Number(process.env.HOME_LNG ?? process.env.NUXT_PUBLIC_HOME_LNG);
+// ⚠️ **Aucun repli sur les anciens noms `NUXT_PUBLIC_*`, et c'est le propos.** Un repli a existé ici
+// le temps de la transition, avec un avertissement ; la transition est faite (`.env` renommé le
+// 22/09/2026), et le garder rendrait le mauvais nom **encore fonctionnel**. Or c'est précisément ce
+// qu'on veut rendre impossible : tant que `NUXT_PUBLIC_HOME_LAT` marche, rien n'empêche de le
+// remettre, et la variable se retrouve à une clé de `runtimeConfig.public` d'être servie au
+// navigateur. Sans repli, le mauvais nom ne produit rien, et le script le dit franchement plus bas.
+//
+// ⚠️ Toujours refuser de deviner : si ces deux-là manquent, on s'arrête (cf. la garde plus bas)
+// plutôt que de calculer des trajets depuis une origine par défaut, qui seraient faux et crédibles.
+const HOME_LAT = Number(process.env.HOME_LAT);
+const HOME_LNG = Number(process.env.HOME_LNG);
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const FORCE = process.argv.includes('--force');
@@ -80,6 +81,9 @@ if (!PRIM_TOKEN) {
 }
 if (!Number.isFinite(HOME_LAT) || !Number.isFinite(HOME_LNG)) {
     console.error('HOME_LAT / HOME_LNG manquants dans .env.');
+    console.error('Si ton .env porte encore NUXT_PUBLIC_HOME_LAT / NUXT_PUBLIC_HOME_LNG, renomme-les :');
+    console.error('le préfixe NUXT_PUBLIC_ expose une variable au navigateur dès qu\'une clé correspondante');
+    console.error('existe dans runtimeConfig.public, et ces coordonnées ne doivent jamais quitter le serveur.');
     process.exit(1);
 }
 
