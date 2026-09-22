@@ -3,7 +3,7 @@
 //
 // Deux endpoints, deux usages :
 //   - `/_/autocomplete/{titre}`  → recherche interne, résout un titre TMDB en identifiant Allociné.
-//   - `/_/showtimes/movie-…`     → séances d'un film à une date, autour de Paris.
+//   - `/_/showtimes/movie-…`     → séances d'un film à une date, autour d'une ville.
 //
 // ⚠️ `robots.txt` d'Allociné porte `Disallow: /_/` : les deux routes sont hors-crawl selon leur
 // politique déclarée. Les voies conformes ont été explorées et ne tiennent pas (détail et mesures dans
@@ -11,10 +11,16 @@
 // à un cache durable : User-Agent honnête, timeout dur, concurrence bornée, aucun contournement
 // anti-bot.
 
-// Identifiant de localisation « Paris » chez Allociné. ⚠️ Il ratisse Paris **+ toute la couronne**
-// (mesuré : 73 salles dont 22 seulement en 75xxx sur un blockbuster) → le filtre sur le code
-// postal plus bas n'est pas cosmétique.
-export const PARIS_LOCALIZATION = 115755;
+// ⚠️ Les identifiants de localisation Allociné ont quitté ce fichier : ils vivent dans
+// `shared/utils/cities.js` (`cityConfig(city).allocineLocalization`), avec la règle d'appartenance
+// qui va avec. Les deux sont indissociables — une localisation ratisse toujours plus large que la
+// ville demandée (Paris rend 73 salles dont 22 seulement en 75xxx sur un blockbuster), donc un
+// identifiant sans son filtre laisse entrer toute la couronne. Les séparer, c'était laisser la porte
+// ouverte à une future ville branchée sans son filtre.
+//
+// ⚠️ `cityConfig` et `belongsToCity` viennent de l'**auto-import Nitro** de `shared/`. Ne pas les
+// importer en relatif : Nitro résout ce chemin depuis son bundle, ce qui casse *toutes* les routes
+// serveur d'un coup (cf. l'encadré en tête de `showtimesFreshness.js`).
 
 const ALLOCINE_ORIGIN = 'https://www.allocine.fr';
 // ⚠️ User-Agent **honnête** : ni préfixe `Mozilla/5.0`, ni chaîne de navigateur. Le compromis décrit
@@ -139,9 +145,9 @@ const fetchJson = async (url, what) => {
 
 // ⚠️ `d-` prend une **date ISO** (`d-2026-08-14`). Les offsets numériques (`d-1`, `d-2`) sont
 // acceptés mais renvoient tous *aujourd'hui* — piège silencieux, ne jamais les utiliser.
-export const fetchShowtimesPage = (allocineId, date, page = 1) =>
+export const fetchShowtimesPage = (allocineId, date, city, page = 1) =>
     fetchJson(
-        `${ALLOCINE_ORIGIN}/_/showtimes/movie-${allocineId}/near-${PARIS_LOCALIZATION}/d-${date}/p-${page}/`,
+        `${ALLOCINE_ORIGIN}/_/showtimes/movie-${allocineId}/near-${cityConfig(city).allocineLocalization}/d-${date}/p-${page}/`,
         'Séances',
     );
 
@@ -165,7 +171,7 @@ export const fetchTheaterEvents = async (code, date) => {
     const first = await fetchTheaterPage(code, date, 1);
     if (!first) return { ok: false, events: {}, seen: [], previews: [] };
 
-    // `error: true` = « aucune séance à cette date » chez Allociné (cf. `fetchParisShowtimes`), pas
+    // `error: true` = « aucune séance à cette date » chez Allociné (cf. `fetchCityShowtimes`), pas
     // une panne. Ici, c'est aussi la forme que prend le creux : `seen` reste vide, donc l'appelant ne
     // se prononcera sur aucune séance — la journée est mise en cache sans rien affirmer.
     if (first.error) return { ok: true, events: {}, seen: [], previews: [] };
@@ -366,14 +372,19 @@ const normalizeShowtime = (showtime) => {
     };
 };
 
-// Séances d'un film à une date, restreintes à Paris intra-muros, dans la forme que consomme le front.
-// 15 salles/page, `totalPages` connu après la page 1, le reste en parallèle borné.
+// Séances d'un film à une date, restreintes au périmètre de `city`, dans la forme que consomme le
+// front. 15 salles/page, `totalPages` connu après la page 1, le reste en parallèle borné.
+//
+// ⚠️ `city` n'a **pas** de valeur par défaut, à dessein. Un défaut à `'paris'` rendrait un oubli
+// d'argument indolore côté code et faux côté données : l'appelant écrirait des séances parisiennes
+// sous la ville qu'il croit traiter. On veut que l'oubli soit visible — `cityConfig` repliera sur
+// Paris, mais le paramètre manquant se voit à la lecture de l'appel, ce qu'un défaut masquerait.
 //
 // N'échoue jamais. ⚠️ `ok` distingue les deux vides qui se ressemblent : « aucune séance ce jour-là »
 // (`true`) et « on n'a pas joint Allociné » (`false`) — sans lui, la route de cache graverait un échec
 // réseau comme une journée sans séance.
-export const fetchParisShowtimes = async (allocineId, date) => {
-    const first = await fetchShowtimesPage(allocineId, date, 1);
+export const fetchCityShowtimes = async (allocineId, date, city) => {
+    const first = await fetchShowtimesPage(allocineId, date, city, 1);
 
     // Aucune réponse du tout : c'est là, et seulement là, qu'on n'a pas joint Allociné.
     if (!first) return { ok: false, nextDate: null, theaters: [] };
@@ -388,7 +399,7 @@ export const fetchParisShowtimes = async (allocineId, date) => {
     const totalPages = Number(first.pagination?.totalPages) || 1;
     const rest = totalPages > 1
         ? await promisePool(
-            Array.from({ length: totalPages - 1 }, (_, i) => () => fetchShowtimesPage(allocineId, date, i + 2)),
+            Array.from({ length: totalPages - 1 }, (_, i) => () => fetchShowtimesPage(allocineId, date, city, i + 2)),
             SHOWTIME_CONCURRENCY,
         )
         : [];
@@ -407,8 +418,15 @@ export const fetchParisShowtimes = async (allocineId, date) => {
     for (const result of results) {
         const theater = result?.theater;
         const zip = theater?.location?.zip;
-        // Paris intra-muros uniquement : la localisation Allociné ratisse toute la couronne.
-        if (!theater?.internalId || !/^75/.test(String(zip ?? ''))) continue;
+        // Périmètre de la ville uniquement : la localisation Allociné ratisse toujours plus large
+        // que la ville demandée. La règle vit dans `shared/utils/cities.js` — préfixe de code postal
+        // à Paris, liste blanche de deux codes à Troyes.
+        //
+        // ⚠️ La salle est réduite à `{ code, zip }` avant d'être passée : `belongsToCity` ne doit
+        // rien savoir de la forme du payload d'Allociné, sinon un changement chez eux se
+        // répercuterait jusque dans `shared/`.
+        if (!theater?.internalId) continue;
+        if (!belongsToCity({ code: theater.internalId, zip }, city)) continue;
 
         // Les 6 buckets (`original`, `original_st`, `multiple`… ) ne sont pas des doublons : ils
         // portent des horaires distincts. On les aplatit et on relit la version sur la séance.
@@ -428,6 +446,13 @@ export const fetchParisShowtimes = async (allocineId, date) => {
             name: theater.name ?? null,
             address: theater.location?.address ?? null,
             zip: zip ?? null,
+            // La commune. Inutile à Paris — l'arrondissement y est plus parlant, et il se déduit du
+            // code postal — mais c'est le seul repère géographique disponible dans une ville qui n'a
+            // pas d'arrondissements : sans elle, une salle troyenne n'affiche que son nom.
+            //
+            // ⚠️ Absente des entrées de cache écrites avant `2609221215` : elles sont toutes
+            // parisiennes, donc ne s'en servent pas. Ne pas en faire un champ obligatoire en aval.
+            city: theater.location?.city ?? null,
             circuit: theater.theaterCircuits?.name ?? null,
             // ⚠️ Valeur par défaut **à la création** d'une salle, jamais une mise à jour : la liste
             // reste curée à la main (Allociné a déjà été pris en défaut dessus). Sans ce défaut, une

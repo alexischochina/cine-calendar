@@ -47,6 +47,14 @@ const SUPABASE_KEY = process.env.NUXT_SUPABASE_SECRET_KEY || process.env.SUPABAS
 // Même identité que le client (`server/utils/allocine.js`) : un contrôle de santé qui ne se
 // présenterait pas comme l'app ne contrôlerait pas ce que l'app subit.
 const UA = 'cinegenda/1.0';
+
+// ⚠️ Ce script ne contrôle **que Paris**, et c'est assumé : il vérifie le contrat de format
+// d'Allociné, qui est le même partout, pas l'exhaustivité d'une ville. Mais depuis que
+// `showtimes_cache` porte une colonne `city` (`2609221215`), la conséquence n'est plus neutre — sans
+// filtre, la comparaison cache / direct tirerait des entrées troyennes et les confronterait à des
+// séances parisiennes, donc signalerait un écart massif et faux. D'où `CHECKED_CITY`, utilisé aux
+// deux bouts : la localisation demandée à Allociné **et** la partition de cache relue.
+const CHECKED_CITY = 'paris';
 const PARIS = 115755;
 
 if (!SUPABASE_URL || !SUPABASE_KEY) {
@@ -247,6 +255,9 @@ const checkDrift = async () => {
         .from('showtimes_cache')
         .select('allocine_id, payload, fetched_at')
         .eq('date', date)
+        // ⚠️ Indispensable depuis la colonne `city` : le direct interrogé plus bas est parisien, donc
+        // la seule partition comparable l'est aussi (cf. `CHECKED_CITY` en tête).
+        .eq('city', CHECKED_CITY)
         // Ordre explicite : sans lui, l'échantillon change à chaque exécution et deux runs ne sont
         // plus comparables. Les entrées les plus fraîches sont aussi les plus révélatrices — un
         // écart sur elles ne peut pas s'expliquer par l'âge.

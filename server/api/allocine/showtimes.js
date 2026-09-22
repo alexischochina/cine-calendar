@@ -40,10 +40,17 @@ export default defineEventHandler(async (event) => {
 
     const client = await serverSupabaseClient(event);
 
+    // ⚠️ La ville vient du profil, **jamais** de la query string — et elle doit être la même que
+    // celle dont `refresh.js` se servira pour écrire, sinon `missing` revient identique à chaque tour
+    // et le client boucle sur Allociné sans jamais rien satisfaire. Le raisonnement complet et le
+    // coût de cette lecture sont dans `server/utils/userCity.js`.
+    const city = await cityForRequest(event);
+
     const { data, error } = await client
         .from('showtimes_cache')
         .select('allocine_id, payload, fetched_at')
         .in('allocine_id', wanted)
+        .eq('city', city)
         .eq('date', date);
 
     if (error) {

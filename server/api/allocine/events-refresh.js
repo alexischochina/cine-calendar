@@ -15,7 +15,13 @@ import { serverSupabaseClient } from '#supabase/server';
 const CODE = /^[A-Z]\d{3,6}$/;
 
 export default defineEventHandler(async (event) => {
-    // Sort chez Allociné : même garde que sa jumelle `refresh.js` (cf. `server/utils/requireUser.js`).
+    // Sort chez Allociné : même garde que sa jumelle `refresh.js` (cf. `server/utils/requireUser.js`),
+    // approbation du compte comprise.
+    //
+    // ⚠️ Le profil n'est pas relu pour la ville : cette route est adressée **par code salle**, et un
+    // code salle appartient déjà à une ville (cf. l'encadré de `events.js`). Filtrer en plus sur la
+    // ville du profil n'ajouterait aucune garantie et demanderait une table de correspondance
+    // salle → ville, qui pourrait diverger.
     await requireUser(event);
 
     const { code, date } = getQuery(event);

@@ -10,6 +10,18 @@
 // `showtimesFreshness.js`. La cadence du cron **suit** le TTL, elle ne le remplace pas.
 //
 // Cadences et périmètres : `.github/workflows/warm-showtimes.yml`.
+//
+// == Multi-villes ================================================================================
+//
+// Le périmètre est maintenant **par ville** : chaque compte approuvé porte la sienne (`profiles`), et
+// une entrée de `showtimes_cache` est propre à un triplet (film, ville, date). Le plan de travail,
+// son tri par ancienneté et sa troncature se font donc ville par ville.
+//
+// ⚠️ La durée d'un passage croît avec le nombre de villes actives, mais **la cadence ne se règle pas
+// là-dessus** : elle suit le TTL de `showtimesFreshness.js`, point. Si un passage devient trop long
+// pour la limite d'exécution d'une fonction, la sortie est de le découper — le paramètre `days`
+// existe déjà pour ça et le workflow s'en sert pour `far`. Allonger `FRESH_NEAR` / `FRESH_FAR` pour
+// se donner de l'air rouvrirait la fenêtre froide que tout ce fichier existe pour fermer.
 
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { serverSupabaseServiceRole } from '#supabase/server';
@@ -29,7 +41,12 @@ const CONCURRENCY = 4;      // borne le volume sortant vers Allociné, comme cô
 // Garde-fou contre un périmètre qui enflerait par bug : on veut un passage tronqué et **bruyant**.
 // ⚠️ Par journée traitée et non par passage — un plafond fixe se serait desserré d'autant que le
 // workflow découpe `far` en tranches d'une journée.
-const MAX_FETCHES_PER_DAY = 60;
+//
+// ⚠️ **Et par ville**, depuis l'ouverture à un second compte. Un plafond global partagé entre villes
+// se serait resserré tout seul à chaque ville branchée : le budget parisien aurait fondu sans que
+// rien ne change à Paris, et la troncature — silencieuse par nature, elle ne fait qu'un `warn` —
+// aurait laissé des journées froides. Une ville n'emprunte pas le budget d'une autre.
+const MAX_FETCHES_PER_CITY_DAY = 60;
 
 // ⚠️ Comparaison des **empreintes** et non des valeurs : `timingSafeEqual` exige des longueurs égales
 // et lève sinon, ce qui imposait une sortie anticipée sur la longueur — donc une fuite par le canal
@@ -56,8 +73,13 @@ const withEffectiveDate = (row) => (row.manual_release_date
 //
 // ⚠️ `allocine_id` filtré d'abord : la résolution de date tournerait sinon sur les ~440 lignes du
 // calendrier pour n'en garder qu'une vingtaine, dix fois par jour.
-const scopeFilms = (rows, today, weekStart) => rows
-    .filter(m => m.allocine_id)
+//
+// `cityByUser` : la ville de chaque compte **approuvé**. Une ligne dont le propriétaire n'y est pas
+// est écartée, et c'est le point important — sans ça, il suffirait de s'inscrire pour faire
+// travailler le cron sur sa liste, et l'approbation cesserait d'être une serrure pour devenir une
+// formalité d'affichage.
+const scopeFilms = (rows, today, weekStart, cityByUser) => rows
+    .filter(m => m.allocine_id && cityByUser.has(m.user_id))
     .map(withEffectiveDate)
     .filter(m => isSeanceFilm(m, today) || isFreshRelease(m, weekStart, today));
 
@@ -101,23 +123,50 @@ export default defineEventHandler(async (event) => {
     // réservées à `authenticated`. Clé lue au runtime, jamais exposée au navigateur.
     const client = serverSupabaseServiceRole(event);
 
+    // Les comptes approuvés et leur ville. Deux lignes aujourd'hui — la requête reste dérisoire
+    // devant la lecture du calendrier, et c'est elle qui décide **pour qui** on préchauffe.
+    const { data: profiles, error: profilesError } = await client
+        .from('profiles')
+        .select('user_id, city')
+        .eq('approved', true);
+
+    if (profilesError) {
+        console.error('[cron] Lecture des profils échouée:', profilesError.message);
+        throw createError({ statusCode: 502, statusMessage: 'Profiles unreadable' });
+    }
+
+    // ⚠️ Aucun compte approuvé : on sort sans rien faire, plutôt que de replier sur « tout le
+    // monde ». Un repli permissif ici préchaufferait la liste de comptes en attente d'approbation.
+    const cityByUser = new Map((profiles ?? []).map(p => [p.user_id, cityOf(p.city)]));
+
     const { data: rows, error } = await client
         .from('calendar')
         // Strictement ce que lisent `isSeanceFilm` et `isFreshRelease` (dates comprises, cf.
-        // `withEffectiveDate`). ⚠️ Lecture de tout le calendrier, rejouée à chaque tranche : une
-        // colonne de plus ici se paie dix fois par jour.
-        .select('allocine_id, state, events, media, release_date, manual_release_date');
+        // `withEffectiveDate`), plus `user_id` qui donne la ville. ⚠️ Lecture de tout le calendrier,
+        // rejouée à chaque tranche : une colonne de plus ici se paie dix fois par jour.
+        .select('user_id, allocine_id, state, events, media, release_date, manual_release_date');
 
     if (error) {
         console.error('[cron] Lecture du calendrier échouée:', error.message);
         throw createError({ statusCode: 502, statusMessage: 'Calendar unreadable' });
     }
 
-    const films = scopeFilms(rows ?? [], today, lastWednesdayDay());
-    const ids = [...new Set(films.map(m => m.allocine_id))];
+    const films = scopeFilms(rows ?? [], today, lastWednesdayDay(), cityByUser);
 
-    if (!ids.length) {
-        return { scope, dates, films: 0, refreshed: 0, skipped: 0, failures: 0, truncated: 0, ms: Date.now() - startedAt };
+    // Un même film suivi par deux comptes de la même ville ne se préchauffe qu'une fois : la clé du
+    // cache est `(film, ville, date)`, pas `(film, compte, date)`. En revanche le même film dans deux
+    // villes fait bien deux entrées — ce sont deux jeux de salles différents.
+    const idsByCity = new Map();
+    for (const film of films) {
+        const city = cityByUser.get(film.user_id);
+        if (!idsByCity.has(city)) idsByCity.set(city, new Set());
+        idsByCity.get(city).add(film.allocine_id);
+    }
+
+    const filmCount = [...idsByCity.values()].reduce((n, set) => n + set.size, 0);
+
+    if (!filmCount) {
+        return { scope, dates, cities: [], films: 0, refreshed: 0, skipped: 0, failures: 0, truncated: 0, ms: Date.now() - startedAt };
     }
 
     // La question n'est pas « cette entrée est-elle fraîche ? » mais « tiendra-t-elle jusqu'à mon
@@ -127,46 +176,68 @@ export default defineEventHandler(async (event) => {
     // bouge que sur un déclenchement manuel rapproché. Prix assumé, pas un réglage à corriger.
     const freshAt = Date.now() + plan.everyMs;
 
-    const work = [];
-    for (const date of dates) for (const id of ids) work.push({ id, date });
-
-    // ⚠️ Trié avant d'être tronqué : `work` sort de boucles déterministes, donc trancher dedans tel
+    // ⚠️ Trié avant d'être tronqué : le plan sort de boucles déterministes, donc trancher dedans tel
     // quel condamnait sa queue à n'être jamais préchauffée, à aucun passage. Classement par ancienneté
     // (jamais relevé d'abord) : ce qui tombe est ce qui vient d'être écrit.
+    //
+    // ⚠️ `city` dans la clé de `writtenAt`, comme dans la clé de la table : sans elle, l'entrée
+    // parisienne d'un film déclarerait fraîche son entrée troyenne, qui ne serait alors jamais
+    // rafraîchie — le genre de bug qui ne se voit que sur la ville minoritaire.
+    const allIds = [...new Set([...idsByCity.values()].flatMap(set => [...set]))];
+
     const { data: known } = await client
         .from('showtimes_cache')
-        .select('allocine_id, date, fetched_at')
-        .in('allocine_id', ids)
+        .select('allocine_id, city, date, fetched_at')
+        .in('allocine_id', allIds)
         .in('date', dates);
 
-    const writtenAt = new Map((known ?? []).map(r => [`${r.allocine_id}:${r.date}`, Date.parse(r.fetched_at) || 0]));
-    const staleness = ({ id, date }) => writtenAt.get(`${id}:${date}`) ?? -1;   // absent = jamais relevé
-    work.sort((a, b) => staleness(a) - staleness(b));
+    const writtenAt = new Map((known ?? []).map(r => [`${r.allocine_id}:${r.city}:${r.date}`, Date.parse(r.fetched_at) || 0]));
+    const staleness = ({ id, city, date }) => writtenAt.get(`${id}:${city}:${date}`) ?? -1;   // absent = jamais relevé
 
-    const budget = MAX_FETCHES_PER_DAY * dates.length;
-    const truncated = Math.max(0, work.length - budget);
-    if (truncated) console.warn(`[cron] Périmètre ${scope} : ${work.length} couples (film, date) à traiter, plafonné à ${budget} (${MAX_FETCHES_PER_DAY} × ${dates.length} journée(s)) — ${truncated} laissés de côté, les plus récemment relevés (ils remonteront au passage suivant).`);
+    // Le plan est construit, trié et tronqué **par ville** : un budget commun laisserait la ville la
+    // plus fournie manger celui de l'autre, et c'est toujours la plus petite qui en pâtirait.
+    const budgetPerCity = MAX_FETCHES_PER_CITY_DAY * dates.length;
+    const work = [];
+    let truncated = 0;
+
+    for (const [city, ids] of idsByCity) {
+        const cityWork = [];
+        for (const date of dates) for (const id of ids) cityWork.push({ id, city, date });
+        cityWork.sort((a, b) => staleness(a) - staleness(b));
+
+        const dropped = Math.max(0, cityWork.length - budgetPerCity);
+        if (dropped) {
+            truncated += dropped;
+            console.warn(`[cron] Périmètre ${scope} / ${city} : ${cityWork.length} couples (film, date) à traiter, plafonné à ${budgetPerCity} (${MAX_FETCHES_PER_CITY_DAY} × ${dates.length} journée(s)) — ${dropped} laissés de côté, les plus récemment relevés (ils remonteront au passage suivant).`);
+        }
+
+        work.push(...cityWork.slice(0, budgetPerCity));
+    }
 
     let refreshed = 0;
     let skipped = 0;
     let failures = 0;
 
-    await promisePool(work.slice(0, budget).map(({ id, date }) => async () => {
+    await promisePool(work.map(({ id, city, date }) => async () => {
         try {
             // `freshAt` et non `force` : `refreshShowtimes` relit l'entrée avec ce même horizon. Le tri
             // ci-dessus n'**ordonne** que le travail, il ne tranche pas.
-            const { payload, refreshed: didFetch } = await refreshShowtimes(client, id, date, { freshAt });
+            const { payload, refreshed: didFetch } = await refreshShowtimes(client, id, date, city, { freshAt });
             if (payload.error) failures++;
             else if (didFetch) refreshed++;
             else skipped++;
         } catch (e) {
             failures++;
-            console.error(`[cron] Préchauffage échoué pour ${id} au ${date}:`, e?.message ?? e);
+            console.error(`[cron] Préchauffage échoué pour ${id} au ${date} (${city}):`, e?.message ?? e);
         }
     }), CONCURRENCY);
 
     const summary = {
-        scope, dates, films: ids.length,
+        scope, dates,
+        // Par ville, pas seulement le total : c'est la seule façon de voir dans les logs qu'une ville
+        // a cessé d'être préchauffée — un total qui bouge peu masquerait une ville tombée à zéro.
+        cities: [...idsByCity].map(([city, ids]) => ({ city, films: ids.size })),
+        films: filmCount,
         refreshed, skipped, failures, truncated,
         ms: Date.now() - startedAt,
     };

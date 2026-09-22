@@ -12,8 +12,11 @@ import { serverSupabaseClient } from '#supabase/server';
 
 export default defineEventHandler(async (event) => {
     // Seule route de la vue Séances *ouverte au navigateur* qui sort sur le réseau : elle ne s'ouvre
-    // pas aux anonymes (cf. `server/utils/requireUser.js`).
-    await requireUser(event);
+    // ni aux anonymes ni aux comptes non approuvés (cf. `server/utils/requireUser.js`).
+    //
+    // Le profil rend la **ville** au passage : la garde lit déjà cette ligne pour vérifier
+    // l'approbation, autant s'en servir plutôt que de repayer une requête.
+    const { profile } = await requireUser(event);
 
     const { id, date, force } = getQuery(event);
 
@@ -27,7 +30,12 @@ export default defineEventHandler(async (event) => {
     const client = await serverSupabaseClient(event);
 
     // Seul `payload` sort d'ici ; `refreshed` ne sert qu'au préchauffage (cf. `refreshShowtimes`).
-    const { payload } = await refreshShowtimes(client, Number(id), String(date), {
+    //
+    // ⚠️ `profile.city` et non un paramètre d'URL : la ville décide de la localisation Allociné **et**
+    // de la clé sous laquelle le résultat est gravé. La laisser choisir par l'appelant, c'est lui
+    // laisser faire sortir le déploiement sur la ville de son choix, et polluer la partition d'un
+    // autre compte.
+    const { payload } = await refreshShowtimes(client, Number(id), String(date), cityOf(profile.city), {
         force: String(force ?? '') === '1',
     });
 

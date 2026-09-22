@@ -12,10 +12,16 @@
 // ⚠️ Le payload est `{ events, seen, previews }` et non la seule carte des événements : l'endpoint
 // salle est **creux**, donc il faut savoir quelles séances il a réellement rendues pour ne se prononcer
 // que sur celles-là.
+//
+// ⚠️ **Pas de dimension ville ici, et ce n'est pas un oubli.** `showtimes_cache` a dû en gagner une
+// (`2609221215`) parce que sa clé `(allocine_id, date)` est la même à Paris et à Troyes — deux villes
+// s'y écrasaient. Ici la clé porte un `theater_code`, et une salle appartient à une ville et une
+// seule : la dimension est déjà là, portée par la clé. Ajouter une colonne `city` en ferait une
+// donnée dérivée, donc une donnée qui peut diverger de la salle qu'elle prétend décrire.
 
 import { serverSupabaseClient } from '#supabase/server';
 
-// Garde-fou : les salles parisiennes qui jouent des films de la liste tiennent largement dedans
+// Garde-fou : les salles qui jouent des films de la liste tiennent largement dedans
 // (~25 mesurées), et ça borne la longueur d'URL comme la taille de la clause `in`.
 const MAX_CODES = 60;
 
