@@ -1,11 +1,11 @@
 <script setup>
-definePageMeta({ layout: false });
+definePageMeta({ layout: 'auth', pageTransition: { name: 'auth', mode: 'out-in' } });
 useHead({ title: 'Connexion' });
 
 const client = useSupabaseClient();
 const router = useRouter();
-const email = ref("");
-const password = ref("");
+const email = ref('');
+const password = ref('');
 const errorMsg = ref(null);
 const loading = ref(false);
 
@@ -18,9 +18,15 @@ async function signIn() {
             password: password.value,
         });
         if (error) throw error;
-        await router.push("/");
+        await router.push('/');
     } catch (error) {
-        errorMsg.value = error.message;
+        // ⚠️ Message rédigé ici, jamais celui de Supabase : il exposerait un détail
+        // d'infrastructure. Et un seul libellé pour les deux échecs d'identifiants — en distinguer
+        // rouvrirait l'oracle fermé par `25e9a24`.
+        console.error('[auth] Connexion échouée —', error?.message);
+        errorMsg.value = error?.status === 400
+            ? 'Email ou mot de passe incorrect.'
+            : 'Connexion impossible pour le moment. Réessaie dans un instant.';
     } finally {
         loading.value = false;
     }
@@ -28,143 +34,77 @@ async function signIn() {
 </script>
 
 <template>
-    <div class="page-login flex -align-center -justify-center">
-        <div class="card">
-            <h1 class="logo title-2">Ciné<span class="accent">genda</span></h1>
-
-            <form class="form flex -direction-column" @submit.prevent="signIn">
-                <div class="field flex -direction-column">
-                    <label class="label small-body" for="email">Email</label>
-                    <input id="email" v-model="email" class="text-input input-body" type="email"
-                           placeholder="toi@exemple.fr" autocomplete="email" />
-                </div>
-
-                <div class="field flex -direction-column">
-                    <label class="label small-body" for="password">Mot de passe</label>
-                    <input id="password" v-model="password" class="text-input input-body" type="password"
-                           placeholder="••••••••" autocomplete="current-password" />
-                </div>
-
-                <!-- ⚠️ `role="alert"` : le message apparaît **après** la soumission, donc hors du flux de
-                     lecture. Sans lui, un lecteur d'écran ne l'annonce jamais et l'utilisateur attend
-                     une réponse qui est déjà à l'écran. -->
-                <p v-if="errorMsg" class="error small-body" role="alert">{{ errorMsg }}</p>
-
-                <button type="submit" class="btn submit-btn input-body" :disabled="loading">
-                    {{ loading ? 'Connexion…' : 'Se connecter' }}
-                </button>
-
-                <NuxtLink class="alt-link small-body" to="/register">Créer un compte</NuxtLink>
-            </form>
+    <div class="page-login flex -direction-column">
+        <div class="head flex -direction-column">
+            <h1 class="title">Bon retour.</h1>
+            <p class="subtitle">Connecte-toi pour retrouver ta liste et les séances du jour.</p>
         </div>
+
+        <AuthTabs />
+
+        <form class="form flex -direction-column" @submit.prevent="signIn">
+            <AuthField label="Email" input-id="email">
+                <AuthInput v-model="email" input-id="email" type="email"
+                           placeholder="toi@exemple.fr" autocomplete="email" required />
+            </AuthField>
+
+            <AuthField label="Mot de passe" input-id="password">
+                <template #action>
+                    <NuxtLink class="forgot" to="/mot-de-passe-oublie">Oublié ?</NuxtLink>
+                </template>
+                <AuthInput v-model="password" input-id="password" type="password" placeholder="••••••••"
+                           autocomplete="current-password" required />
+            </AuthField>
+
+            <AuthNotice v-if="errorMsg">{{ errorMsg }}</AuthNotice>
+
+            <AuthSubmitBtn class="submit" label="Se connecter" loading-label="Connexion…" :loading="loading" />
+        </form>
     </div>
 </template>
 
 <style lang="scss" scoped>
-// ⚠️ `btn` sur chaque `<button>` porteur de texte : `_btn.scss` met les autres à `font-size: 0`.
-// Cette page était la seule du dépôt hors design system : `$font-do-hyeon` et `$font-futura` n'y
-// servaient qu'ici (leurs deux uniques occurrences sur 132 références de fonte), les tailles étaient
-// codées en dur là où le reste du dépôt pose `class="text-input input-body"`, et le logo affichait
-// encore « CinéCal » alors que l'application s'appelle « Cinégenda » depuis `b50030e`.
-//
-// ⚠️ Aucune propriété typographique ici : `title-2`, `input-body` et `small-body` sont posées en
-// markup. Et aucune classe utilitaire n'est utilisée comme sélecteur.
 .page-login {
-    min-height: 100dvh;
-    background-color: $color-bg;
-    padding: 2rem;
-}
-
-.card {
-    background-color: $color-surface-2;
-    border: 1px solid $color-border-3;
-    border-radius: 1.6rem;
-    padding: 4rem 3.2rem;
-    width: 100%;
-    max-width: 40rem;
-    display: flex;
-    flex-direction: column;
     gap: 3rem;
-}
 
-.logo {
-    color: $color-text;
-    text-align: center;
+    > .head {
+        gap: .8rem;
 
-    > .accent {
-        color: $color-primary;
-    }
-}
+        > .title {
+            color: $color-text;
+            letter-spacing: -.12rem;
+            font: 800 3.8rem/1 $font-title;
 
-.form {
-    gap: 1.6rem;
-}
+            @media #{$tablet-portrait} {
+                font-size: 3.2rem;
+            }
+        }
 
-.field {
-    gap: .8rem;
-}
-
-.label {
-    color: $color-text-muted;
-    text-transform: uppercase;
-    letter-spacing: .08em;
-}
-
-.text-input {
-    background-color: $color-surface-4;
-    border: 1px solid $color-border-4;
-    border-radius: .8rem;
-    padding: 1rem 1.6rem;
-    color: $color-text-body;
-    width: 100%;
-    transition: border-color .15s ease;
-
-    &::placeholder {
-        color: $color-text-weak;
-    }
-
-    &:focus {
-        outline: none;
-        border-color: $color-primary;
-    }
-}
-
-.error {
-    color: $color-primary-lighter;
-    background-color: $color-danger-bg;
-    border-radius: .8rem;
-    padding: .8rem 1.6rem;
-}
-
-.submit-btn {
-    margin-top: .8rem;
-    background-color: $color-primary;
-    color: $color-white;
-    padding: 1.6rem;
-    border-radius: .8rem;
-    width: 100%;
-    transition: opacity .15s ease;
-
-    &:disabled {
-        opacity: .6;
-        cursor: not-allowed;
-    }
-
-    @media (hover: hover) {
-        &:hover:not(:disabled) {
-            opacity: .85;
+        > .subtitle {
+            color: $color-text-muted;
+            font: $normal 1.5rem/1.5 $font-body;
         }
     }
-}
 
-.alt-link {
-    color: $color-text-muted;
-    text-align: center;
-    transition: color .15s ease;
+    > .form {
+        gap: 1.6rem;
 
-    @media (hover: hover) {
-        &:hover {
+        .forgot {
             color: $color-primary-light;
+            transition: color .15s ease;
+            font: $medium 1.3rem/1 $font-body;
+
+            @include focusRing();
+
+            @media (hover: hover) {
+                &:hover {
+                    color: $color-primary-lighter;
+                }
+            }
+        }
+
+        > .submit {
+            margin-top: .6rem;
         }
     }
 }

@@ -46,7 +46,7 @@ export function useProfile() {
         // Pas de `.eq('user_id', …)` : la policy `profiles: lecture de son profil` ne rend que la
         // ligne de l'appelant, donc `maybeSingle` est exact. Ajouter le filtre suggérerait que c'est
         // lui qui protège, alors que c'est RLS.
-        const { data, error } = await client.from('profiles').select('city, approved').maybeSingle();
+        const { data, error } = await client.from('profiles').select('city, approved, created_at').maybeSingle();
 
         if (error) {
             // ⚠️ Repli **fermé** : profil illisible → traité comme non approuvé, comme dans
@@ -74,7 +74,7 @@ export function useProfile() {
         // Profil absent = compte créé hors du parcours d'inscription (directement dans le dashboard,
         // par exemple). Non approuvé, pour la même raison que côté serveur : une garde qui s'ouvre
         // sur une donnée manquante n'est pas une garde.
-        profile.value = data ?? { city: null, approved: false, missing: true };
+        profile.value = data ?? { city: null, approved: false, created_at: null, missing: true };
     };
 
     const loadProfile = () => {
