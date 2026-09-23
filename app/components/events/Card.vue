@@ -4,6 +4,11 @@
 // `safeUrl` **au rendu** : filtrer à l'ingestion ne protège que ce qui passe par l'ingestion, et ce
 // cache est atteignable autrement (cf. `shared/utils/safeUrl.js`). Une URL refusée retombe sur le
 // rendu sans lien, qui existe déjà pour le cas « pas d'URL ».
+//
+// ⚠️ Le filtre est appliqué **une fois par ligne**, ici, et le template ne lit plus que le résultat
+// (`chip.href`, `row.noteHref`). Une première version appelait `safeUrl(chip.url)` cinq fois dans le
+// markup d'une même pastille : même résultat, mais cinq occurrences à garder d'accord — il suffisait
+// d'en oublier une pour rouvrir le sink sur un seul attribut.
 
 // Carte accordéon de la vue Événements. Un seul composant pour les deux regroupements : ce sont les
 // mêmes couples (film, journée) vus par un bout ou par l'autre, seuls l'en-tête et la ligne changent.
@@ -73,11 +78,18 @@ const title = computed(() => {
 const rows = computed(() => (props.mode === 'film'
     ? props.bucket.entries.map(entry => ({ movie: props.bucket.movie, entry }))
     : props.bucket.entries)
-    .map(row => ({
-        key: `${row.movie.id}-${row.entry.date}-${row.entry.cinema ?? ''}`,
-        ...row,
-        ...eventChips(row.entry),
-    })));
+    .map((row) => {
+        const chipped = eventChips(row.entry);
+        return {
+            key: `${row.movie.id}-${row.entry.date}-${row.entry.cinema ?? ''}`,
+            ...row,
+            ...chipped,
+            // URL de tiers filtrées ici, une seule fois par ligne (cf. l'encadré en tête). Le
+            // template ne lit plus que `chip.href` et `row.noteHref`.
+            chips: (chipped.chips ?? []).map(chip => ({ ...chip, href: safeUrl(chip.url) })),
+            noteHref: safeUrl(chipped.note?.url),
+        };
+    }));
 
 // « 3 journées » côté film, « 2 films » côté journée — le compte des séances événement, lui, vit dans
 // la pastille, comme côté Séances. Écrire les deux dans le sous-titre les ferait se répéter : chaque
@@ -170,11 +182,11 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                          ⚠️ Chacune se retrouve dans le menu « Type » de la page, qui dérive de la même
                          règle (`entryKinds`). -->
                     <span class="labels">
-                        <component :is="safeUrl(chip.url) ? 'a' : 'span'" v-for="chip in row.chips" :key="chip.text"
-                                   class="chip" :class="{ '-link': safeUrl(chip.url) }" :href="safeUrl(chip.url) || undefined"
-                                   :target="safeUrl(chip.url) ? '_blank' : undefined"
-                                   :rel="safeUrl(chip.url) ? 'noopener noreferrer' : undefined"
-                                   :title="safeUrl(chip.url) ? 'Fiche de la salle — nouvel onglet' : undefined">
+                        <component :is="chip.href ? 'a' : 'span'" v-for="chip in row.chips" :key="chip.text"
+                                   class="chip" :class="{ '-link': chip.href }" :href="chip.href || undefined"
+                                   :target="chip.href ? '_blank' : undefined"
+                                   :rel="chip.href ? 'noopener noreferrer' : undefined"
+                                   :title="chip.href ? 'Fiche de la salle — nouvel onglet' : undefined">
                             <Svg name="star" aria-hidden="true" />{{ chip.text }}
                         </component>
                     </span>
@@ -184,7 +196,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                     <!-- Phrase de l'exploitant : « La séance sera présentée par le réalisateur… ».
                          Trop longue pour une pastille, elle reste en toutes lettres. Absente la
                          plupart du temps, donc jamais un trou dans la mise en page. -->
-                    <a v-if="safeUrl(row.note?.url)" class="note" :href="safeUrl(row.note.url)"
+                    <a v-if="row.noteHref" class="note" :href="row.noteHref"
                        target="_blank" rel="noopener noreferrer"
                        title="Fiche de la salle — nouvel onglet">{{ row.note.text }}</a>
                     <span v-else-if="row.note" class="note">{{ row.note.text }}</span>
