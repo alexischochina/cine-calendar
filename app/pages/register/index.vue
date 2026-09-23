@@ -69,7 +69,10 @@ async function register() {
                     </div>
                 </fieldset>
 
-                <p v-if="errorMsg" class="error small-body">{{ errorMsg }}</p>
+                <!-- ⚠️ `role="alert"` : le message apparaît **après** la soumission, donc hors du flux de
+                     lecture. Sans lui, un lecteur d'écran ne l'annonce jamais et l'utilisateur attend
+                     une réponse qui est déjà à l'écran. -->
+                <p v-if="errorMsg" class="error small-body" role="alert">{{ errorMsg }}</p>
 
                 <button type="submit" class="btn submit-btn input-body" :disabled="loading">
                     {{ loading ? 'Création…' : 'Créer mon compte' }}

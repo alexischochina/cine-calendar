@@ -74,11 +74,15 @@ export default defineEventHandler(async (event) => {
     });
 
     if (error) {
-        // ⚠️ Le message de Supabase n'est pas renvoyé tel quel : sur une adresse déjà prise, il le
-        // dit, ce qui transforme cette route en oracle permettant de tester si une adresse a un
-        // compte ici. On répond la même chose dans tous les cas, et le détail part dans les logs.
+        // ⚠️ Ni le message **ni le code de statut** ne sont ceux de Supabase. Sur une adresse déjà
+        // prise il le dit, ce qui ferait de cette route un oracle : essayer une adresse et lire la
+        // réponse suffirait à savoir si elle a un compte ici.
+        //
+        // Le message était déjà uniformisé ; le **statut** ne l'était pas — 400 sur adresse prise,
+        // 200 sinon. Un oracle n'a pas besoin de lire le corps de la réponse pour fonctionner.
+        // D'où la même réponse, au bit près, dans les deux cas. Le détail part dans les logs.
         console.error('[auth] Création de compte échouée pour', email, '—', error.message);
-        throw createError({ statusCode: 400, statusMessage: 'Inscription impossible avec ces informations.' });
+        return { pending: true };
     }
 
     const userId = data?.user?.id;
@@ -110,5 +114,10 @@ export default defineEventHandler(async (event) => {
 
     // Rien de l'utilisateur ne sort d'ici — pas d'identifiant, pas de session. Le compte n'est pas
     // utilisable tant qu'il n'est pas approuvé ; le client affiche `/pending`.
+    //
+    // ⚠️ **Réponse identique à celle du cas d'échec ci-dessus**, et c'est voulu. Le prix est qu'un
+    // utilisateur qui se réinscrit par erreur voit « en attente de validation » sans nouveau compte
+    // créé — ce qui est exactement ce qu'il doit faire : attendre. La contrepartie serait de lui
+    // dire que l'adresse est prise, donc de le dire aussi à n'importe qui.
     return { pending: true };
 });
