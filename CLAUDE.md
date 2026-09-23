@@ -81,6 +81,20 @@ repli, pas une source.
   `shared/utils/` (dépendance-free, importable app / serveur / scripts).
 - Mode d'emploi complet et pièges documentés : `_ressources/README-seances.md`.
 
+**Écrans d'authentification (login / register / pending / mot de passe oublié) :**
+- Cinq écrans sur un layout commun (`app/layouts/auth.vue`) + `app/components/auth/`. Aucun ne porte
+  le middleware `auth` : on y arrive sans session utilisable.
+- ⚠️ Le parcours « mot de passe oublié » dépend de **deux réglages du dashboard Supabase**, pas du
+  dépôt : l'URL `<site>/nouveau-mot-de-passe` dans les *Redirect URLs*, et un expéditeur d'e-mails
+  capable d'écrire à l'adresse visée.
+- ⚠️ Le lien de récupération est en flux **PKCE** : il ne fonctionne que dans le navigateur qui l'a
+  demandé. Ouvert ailleurs, il donne « Lien expiré ou déjà utilisé » — c'est le comportement attendu.
+- `app/error.vue` rend la page d'erreur (404 et les autres), hors layout et hors middleware.
+  ⚠️ Elle dépend de `app/plugins/pinia-payload-guard.js` : sans lui, le *payload reducer* de
+  `@pinia/nuxt` 0.9 plante à la sérialisation (`hasOwnProperty` sur le payload racine, créé sans
+  prototype) et **toute** page d'erreur sort en 500. Défaut antérieur au chantier, corrigé avec lui.
+- Mode d'emploi complet et pièges documentés : `_ressources/README-pages-auth.md`.
+
 **Key pages:**
 - `/` — Calendar home, movies grouped by year → month → day
 - `/seances` — Séances parisiennes des films de la liste
@@ -101,7 +115,18 @@ NUXT_API_KEY=       # TMDB API key
 NUXT_API_BASE_URL=  # TMDB API base URL
 NUXT_API_IMG_URL=   # TMDB image CDN base URL
 NUXT_CRON_SECRET=   # secret du préchauffage — vide = /api/cron/warm éteinte (503), jamais ouverte
+NUXT_PUBLIC_SITE_URL= # URL publique — Open Graph, et lien de réinitialisation de mot de passe
 ```
+
+⚠️ `NUXT_PUBLIC_SITE_URL` sert au `redirectTo` de `resetPasswordForEmail` (`/mot-de-passe-oublie`).
+Vide, `useRequestURL().origin` prend le relais — acceptable en local, faux en production. Et l'URL
+`<site>/nouveau-mot-de-passe` doit figurer dans les *Redirect URLs* du dashboard Supabase.
+
+⚠️ **Le parcours « mot de passe oublié » dépend d'un expéditeur d'e-mails**, qui ne se règle pas dans
+le dépôt : le SMTP intégré de Supabase est plafonné à quelques messages par heure et, sur les projets
+récents, n'écrit qu'aux adresses **membres du projet**. « Compte approuvé » (`profiles.approved`) et
+« adresse membre du projet Supabase » sont deux listes sans rapport : un compte parfaitement approuvé
+peut ne jamais recevoir son lien. Un SMTP tiers (Brevo, Resend) lève la limite.
 
 Requis **par l'app et par les scripts** :
 ```
