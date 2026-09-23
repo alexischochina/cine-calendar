@@ -19,6 +19,10 @@ export function useProfile() {
 
     const profile = useState('userProfile', () => null);
 
+    // L'échec de lecture vit à part du profil, et non dedans : le profil sert de drapeau « déjà
+    // chargé » à `loadProfile`, donc y ranger une erreur la rendrait définitive (cf. `fetchProfile`).
+    const unavailable = useState('userProfileUnavailable', () => false);
+
     // ⚠️ La garde vit sur la requête **en vol**, pas sur son résultat : `profile.value` n'est
     // affecté qu'après l'`await`, donc deux appelants partis sur le même tick liraient la table en
     // double. Le middleware et le montage de la vue Séances se déclenchent justement ensemble.
@@ -54,9 +58,18 @@ export function useProfile() {
             } else {
                 console.error('Profil illisible:', error.message);
             }
-            profile.value = { city: null, approved: false, unavailable: true };
+
+            // ⚠️ **L'échec n'est pas mis en cache.** `loadProfile` court-circuite sur
+            // `profile.value` truthy : y ranger l'état d'erreur épinglerait l'utilisateur sur
+            // `/pending` pour toute la visite après un simple hoquet réseau, et seul un geste qu'il
+            // doit deviner (« J'ai été validé ») l'en sortirait. On laisse `null` pour que la
+            // tentative suivante reparte, et on porte l'échec à part.
+            profile.value = null;
+            unavailable.value = true;
             return;
         }
+
+        unavailable.value = false;
 
         // Profil absent = compte créé hors du parcours d'inscription (directement dans le dashboard,
         // par exemple). Non approuvé, pour la même raison que côté serveur : une garde qui s'ouvre
@@ -77,15 +90,45 @@ export function useProfile() {
         // contenterait d'attendre celui-ci et ne relirait rien.
         nuxtApp[INFLIGHT] = null;
         profile.value = null;
+        unavailable.value = false;
         await loadProfile();
+    };
+
+    // ⚠️⚠️ **Lire la ville avant d'avoir chargé le profil rend Paris, en silence.**
+    //
+    // C'est le mode d'échec le plus dangereux de ce composable : `cityConfig(undefined)` replie sur
+    // la ville par défaut, donc un compte troyen se verrait servir la localisation Allociné, la
+    // partition de cache et les libellés parisiens — sans la moindre erreur.
+    //
+    // Cinq consommateurs lisent `cityInfo` sans jamais appeler `loadProfile` (`useSeances`,
+    // `SideNav`, `ViewTabs`, `/seances`, `/evenements`) : ils reposent sur le fait que
+    // `middleware/auth.js` a tourné avant eux. C'est vrai aujourd'hui pour toutes les pages
+    // concernées, et ce contrat n'était écrit nulle part — donc invérifiable et facile à rompre en
+    // ajoutant une page.
+    //
+    // On ne peut pas charger à la volée ici (un `computed` est synchrone), et lever casserait le
+    // rendu. On rend donc le manquement **bruyant** : le repli reste le même, mais il s'annonce au
+    // lieu de se taire. Une fois par visite, pas une fois par lecture — sinon le rail et la vue
+    // Séances en produiraient des dizaines.
+    const warnedMissing = useState('userProfileWarned', () => false);
+
+    const requireLoaded = () => {
+        if (import.meta.client && user.value && !profile.value && !unavailable.value && !warnedMissing.value) {
+            warnedMissing.value = true;
+            console.warn(
+                '[auth] Ville lue avant le chargement du profil — repli sur « %s ». '
+                + 'La page concernée doit porter le middleware `auth`, ou appeler `loadProfile()`.',
+                DEFAULT_CITY,
+            );
+        }
     };
 
     // `cityOf` et non `profile.city` brut : la ville voyage jusqu'à des index de configuration
     // (`CITIES[city]`), et une valeur absente y rendrait `undefined`. Le repli sur Paris est celui
     // décrit dans `shared/utils/cities.js`.
-    const city = computed(() => cityOf(profile.value?.city));
-    const cityInfo = computed(() => cityConfig(profile.value?.city));
+    const city = computed(() => { requireLoaded(); return cityOf(profile.value?.city); });
+    const cityInfo = computed(() => { requireLoaded(); return cityConfig(profile.value?.city); });
     const isApproved = computed(() => profile.value?.approved === true);
 
-    return { profile, city, cityInfo, isApproved, loadProfile, refreshProfile };
+    return { profile, unavailable, city, cityInfo, isApproved, loadProfile, refreshProfile };
 }
