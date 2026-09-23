@@ -13,6 +13,8 @@ $color-primary-light: #FF6D97; // rose clair (liens, libellés)
 $color-primary-lighter: #FF9BB8; // rose clair (hover)
 $color-primary-warm: #FF7A3D;  // orange, uniquement en fin de dégradé du jour actif (vue Séances)
 $color-green: #2FBF71;         // vu au ciné
+// 3e cran de la jauge de robustesse (pages auth) — $color-green y est le 4e.
+$color-green-light: #9BD36A;
 $color-yellow: #F0A935;        // vu en streaming (ambre)
 $color-status-grey: #3A3F4A;   // à venir / téléchargeable (bord seul)
 // Violet — séances événement (avant-première, séance unique, labels de programmation). Une famille à

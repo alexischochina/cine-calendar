@@ -1,11 +1,21 @@
+// Sans cette règle, Chrome repeint les champs auto-remplis en bleu pâle sur texte noir — illisible
+// sur fond sombre, et une ombre interne opaque est la seule prise sur ce fond.
+//
+// ⚠️ `!important` nécessaire : le SCSS scoped d'un composant est plus spécifique et reprendrait la
+// main sur `box-shadow` au focus. Contrepartie assumée — un champ auto-rempli n'a pas le halo de
+// focus, seulement sa bordure rose.
 form {
     input:-webkit-autofill,
     input:-webkit-autofill:hover,
-    input:-webkit-autofill:focus textarea:-webkit-autofill,
-    textarea:-webkit-autofill:hover textarea:-webkit-autofill:focus,
+    input:-webkit-autofill:focus,
+    textarea:-webkit-autofill,
+    textarea:-webkit-autofill:hover,
+    textarea:-webkit-autofill:focus,
     select:-webkit-autofill,
     select:-webkit-autofill:hover,
     select:-webkit-autofill:focus {
-        -webkit-box-shadow: 0 0 0px 1000px #ffffff inset !important;
+        -webkit-box-shadow: 0 0 0 4rem $color-surface-1 inset !important;
+        -webkit-text-fill-color: $color-text !important;
+        caret-color: $color-text;
     }
 }

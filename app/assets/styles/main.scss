@@ -8,7 +8,7 @@
 @import '_ui';
 @import '_commons';
 @import '_disclaimer';
-//@import '_form';
+@import '_form';
 
 @import 'components/_flex';
 @import 'components/_grid';
@@ -28,11 +28,25 @@
 .view-enter-from,
 .view-leave-to { opacity: 0; }
 
+// Transition des écrans d'authentification, posée par chaque page auth (`definePageMeta`).
+//
+// ⚠️ `out-in` et non le fondu croisé de `view` : les formulaires n'ont ni la même hauteur ni le
+// même contenu, les superposer affichait deux textes l'un sur l'autre.
+// ⚠️ Pas de `position: absolute` comme `.view-leave-active` : en out-in la vue sortante est seule,
+// la sortir du flux ferait s'effondrer la colonne pendant qu'elle s'efface.
+.auth-enter-active { transition: opacity .24s ease, transform .24s $quart-ease-out; }
+.auth-leave-active { transition: opacity .14s ease, transform .14s ease-in; }
+
+.auth-enter-from { opacity: 0; transform: translateY(10px); }
+.auth-leave-to { opacity: 0; transform: translateY(-6px); }
+
 // Mouvement réduit : coupe toutes les animations d'orchestration (`!important` pour passer devant
 // les styles scoped des composants).
 @media (prefers-reduced-motion: reduce) {
     .view-enter-active,
     .view-leave-active,
+    .auth-enter-active,
+    .auth-leave-active,
     .rail-enter-active,
     .rail-leave-active,
     .notice-enter-active,
