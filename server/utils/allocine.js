@@ -218,19 +218,11 @@ export const fetchTheaterEvents = async (code, date) => {
 // Première URL de billetterie exploitable. Les `relay.mvtx.us` (provider `relay`) sont des
 // redirections internes Allociné, pas la billetterie de l'exploitant : on veut le lien direct.
 //
-// ⚠️ Le schéma est validé **ici**, à l'entrée : cette URL vient d'un tiers et finit dans un `href`.
-// Vue ne filtre pas les schémas — un `javascript:` dans le payload s'exécuterait au clic.
-const SAFE_SCHEMES = ['http:', 'https:'];
-
-const safeUrl = (value) => {
-    if (typeof value !== 'string' || !value) return null;
-    try {
-        return SAFE_SCHEMES.includes(new URL(value).protocol) ? value : null;
-    } catch {
-        return null;
-    }
-};
-
+// ⚠️ `safeUrl` vient de `shared/utils/safeUrl.js` (auto-import Nitro), et n'est plus défini ici.
+// Il l'était, et le filtrage ne vivait qu'**à l'entrée** — ce qui ne protège que ce qui passe par
+// l'entrée. Une écriture directe dans `showtimes_cache` court-circuitait ce point de contrôle et
+// plaçait l'URL de son choix dans un `href` (revue de sécurité du 22/09/2026). Le même test est
+// maintenant appliqué au rendu, et une seule définition sert les deux bouts.
 const pickBooking = (ticketing) => {
     if (!Array.isArray(ticketing)) return null;
 

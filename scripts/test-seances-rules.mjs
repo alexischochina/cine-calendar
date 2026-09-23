@@ -22,6 +22,7 @@
 //  11. `movieFilters`        — quels filtres masquent un film (app/utils/movieFilters.js)
 //  12. `viewport`           — la ligne est-elle déjà à l'écran ? (app/utils/viewport.js)
 //  13. `cities`             — périmètre et capacités d'une ville (shared/utils/cities.js)
+//  14. `safeUrl`            — quelles URL de tiers peuvent entrer dans un href (shared/utils/safeUrl.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -52,6 +53,7 @@ import {
 } from '../app/utils/seanceEvents.js';
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
 import { CITIES, CITY_KEYS, DEFAULT_CITY, isCityKey, cityOf, cityConfig, belongsToCity } from '../shared/utils/cities.js';
+import { safeUrl } from '../shared/utils/safeUrl.js';
 import { hasDatedEventFrom, isSeanceFilm, isFreshRelease } from '../shared/utils/seanceScope.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
@@ -1390,6 +1392,40 @@ console.log('\n\x1b[1mplaceOf — arrondissement à Paris, commune ailleurs\x1b[
     // affichage incohérent sans jamais lever d'erreur.
     t('config absente → se comporte comme Paris', placeOf({ arrondissement: 3, city: 'Paris' }, undefined), '3e arr.');
     t('config absente sans arrondissement → null', placeOf({ city: 'Troyes' }, undefined), null);
+}
+
+// --- 14. URL de tiers dans un `href` -------------------------------------------------------------
+//
+// Liste blanche de schémas, appliquée **au rendu**. Ces URL viennent d'Allociné, d'UGC, de Dulac, de
+// MK2 et de Letterboxd, et finissent dans des `href` : Vue ne filtre rien. Le test existe parce que
+// la garde a déjà été au mauvais endroit — à l'ingestion seulement, ce qui ne protégeait pas ce qui
+// était déjà en base.
+console.log('\n\x1b[1msafeUrl — ce qui peut entrer dans un href\x1b[0m');
+{
+    t('https accepté', safeUrl('https://www.ugc.fr/reserver'), 'https://www.ugc.fr/reserver');
+    t('http accepté', safeUrl('http://cinema-utopia.org'), 'http://cinema-utopia.org');
+
+    // Le cœur du sujet : un `javascript:` dans un `href` s'exécute au clic.
+    t('javascript: refusé', safeUrl('javascript:alert(1)'), null);
+    // ⚠️ La casse ne doit pas servir d'échappatoire — `new URL().protocol` normalise en minuscules.
+    t('JaVaScRiPt: refusé', safeUrl('JaVaScRiPt:alert(1)'), null);
+    // ⚠️ Ni les espaces de tête, qu'un navigateur tolère dans un href.
+    t('javascript: précédé d\'espaces refusé', safeUrl('   javascript:alert(1)'), null);
+    t('data: refusé', safeUrl('data:text/html,<script>alert(1)</script>'), null);
+    t('vbscript: refusé', safeUrl('vbscript:msgbox'), null);
+    t('blob: refusé', safeUrl('blob:https://x/y'), null);
+
+    // Relatif refusé : toutes les URL concernées viennent de tiers et sont absolues. Accepter le
+    // relatif obligerait à fournir une base, donc à supposer un contexte d'appel.
+    t('chemin relatif refusé', safeUrl('/seances'), null);
+    t('protocole implicite refusé', safeUrl('//evil.example'), null);
+
+    // Entrées dégénérées : jamais d'exception, toujours `null`.
+    t('chaîne vide', safeUrl(''), null);
+    t('null', safeUrl(null), null);
+    t('undefined', safeUrl(undefined), null);
+    t('non-chaîne', safeUrl({ toString: () => 'https://x' }), null);
+    t('charabia', safeUrl('pas une url'), null);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

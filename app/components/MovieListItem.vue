@@ -119,7 +119,7 @@ const subFallback = computed(() => {
             <div class="sub">
                 <template v-if="directors.length">
                     <template v-for="dir in directors" :key="dir.url">{{ dir.sep }}<a
-                        :href="dir.url" target="_blank" rel="noopener" class="person"
+                        :href="safeUrl(dir.url) || undefined" target="_blank" rel="noopener" class="person"
                         :aria-label="`Filmographie de ${dir.name} sur Letterboxd (nouvel onglet)`"
                     >{{ dir.name }}</a></template>
                 </template>

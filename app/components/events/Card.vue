@@ -1,4 +1,10 @@
 <script setup>
+// ⚠️ Les URL de ces pastilles et de cette note viennent des **exploitants** (UGC, Dulac, MK2) via
+// `event_detail_cache`, donc de tiers, et elles finissent dans des `href`. Elles passent toutes par
+// `safeUrl` **au rendu** : filtrer à l'ingestion ne protège que ce qui passe par l'ingestion, et ce
+// cache est atteignable autrement (cf. `shared/utils/safeUrl.js`). Une URL refusée retombe sur le
+// rendu sans lien, qui existe déjà pour le cas « pas d'URL ».
+
 // Carte accordéon de la vue Événements. Un seul composant pour les deux regroupements : ce sont les
 // mêmes couples (film, journée) vus par un bout ou par l'autre, seuls l'en-tête et la ligne changent.
 //   - mode 'film' : en-tête = affiche + titre du film,   lignes = journées
@@ -164,11 +170,11 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                          ⚠️ Chacune se retrouve dans le menu « Type » de la page, qui dérive de la même
                          règle (`entryKinds`). -->
                     <span class="labels">
-                        <component :is="chip.url ? 'a' : 'span'" v-for="chip in row.chips" :key="chip.text"
-                                   class="chip" :class="{ '-link': chip.url }" :href="chip.url || undefined"
-                                   :target="chip.url ? '_blank' : undefined"
-                                   :rel="chip.url ? 'noopener noreferrer' : undefined"
-                                   :title="chip.url ? 'Fiche de la salle — nouvel onglet' : undefined">
+                        <component :is="safeUrl(chip.url) ? 'a' : 'span'" v-for="chip in row.chips" :key="chip.text"
+                                   class="chip" :class="{ '-link': safeUrl(chip.url) }" :href="safeUrl(chip.url) || undefined"
+                                   :target="safeUrl(chip.url) ? '_blank' : undefined"
+                                   :rel="safeUrl(chip.url) ? 'noopener noreferrer' : undefined"
+                                   :title="safeUrl(chip.url) ? 'Fiche de la salle — nouvel onglet' : undefined">
                             <Svg name="star" aria-hidden="true" />{{ chip.text }}
                         </component>
                     </span>
@@ -178,7 +184,7 @@ const rowLabel = (row) => `Voir les séances de ${row.movie.title} le ${dayLabel
                     <!-- Phrase de l'exploitant : « La séance sera présentée par le réalisateur… ».
                          Trop longue pour une pastille, elle reste en toutes lettres. Absente la
                          plupart du temps, donc jamais un trou dans la mise en page. -->
-                    <a v-if="row.note?.url" class="note" :href="row.note.url"
+                    <a v-if="safeUrl(row.note?.url)" class="note" :href="safeUrl(row.note.url)"
                        target="_blank" rel="noopener noreferrer"
                        title="Fiche de la salle — nouvel onglet">{{ row.note.text }}</a>
                     <span v-else-if="row.note" class="note">{{ row.note.text }}</span>

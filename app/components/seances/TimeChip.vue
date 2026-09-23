@@ -35,6 +35,16 @@ const spokenLabel = computed(() =>
     + `${SPOKEN_VERSION[versionLabel.value] ?? versionLabel.value} — nouvel onglet`
 );
 
+// ⚠️ Le schéma est filtré **au rendu**, pas seulement à l'ingestion : ce `href` reçoit ce qui est en
+// base, et ce qui est en base n'est pas forcément passé par `server/utils/allocine.js`
+// (cf. `shared/utils/safeUrl.js`). Une URL refusée rend `null`, donc la pastille redevient un
+// `<span>` : pas de lien mort, juste pas de lien.
+//
+// ⚠️ **Tout ce qui parle de billetterie lit `booking`, pas `showtime.booking`.** Les deux ne
+// coïncident plus quand l'URL est refusée, et se fier au brut ferait annoncer « Réserver » à
+// l'oral sur une pastille qui n'est pas un lien — le pire des deux mondes.
+const booking = computed(() => safeUrl(props.showtime?.booking));
+
 // Le mot « événement » n'est pas dans le texte visible : le violet, l'étoile et le compteur de la
 // carte le disent déjà, et le répéter sur chaque chip mangerait la place du libellé, qui est
 // l'information utile. Il est en revanche indispensable à l'oral, où ni la couleur ni l'icône ne
@@ -43,7 +53,7 @@ const spokenLabel = computed(() =>
 const spokenEvent = computed(() => events.value.length ? `Séance événement — ${eventLabel.value}` : null);
 
 const accessibleLabel = computed(() => {
-    if (props.showtime.booking) {
+    if (booking.value) {
         return spokenEvent.value ? `${spokenLabel.value}. ${spokenEvent.value}` : spokenLabel.value;
     }
     return undefined;
@@ -52,18 +62,18 @@ const accessibleLabel = computed(() => {
 const hint = computed(() => {
     const parts = [
         spokenEvent.value,
-        props.showtime.booking ? 'Réserver — ouvre la billetterie dans un nouvel onglet' : null,
+        booking.value ? 'Réserver — ouvre la billetterie dans un nouvel onglet' : null,
     ].filter(Boolean);
     return parts.length ? parts.join(' · ') : undefined;
 });
 </script>
 
 <template>
-    <component :is="showtime.booking ? 'a' : 'span'" class="seances-timechip"
+    <component :is="booking ? 'a' : 'span'" class="seances-timechip"
                :class="[`-${showtime.version.toLowerCase()}`, { '-event': events.length }]"
-               :href="showtime.booking || undefined"
-               :target="showtime.booking ? '_blank' : undefined"
-               :rel="showtime.booking ? 'noopener noreferrer' : undefined"
+               :href="booking || undefined"
+               :target="booking ? '_blank' : undefined"
+               :rel="booking ? 'noopener noreferrer' : undefined"
                :title="hint"
                :aria-label="accessibleLabel">
         <span class="when">
@@ -76,7 +86,7 @@ const hint = computed(() => {
             <span class="txt">{{ eventLabel }}</span>
             <!-- Doublon volontaire pour l'oral, uniquement quand le chip n'est pas un lien : le lien,
                  lui, porte déjà la mention dans son `aria-label`. -->
-            <span v-if="!showtime.booking" class="sr">. Séance événement.</span>
+            <span v-if="!booking" class="sr">. Séance événement.</span>
         </span>
     </component>
 </template>
