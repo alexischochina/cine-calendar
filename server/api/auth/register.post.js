@@ -1,27 +1,19 @@
 // Inscription : `POST /api/auth/register  { email, password, city }`
 //
-// ⚠️ **La seule route publique du projet qui écrit.** Toutes les autres, ou bien lisent un cache
-// (`showtimes`, `events`), ou bien exigent un compte approuvé (`requireUser`). Celle-ci crée un
-// compte pour quelqu'un qui n'en a pas encore — elle ne peut donc pas se garder par une session, et
-// c'est ce qui impose tout ce qui suit.
+// ⚠️ **La seule route publique du projet qui écrit.** Elle crée un compte pour quelqu'un qui n'en a
+// pas encore, donc ne peut pas se garder par une session — d'où le débit serré et les réponses
+// uniformes plus bas.
 //
-// == Pourquoi le compte est créé ici, et pas par `signUp` côté navigateur ========================
+// ⚠️ Le compte est créé **ici** et pas par `signUp` côté navigateur, parce qu'un compte et son
+// profil doivent naître ensemble : une coupure entre les deux laisse un compte sans ligne
+// `profiles`, que `requireUser` refuse et que le middleware renvoie sur `/pending` — pour toujours,
+// sans que rien n'ait échoué visiblement. Les deux écritures sont enchaînées, et la seconde défait
+// la première si elle échoue. Ce n'est pas une transaction (l'API d'administration n'en offre pas),
+// mais l'état incohérent est rattrapé plutôt que laissé.
 //
-// Parce qu'un compte et son profil doivent naître **ensemble**. Avec `signUp` côté client puis un
-// appel pour poser le profil, une coupure entre les deux laisse un compte `auth.users` sans ligne
-// `profiles` : `requireUser` le refuse (profil absent = non approuvé, c'est voulu), le middleware de
-// page l'envoie sur `/pending`, et il y reste pour toujours — sans que personne ne sache pourquoi,
-// puisque rien n'a échoué visiblement. Il faudrait alors réparer à la main en base.
-//
-// Ici, les deux écritures sont enchaînées côté serveur et la seconde nettoie la première si elle
-// échoue. Ce n'est pas une transaction — l'API d'administration Supabase n'en offre pas — mais
-// l'état incohérent est rattrapé plutôt que laissé.
-//
-// == `approved` n'est jamais lu depuis la requête ================================================
-//
-// Le corps ne porte que `email`, `password`, `city`. Le drapeau est écrit en dur à `false` plus bas.
-// C'est la deuxième ligne de défense après l'absence de policy d'écriture sur `profiles`
-// (cf. `2609221212-add-profiles.sql`) : même en forgeant le corps, on ne s'approuve pas soi-même.
+// ⚠️ `approved` n'est jamais lu depuis la requête : le corps ne porte que `email`, `password`,
+// `city`, et le drapeau est écrit en dur plus bas. Deuxième ligne de défense après l'absence de
+// policy d'écriture sur `profiles`.
 
 import { serverSupabaseServiceRole } from '#supabase/server';
 

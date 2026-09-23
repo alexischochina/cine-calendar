@@ -218,11 +218,8 @@ export const fetchTheaterEvents = async (code, date) => {
 // Première URL de billetterie exploitable. Les `relay.mvtx.us` (provider `relay`) sont des
 // redirections internes Allociné, pas la billetterie de l'exploitant : on veut le lien direct.
 //
-// ⚠️ `safeUrl` vient de `shared/utils/safeUrl.js` (auto-import Nitro), et n'est plus défini ici.
-// Il l'était, et le filtrage ne vivait qu'**à l'entrée** — ce qui ne protège que ce qui passe par
-// l'entrée. Une écriture directe dans `showtimes_cache` court-circuitait ce point de contrôle et
-// plaçait l'URL de son choix dans un `href` (revue de sécurité du 22/09/2026). Le même test est
-// maintenant appliqué au rendu, et une seule définition sert les deux bouts.
+// ⚠️ `safeUrl` vient de `shared/utils/safeUrl.js` : même test à l'ingestion **et** au rendu. Filtrer
+// à l'entrée seule ne protège pas ce qui entre en base autrement.
 const pickBooking = (ticketing) => {
     if (!Array.isArray(ticketing)) return null;
 

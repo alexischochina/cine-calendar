@@ -125,15 +125,10 @@ alter table calendar enable row level security;
 
 -- ⚠️⚠️ PURGE EXHAUSTIVE, ET C'EST LE POINT LE PLUS IMPORTANT DU FICHIER.
 --
--- La version précédente listait les noms de policies à supprimer. C'était une **supposition** : si la
--- policy historique porte un autre nom que celui deviné, le `drop … if exists` la rate en silence et
--- elle survit. Or les policies s'**additionnent** (OU logique) — une seule policy permissive laissée
--- derrière rouvre toute la table, et les quatre règles posées plus bas ne servent plus à rien. Le
--- cloisonnement paraîtrait en place et ne le serait pas : exactement le défaut qu'on ne verrait pas.
---
--- On énumère donc ce qui existe réellement au lieu de le deviner. `pg_policies` est la seule source
--- de vérité sur ce point, et elle n'est pas lisible depuis PostgREST — d'où ce bloc plutôt qu'une
--- vérification préalable côté client.
+-- Supprimer par nom, c'est parier sur le nom : un `drop … if exists` qui le rate laisse survivre la
+-- policy, or les policies s'**additionnent** (OU logique). Une seule permissive oubliée rouvre toute
+-- la table et rend inutiles les quatre règles posées plus bas — sans le moindre signal. On énumère
+-- donc ce qui existe. `pg_policies` n'est pas lisible depuis PostgREST, d'où ce bloc.
 do $$
 declare
   nom text;

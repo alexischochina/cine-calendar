@@ -6,7 +6,6 @@ const emit = defineEmits(['movie-added', 'movie-exists'])
 const movieTitle = ref("")
 const selectedMedia = ref('cinema');
 const client = useSupabaseClient();
-// Propriétaire des lignes créées ici (cf. la note à l'insertion plus bas).
 const user = useSupabaseUser();
 const page = ref(1);
 const movieId = ref(0);
@@ -69,10 +68,9 @@ const addMovie = async () => {
         const { data: inserted, error } = await client
             .from('calendar')
             .insert({
-                // ⚠️ `user_id` explicite bien que la colonne porte `default auth.uid()` : le défaut
-                // est un filet, pas le contrat. Il vaut `null` partout où il n'y a pas de session —
-                // service-role des scripts et du cron — donc s'y fier ici apprendrait à ne pas le
-                // poser ailleurs, là où il ne rattraperait rien.
+                // ⚠️ Explicite bien que la colonne porte `default auth.uid()` : ce défaut vaut
+                // `null` en service-role (scripts, cron), donc s'y fier ici apprendrait à ne pas le
+                // poser là où il ne rattraperait rien.
                 user_id: user.value?.id,
                 movie_id: movieId.value,
                 media: selectedMedia.value,

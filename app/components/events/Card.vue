@@ -5,10 +5,8 @@
 // cache est atteignable autrement (cf. `shared/utils/safeUrl.js`). Une URL refusée retombe sur le
 // rendu sans lien, qui existe déjà pour le cas « pas d'URL ».
 //
-// ⚠️ Le filtre est appliqué **une fois par ligne**, ici, et le template ne lit plus que le résultat
-// (`chip.href`, `row.noteHref`). Une première version appelait `safeUrl(chip.url)` cinq fois dans le
-// markup d'une même pastille : même résultat, mais cinq occurrences à garder d'accord — il suffisait
-// d'en oublier une pour rouvrir le sink sur un seul attribut.
+// ⚠️ Filtré **une fois par ligne** (`chip.href`, `row.noteHref`), jamais dans le markup : une
+// occurrence par attribut, ce sont autant d'occasions d'en oublier une.
 
 // Carte accordéon de la vue Événements. Un seul composant pour les deux regroupements : ce sont les
 // mêmes couples (film, journée) vus par un bout ou par l'autre, seuls l'en-tête et la ligne changent.

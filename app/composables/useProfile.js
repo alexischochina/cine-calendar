@@ -94,22 +94,12 @@ export function useProfile() {
         await loadProfile();
     };
 
-    // ⚠️⚠️ **Lire la ville avant d'avoir chargé le profil rend Paris, en silence.**
-    //
-    // C'est le mode d'échec le plus dangereux de ce composable : `cityConfig(undefined)` replie sur
-    // la ville par défaut, donc un compte troyen se verrait servir la localisation Allociné, la
-    // partition de cache et les libellés parisiens — sans la moindre erreur.
-    //
-    // Cinq consommateurs lisent `cityInfo` sans jamais appeler `loadProfile` (`useSeances`,
-    // `SideNav`, `ViewTabs`, `/seances`, `/evenements`) : ils reposent sur le fait que
-    // `middleware/auth.js` a tourné avant eux. C'est vrai aujourd'hui pour toutes les pages
-    // concernées, et ce contrat n'était écrit nulle part — donc invérifiable et facile à rompre en
-    // ajoutant une page.
-    //
-    // On ne peut pas charger à la volée ici (un `computed` est synchrone), et lever casserait le
-    // rendu. On rend donc le manquement **bruyant** : le repli reste le même, mais il s'annonce au
-    // lieu de se taire. Une fois par visite, pas une fois par lecture — sinon le rail et la vue
-    // Séances en produiraient des dizaines.
+    // ⚠️⚠️ **Lire la ville avant d'avoir chargé le profil rend Paris, en silence** — le mode d'échec
+    // le plus dangereux d'ici, puisque la ville décide de la localisation Allociné, de la partition
+    // de cache et des libellés. Cinq consommateurs la lisent sans appeler `loadProfile`
+    // (`useSeances`, `SideNav`, `ViewTabs`, `/seances`, `/evenements`) : ils reposent sur le
+    // middleware `auth`. Un `computed` étant synchrone, on ne peut ni charger à la volée ni lever
+    // sans casser le rendu — on rend donc le manquement bruyant, une fois par visite.
     const warnedMissing = useState('userProfileWarned', () => false);
 
     const requireLoaded = () => {

@@ -1,38 +1,18 @@
 // La ville de l'appelant, sur le chemin chaud.
 //
-// `refresh.js` obtient la ville gratuitement : `requireUser` lit déjà le profil pour vérifier
-// l'approbation, et la rend dans `{ user, profile }`. Mais `showtimes.js` — la lecture groupée du
-// cache — n'appelle **pas** `requireUser`, et c'est délibéré : c'est le chemin le plus chaud du
-// projet, une garde y coûterait un aller-retour d'authentification par affichage (cf. l'en-tête de
-// `rateLimit.js`). Il lui faut pourtant la ville, sans quoi il lirait la mauvaise partition du cache.
+// `refresh.js` l'obtient gratuitement : `requireUser` lit déjà le profil pour vérifier
+// l'approbation. `showtimes.js` — la lecture groupée — n'appelle **pas** `requireUser`, et c'est
+// délibéré : une garde y coûterait un aller-retour d'authentification par affichage (cf. l'en-tête
+// de `rateLimit.js`). Il lui faut pourtant la ville, sans quoi il lirait la mauvaise partition.
 //
-// == Pourquoi jamais depuis la query string ====================================================
+// ⚠️ **Jamais depuis la query string.** D'abord parce qu'un paramètre libre laisse désigner
+// n'importe quelle ville. Surtout parce que `showtimes` répond « voilà ce qui manque » et que le
+// client rappelle `refresh` pour ce manque : si les deux ne s'accordent pas sur la ville, l'entrée
+// écrite n'est jamais celle qui était cherchée et le client boucle sur Allociné indéfiniment.
 //
-// Ce serait le plus simple, et c'est justement l'erreur. Deux raisons, dont la seconde est la plus
-// concrète :
-//
-//   1. Un paramètre libre laisse n'importe quel appelant désigner n'importe quelle ville, donc
-//      faire préchauffer et servir des partitions qu'il n'utilise pas. Sur `refresh`, qui sort chez
-//      Allociné, c'est directement le risque que `requireUser` a été écrit pour fermer.
-//   2. **Les deux routes doivent s'accorder.** `showtimes` répond « voici le frais, voilà ce qui
-//      manque », et le client rappelle `refresh` pour ce qui manque. Si la lecture se fait sur une
-//      ville et le rafraîchissement sur une autre, l'entrée écrite n'est jamais celle qui était
-//      cherchée : `missing` revient identique à chaque tour, et le client boucle sur Allociné
-//      indéfiniment — sans erreur, juste une facture.
-//
-// La ville vient donc de `profiles`, des deux côtés.
-//
-// == Le coût, et comment il est tenu ============================================================
-//
-// Une lecture de `profiles` par affichage annulerait l'économie que `showtimes.js` a été découpé
-// pour obtenir (mesuré : 14+14 requêtes → 1+1). D'où ce mémo en mémoire d'instance, calqué sur le
-// compteur de `rateLimit.js` : même durée de vie, mêmes limites assumées.
-//
-// ⚠️ Ce que ça ne vaut pas, dit ici comme dans `rateLimit.js` : le mémo vit en mémoire d'instance,
-// plusieurs instances servent en parallèle, tout repart au cold start. Ce n'est pas un cache de
-// cohérence — c'est une économie. La conséquence d'un mémo périmé est bornée et bénigne : un
-// changement de ville met au plus `TTL` à être pris en compte, et le changement de ville n'est même
-// pas exposé par l'application (hors périmètre du plan).
+// ⚠️ Le mémo vit en mémoire d'instance, comme le compteur de `rateLimit.js` : plusieurs instances,
+// tout repart au cold start. C'est une économie, pas un cache de cohérence — un changement de ville
+// met au plus `TTL` à être pris en compte.
 
 import { createHash } from 'node:crypto';
 import { serverSupabaseClient } from '#supabase/server';

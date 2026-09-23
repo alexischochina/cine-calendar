@@ -1,7 +1,5 @@
 export function useMovieCalendar() {
     const client = useSupabaseClient()
-    // Le propriétaire des lignes créées ici. RLS couvre déjà les lectures et les modifications
-    // (`user_id = auth.uid()`) ; seule l'insertion doit dire explicitement pour qui elle écrit.
     const user = useSupabaseUser()
     const store = useMoviesStore()
     // State singleton (useState) partagé entre layout et pages.

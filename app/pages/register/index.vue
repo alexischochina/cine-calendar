@@ -85,14 +85,7 @@ async function register() {
 </template>
 
 <style lang="scss" scoped>
-// ⚠️ **`btn` sur chaque `<button>` porteur de texte, et ce n'est pas décoratif.**
-// `components/_btn.scss` fait `button { @extend .ico-btn }`, et `.ico-btn:not(.btn)` pose
-// `font-size: 0` — le projet suppose qu'un bouton est une icône tant qu'on ne dit pas l'inverse.
-// Sans `btn`, le libellé est bien dans le DOM mais rendu à 0 px : invisible, et indétectable par un
-// test qui lit `textContent`. C'est exactement ce qui est arrivé ici.
-//
-// ⚠️ Et `.ico-btn:not(.btn)` (0,2,0) l'emporte sur `.input-body` (0,1,0) : la classe utilitaire de
-// typo ne rattrape pas l'oubli. Seul `btn` le fait.
+// ⚠️ `btn` sur chaque `<button>` porteur de texte : `_btn.scss` met les autres à `font-size: 0`.
 // ⚠️ Aucune propriété typographique ici : `title-2`, `input-body` et `small-body` sont posées en
 // markup et apportent la typo. Et aucune classe utilitaire (`.flex`, `.title-2`, `.input-body`…)
 // n'est utilisée comme sélecteur — on cible toujours la classe dédiée de l'élément.

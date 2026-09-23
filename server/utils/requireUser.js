@@ -1,27 +1,20 @@
 // Garde d'authentification **et d'approbation** des routes serveur.
 //
-// ⚠️ `app/middleware/auth.js` protège les **pages** Nuxt, pas les handlers Nitro : une route
-// `server/api/…` reste joignable par n'importe qui. Sans garde, les cinq routes qui **sortent sur le
-// réseau** (`resolve`, `refresh`, `events-refresh`, `events/detail`, `movies/:id/letterboxd`) font
-// émettre des requêtes vers des tiers depuis l'IP du déploiement, en volume arbitraire — ce qui
-// démolit la prémisse du compromis assumé en tête de `server/utils/allocine.js` (« app
-// mono-utilisateur, à volume dérisoire »).
+// ⚠️ `app/middleware/auth.js` protège les **pages** Nuxt, pas les handlers Nitro : sans cette garde,
+// les cinq routes qui **sortent sur le réseau** (`resolve`, `refresh`, `events-refresh`,
+// `events/detail`, `movies/:id/letterboxd`) font émettre des requêtes vers des tiers depuis l'IP du
+// déploiement, en volume arbitraire — ce qui démolit la prémisse du compromis assumé en tête de
+// `server/utils/allocine.js`.
 //
 // À poser sur toute route qui sort sur le réseau. Celles qui ne font que lire un cache s'en passent —
 // RLS suffit, et la garde coûterait un aller-retour sur le chemin le plus chaud (cf. `rateLimit.js`
 // et `userCity.js`).
 //
-// == L'approbation, et pourquoi elle est ici ====================================================
-//
-// L'inscription est publique (`/register`), l'usage ne l'est pas : un compte naît `approved = false`
-// et n'est ouvert qu'à la main dans le dashboard Supabase. Cette serrure **doit** vivre ici, pas
-// seulement dans le middleware de page, et pour exactement la raison écrite six lignes plus haut :
-// un compte non approuvé qui ne passe que par le middleware de page peut encore appeler les routes
-// Nitro directement, donc faire sortir le déploiement chez Allociné, UGC, Dulac et MK2 à volonté.
+// ⚠️ L'approbation doit vivre **ici** et pas seulement dans le middleware de page, pour la raison
+// écrite six lignes plus haut : un compte non approuvé peut appeler les routes Nitro directement.
 // Une inscription publique sans cette ligne, c'est un robinet ouvert sur des tiers.
 //
-// ⚠️ Profil absent = non approuvé. Une garde qui s'ouvre sur une donnée manquante n'est pas une
-// garde : si la migration `2609221212` n'a pas été jouée, ou si la ligne a été supprimée, on refuse.
+// ⚠️ Profil absent = non approuvé. Une garde qui s'ouvre sur une donnée manquante n'est pas une garde.
 
 import { serverSupabaseUser, serverSupabaseClient } from '#supabase/server';
 
@@ -55,17 +48,11 @@ export const requireUser = async (event) => {
     // (`profiles: lecture de son profil`), donc `maybeSingle` suffit et ne peut pas rendre le profil
     // de quelqu'un d'autre.
     //
-    // ⚠️ **Pas de `.eq('user_id', …)` ici, et ce n'est pas un raccourci.** Ce filtre a existé, écrit
-    // « pour la clarté », et il cassait tout : depuis `@nuxtjs/supabase` 2.0.5, `serverSupabaseUser`
-    // ne rend plus un objet utilisateur mais les **claims du JWT**, où l'identifiant s'appelle `sub`
-    // et non `id`. `user.id` valait donc `undefined`, PostgREST répondait
-    // `invalid input syntax for type uuid: "undefined"`, et la garde tombait dans sa branche
-    // « profil illisible » → **503 sur les cinq routes, pour tout le monde**, y compris les comptes
-    // approuvés. Un filtre redondant qui ne protégeait rien et qui a suffi à éteindre la moitié de
-    // l'application.
-    //
-    // La leçon est plus générale : ne pas réécrire côté code ce que RLS fait déjà. Le filtre en
-    // double n'ajoute aucune garantie et donne une seconde occasion de se tromper.
+    // ⚠️ **Pas de `.eq('user_id', …)`.** Depuis `@nuxtjs/supabase` 2.0.5, `serverSupabaseUser` rend
+    // les **claims du JWT**, où l'identifiant s'appelle `sub` et non `id` : filtrer sur `user.id`
+    // passait `undefined` et mettait les cinq routes gardées en 503, comptes approuvés compris.
+    // Plus généralement : ne pas réécrire côté code ce que RLS fait déjà — le filtre en double
+    // n'ajoute aucune garantie et donne une seconde occasion de se tromper.
     const { data: profile, error } = await client
         .from('profiles')
         .select('user_id, city, approved')
