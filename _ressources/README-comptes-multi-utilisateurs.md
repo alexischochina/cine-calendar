@@ -20,6 +20,7 @@ Dans le SQL editor Supabase, **une par une**, en lisant la sortie de chacune :
 | 2 | `_ressources/sql/2609221213-add-calendar-owner.sql` | `calendar.user_id`, backfill, RLS par propriétaire |
 | 3 | `_ressources/sql/2609221214-per-user-cinema-favorites.sql` | `cinema_favorites`, et ferme l'écriture navigateur sur `cinemas` |
 | 4 | `_ressources/sql/2609221215-showtimes-cache-city.sql` | `showtimes_cache.city` et la clé à trois colonnes |
+| 5 | `_ressources/sql/2609231006-approved-writes-only.sql` | ⚠️ **correctif de sécurité** — réserve l'écriture des tables partagées aux comptes approuvés |
 
 ### Relevé sur la base réelle, le 22/09/2026
 
@@ -63,8 +64,14 @@ dans les deux fichiers plutôt que de continuer.
 ### Créer le compte du père
 
 1. Il va sur `/register`, saisit e-mail + mot de passe + **Troyes**.
-2. Il atterrit sur `/pending`. **Il ne peut rien faire** — ni voir de liste, ni déclencher d'appel
-   réseau.
+2. Il atterrit sur `/pending`. Il ne voit aucune liste et ne peut déclencher aucun appel réseau vers
+   un tiers.
+
+   ⚠️ **Cette phrase disait « il ne peut rien faire », et c'était faux.** Un compte non approuvé
+   obtient malgré tout un jeton Supabase `authenticated` — l'approbation garde l'application, pas la
+   base. Il pouvait donc écrire directement dans les tables **partagées** via PostgREST, sans
+   traverser une seule route. C'est la migration `2609231006` qui rend cette phrase vraie ; sans
+   elle, ne pas s'y fier. Détail complet en §3.
 3. Dans Supabase → Table editor → `profiles`, passe son `approved` à `true`.
 4. Il clique « J'ai été validé » sur `/pending` et entre dans l'application. Pas besoin qu'il se
    reconnecte.
@@ -228,6 +235,40 @@ Le bouton est donc **masqué et l'état neutralisé** : `useSeances` expose `eff
 (= `ugcOnly && hasUgcCard`), et c'est lui que lisent tous les décomptes. L'état `ugcOnly` lui-même
 n'est pas forcé à `false` — il est partagé entre visites, et le remettre à zéro perdrait le choix
 d'un utilisateur parisien.
+
+### ⚠️⚠️ `approved` garde l'application, pas la base
+
+Trouvé par la revue de sécurité du 22/09/2026, après que le chantier a été jugé terminé et poussé.
+
+`/api/auth/register` crée le compte avec `email_confirm: true`. Il est donc **immédiatement
+connectable** sur l'endpoint public de Supabase, avec la clé anon qui est dans le bundle navigateur.
+Le jeton obtenu porte `role: authenticated`, et PostgREST ne consulte jamais `profiles.approved`.
+
+Les trois gardes du chantier — `requireUser`, `middleware/auth.js`, `useProfile` — protègent les
+routes Nitro et les pages Nuxt. Pas PostgREST. Et le chantier n'avait resserré que les tables
+**personnelles** : `calendar`, `cinema_favorites`, `profiles`. Les quatre tables **partagées**
+gardaient `for all to authenticated using (true) with check (true)`.
+
+Résultat, vérifié par exploitation réelle : n'importe qui pouvait s'inscrire, puis écrire dans
+`showtimes_cache`, `theater_events_cache`, `event_detail_cache` et `cinemas` — donc injecter de faux
+horaires, de fausses salles, ou une URL de billetterie de son choix dans la vue de l'autre
+utilisateur.
+
+**L'angle mort, à retenir pour la prochaine ouverture :** on a cloisonné les données personnelles en
+ouvrant l'inscription, sans se demander ce qu'un inconnu pourrait faire des données **partagées**.
+La question à poser n'est pas « qui possède cette ligne ? » mais « qui peut l'écrire, et qui la
+lit ensuite ? ».
+
+Corrigé en deux volets, les deux nécessaires :
+
+1. **`2609231006-approved-writes-only.sql`** — une fonction `is_approved()` (`security definer`,
+   `search_path` figé) et, sur les quatre tables, lecture ouverte / écriture réservée aux comptes
+   approuvés. La lecture reste large à dessein : ce sont des horaires publics, et `showtimes` est le
+   chemin le plus chaud du projet.
+2. **`shared/utils/safeUrl.js`** — le filtre de schéma appliqué **au rendu** et plus seulement à
+   l'ingestion. Il existait dans `server/utils/allocine.js`, avec le bon raisonnement (« cette URL
+   vient d'un tiers et finit dans un `href` ») et au mauvais endroit : filtrer à l'entrée ne protège
+   que ce qui passe par l'entrée. Une seule définition sert désormais les deux bouts.
 
 ### ⚠️ Les noms de ville en dur dans l'interface
 
