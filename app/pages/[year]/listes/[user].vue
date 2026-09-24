@@ -18,28 +18,27 @@ const {
     onlyMissingFor, toggleOnlyMissing, sharedGrouped, sharedNotice,
 } = useSharedLists()
 
-const slug = computed(() => String(route.params.user || ''))
-
 // ⚠️ Attendu, contrairement au chargement de fond du layout : sans lui, un rechargement direct
 // rendrait 404 avant même d'avoir demandé qui partage.
 await loadSharedProfiles()
 
-const profile = computed(() => profileBySlug(slug.value))
+// ⚠️ **Figés au montage, jamais dérivés de `useRoute()` de façon réactive.** Pendant le crossfade, la
+// page sortante voit déjà la nouvelle route (`route.params.user` vaut `undefined`) : un `profile`
+// réactif retomberait sur `null`, et tout ce qui en dépend lèverait au démontage, hook compris.
+const slug = String(route.params.user || '')
+const profile = profileBySlug(slug)
 
 // Slug inexistant, nom effacé, partage retiré : 404 plutôt qu'une redirection silencieuse — une
 // liste qui disparaît sans rien dire se lit comme un bug.
-if (!profile.value) {
+if (!profile) {
     throw createError({ statusCode: 404, statusMessage: 'Liste introuvable', fatal: true })
 }
 
-useHead({ title: `Liste de ${profile.value.display_name}` })
+useHead({ title: `Liste de ${profile.display_name}` })
 
-await loadSharedList(profile.value.user_id)
+await loadSharedList(profile.user_id)
 
-// `key` remonte la page en principe, mais s'y fier ferait dépendre le contenu d'un détail de routage.
-watch(() => profile.value?.user_id, (userId) => { if (userId) loadSharedList(userId) })
-
-const theirFilms = computed(() => rowsOf(profile.value.user_id))
+const theirFilms = computed(() => rowsOf(profile.user_id))
 
 // Les `movie_id` que j'ai déjà. Un `Set` construit une fois, pas une recherche par ligne.
 const ownedIds = computed(() => new Set(movies.value.map(m => Number(m.movie_id))))
@@ -55,7 +54,7 @@ const stat = computed(() => ready.value
     : `${theirFilms.value.length} film${theirFilms.value.length > 1 ? 's' : ''}`)
 
 // La bascule, propre à **cette** liste (cf. `useSharedLists`).
-const onlyMissing = computed(() => onlyMissingFor(profile.value.user_id))
+const onlyMissing = computed(() => onlyMissingFor(profile.user_id))
 
 // ⚠️ Ordre imposé : bascule, **puis** filtres, **puis** regroupement — regrouper avant de filtrer
 // ferait mentir les compteurs de mois.

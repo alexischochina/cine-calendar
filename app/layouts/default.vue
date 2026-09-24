@@ -28,7 +28,10 @@ const mobileYearMenu = ref(false)
 //
 // ⚠️ **La source suit la liste affichée** : garder mes années laisserait cliquer sur des années où
 // il n'a rien. `sharedGrouped` est posé par la page, pour que le rail ne diverge pas de l'écran.
-const yearList = computed(() => sharedGrouped.value
+//
+// ⚠️ **`viewMode` d'abord** : `sharedGrouped` survit à la vue qui l'a posé, le temps du crossfade au
+// moins. La vue courante est la seule source qui ne peut pas être en retard sur l'écran.
+const yearList = computed(() => (viewMode.value === 'shared' && sharedGrouped.value)
     ? yearsOf(sharedGrouped.value.grouped, sharedGrouped.value.undated)
     : yearsOf(sortedMovies.value, moviesWithoutDate.value))
 
