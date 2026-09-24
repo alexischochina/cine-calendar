@@ -15,7 +15,7 @@
 // met au plus `TTL` à être pris en compte.
 
 import { createHash } from 'node:crypto';
-import { serverSupabaseClient } from '#supabase/server';
+import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server';
 
 const TTL = 5 * 60 * 1000;
 
@@ -70,8 +70,31 @@ export const cityForRequest = async (event) => {
     const cached = memo.get(key);
     if (cached && cached.expiresAt > now) return cached.city;
 
+    // ⚠️⚠️ **Le filtre par propriétaire n'est pas facultatif.** Depuis les listes partagées,
+    // `profiles` rend plusieurs lignes à un compte approuvé : sans lui, `maybeSingle()` rend une
+    // erreur, le repli ci-dessous s'applique, et **un compte troyen se voit servir Paris en
+    // silence** — alors que la ville décide de la localisation Allociné, du filtre de salles et de la
+    // clé de cache.
+    //
+    // ⚠️ L'en-tête du fichier tient toujours : le mémo est consulté **avant**, donc
+    // `serverSupabaseUser` n'est appelée qu'au plus une fois par session et par `TTL`. Elle lève sur
+    // un jeton illisible, d'où le `try`. `sub ?? id` : mêmes claims que dans `requireUser`.
+    let userId = null;
+    try {
+        const user = await serverSupabaseUser(event);
+        userId = user?.sub ?? user?.id ?? null;
+    } catch {
+        userId = null;
+    }
+
+    if (!userId) return DEFAULT_CITY;
+
     const client = await serverSupabaseClient(event);
-    const { data, error } = await client.from('profiles').select('city').maybeSingle();
+    const { data, error } = await client
+        .from('profiles')
+        .select('city')
+        .eq('user_id', userId)
+        .maybeSingle();
 
     if (error) {
         console.error('[cities] Profil illisible, repli sur', DEFAULT_CITY, '—', error.message);

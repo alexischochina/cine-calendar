@@ -44,18 +44,19 @@ export const requireUser = async (event) => {
 
     const client = await serverSupabaseClient(event);
 
-    // Client **de session** et non service-role : RLS ne rend que la ligne de l'appelant
-    // (`profiles: lecture de son profil`), donc `maybeSingle` suffit et ne peut pas rendre le profil
-    // de quelqu'un d'autre.
+    // Client **de session** et non service-role : l'appelant ne lit que ce que ses policies lui
+    // donnent, jamais la table entière.
     //
-    // ⚠️ **Pas de `.eq('user_id', …)`.** Depuis `@nuxtjs/supabase` 2.0.5, `serverSupabaseUser` rend
-    // les **claims du JWT**, où l'identifiant s'appelle `sub` et non `id` : filtrer sur `user.id`
-    // passait `undefined` et mettait les cinq routes gardées en 503, comptes approuvés compris.
-    // Plus généralement : ne pas réécrire côté code ce que RLS fait déjà — le filtre en double
-    // n'ajoute aucune garantie et donne une seconde occasion de se tromper.
+    // ⚠️⚠️ **`.eq('user_id', userId)` est obligatoire depuis les listes partagées** : `profiles` rend
+    // maintenant plusieurs lignes à un compte approuvé, `maybeSingle()` lève, et les cinq routes
+    // gardées tombent en 503 pour tout le monde — donc la vue Séances avec.
+    //
+    // ⚠️ **`userId` et jamais `user.id` brut** : `serverSupabaseUser` rend les claims du JWT, où
+    // l'identifiant s'appelle `sub`. C'est l'erreur qui avait déjà mis ces routes en 503.
     const { data: profile, error } = await client
         .from('profiles')
         .select('user_id, city, approved')
+        .eq('user_id', userId)
         .maybeSingle();
 
     // ⚠️ Une erreur de lecture **ferme**, elle n'ouvre pas. Table absente (migration pas jouée),
