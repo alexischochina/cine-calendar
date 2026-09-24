@@ -28,7 +28,8 @@ npm test          # Règles pures des vues Séances / Événements (scripts/test
 **Tests** — `npm test` couvre les règles **pures** des vues Séances et Événements : filtres et
 regroupements, semaine ciné, report des salles disparues, vocabulaire d'événement, connecteurs
 d'exploitant, verdicts « en salle » — plus la lecture des fiches Letterboxd (note et liens
-réalisateurs). Aucun framework — un script Node qui sort en code 1 au premier échec. Les composables (état, réseau, écritures) ne sont **pas** couverts : c'est là que se sont logés
+réalisateurs), le slug et le « ce qu'il a que je n'ai pas » des listes partagées, et le regroupement
+année → mois → jour commun aux deux timelines. Aucun framework — un script Node qui sort en code 1 au premier échec. Les composables (état, réseau, écritures) ne sont **pas** couverts : c'est là que se sont logés
 les défauts trouvés en revue, à garder en tête avant d'y toucher.
 
 ⚠️ Ne pas lancer `npm run build` pendant qu'un serveur de dev tourne : il écrit dans `.nuxt` au format
@@ -43,6 +44,19 @@ production et le dev suivant échoue sur `#internal/nuxt/paths`. Nettoyer par
 
 **Data flow:**
 - Calendar entries are stored in Supabase table `calendar`. Columns: `id`, `movie_id`, `media`, `state`, `manual_release_date`, plus the **persisted TMDB metadata** `title`, `release_date` (resolved FR theatrical date, nullable), `poster_path` (relative TMDB path).
+- ⚠️⚠️ **La lecture de `calendar` n'est plus cloisonnée par RLS** depuis les listes partagées
+  (`2609231743`) : un compte approuvé lit aussi les lignes des comptes qui portent un
+  `profiles.display_name`. Le filtre de propriétaire est donc porté par le **code**, et il n'est pas
+  facultatif — `.eq('user_id', …)` sur toute lecture de `calendar` et de `profiles`. Six sites en
+  dépendent, dont trois où l'oubli fait **lever** `maybeSingle()` avec un symptôme qui ne ressemble
+  pas à sa cause (tout le monde sur `/pending`, 503 sur les routes gardées, Paris servi à un compte
+  troyen). Détail et contrôle reproductible : `_ressources/README-listes-partagees.md`.
+- ⚠️⚠️ **Ce filtre ne s'écrit jamais `user.value.id`.** `useSupabaseUser()` rend les **claims du
+  JWT** (les deux plugins de `@nuxtjs/supabase` 2.0.5 y écrivent `getClaims()`), donc l'identifiant
+  s'appelle `sub` et `.id` vaut `undefined` — au rendu serveur comme dans le navigateur. Toujours
+  `userIdOf(user.value)` (`app/utils/currentUser.js`). En lecture, l'oubli donne un `22P02` que les
+  replis fermés traduisent en « compte non validé » ; en écriture, la clé absente est rattrapée par
+  `default auth.uid()` sur `calendar` mais **pas** sur `cinema_favorites`, qui n'en a pas.
 - **Metadata lives in the DB, not fetched on every load.** TMDB is called only (a) when adding a movie (`MovieAddForm` → `/api/movies/:id/full`, persisted on insert) and (b) when re-checking upcoming cinema release dates on load (`useMovieCalendar.recheckUpcomingCinema` — only `media==='cinema'`, no `manual_release_date`, date in the future/null). Normal page load reads Supabase only → no TMDB calls, no `429`.
 - Server routes in `server/api/movies/` (repo root, not under `app/`): `search`, `[id]` (detail, used by `/movies/[id]`), `[id]/release_dates`, and `[id]/full` (single TMDB call with `append_to_response=release_dates`, returns resolved `{ title, poster_path, release_date }`). FR date resolution (type 3 theatrical, else CNC/Netflix/Amazon/Disney+ notes) lives in `server/utils/tmdbDates.js` — **single source of truth**, auto-imported by the route and imported explicitly by the backfill script.
 - Posters are served from the `image.tmdb.org` CDN using the stored `poster_path`; the poster file itself is not downloaded/stored. The Letterboxd link **du film** is derived from `movie_id` (no column). Celui **du réalisateur** ne se
@@ -81,6 +95,24 @@ repli, pas une source.
   `shared/utils/` (dépendance-free, importable app / serveur / scripts).
 - Mode d'emploi complet et pièges documentés : `_ressources/README-seances.md`.
 
+**Listes partagées entre comptes :**
+- Un onglet par compte qui partage sa liste (`/[year]/listes/[user]`), en **lecture seule**, avec une
+  bascule « Seulement ceux que je n'ai pas » et un ajout film par film chez soi.
+- L'interrupteur est `profiles.display_name`, rempli **à la main** dans le dashboard Supabase :
+  renseigné = partagé, `null` = invisible. Le partage est mutuel et total entre comptes nommés.
+- ⚠️ `useSharedLists` ne fait **que lire**. Les policies d'écriture restent cloisonnées : un `update`
+  sur la ligne d'un autre ne lève pas, il touche **zéro ligne**. Tout rattrapage écrit là (filet des
+  métadonnées, promotion « en salle », revérif TMDB, notes Letterboxd) réessaierait indéfiniment en
+  croyant réussir. Même raison à l'écran : pastilles inertes, jamais des sélecteurs neutralisés.
+- ⚠️ Rejouer `2609221213` ou `2609231045` **supprime ou invalide** la policy de partage, sans le
+  dire. Rejouer `2609231743` derrière, **puis `2609241150`** — le `create or replace function` de la
+  première réinitialise l'ACL et rouvre `shared_list_owner_ids()` à `public`.
+- ⚠️ `create function` accorde `execute` à **`public`**, dont `anon` est membre : un
+  `revoke … from anon` seul ne ferme rien. C'est `2609241150` qui révoque à `public`.
+- Les règles pures vivent dans `app/utils/{sharedLists,moviesGrouping}.js` et sont couvertes par
+  `npm test`.
+- Mode d'emploi complet et pièges documentés : `_ressources/README-listes-partagees.md`.
+
 **Écrans d'authentification (login / register / pending / mot de passe oublié) :**
 - Cinq écrans sur un layout commun (`app/layouts/auth.vue`) + `app/components/auth/`. Aucun ne porte
   le middleware `auth` : on y arrive sans session utilisable.
@@ -97,6 +129,7 @@ repli, pas une source.
 
 **Key pages:**
 - `/` — Calendar home, movies grouped by year → month → day
+- `/[year]/listes/[user]` — La timeline d'un autre compte, en lecture seule
 - `/seances` — Séances parisiennes des films de la liste
 - `/evenements` — Avant-premières et séances spéciales de la semaine
 - `/search` — TMDB movie search with debounce
