@@ -38,15 +38,20 @@ export function useProfile() {
         // Pas de session : rien à lire, et surtout pas de requête à lancer. RLS rendrait zéro ligne,
         // mais l'aller-retour serait payé quand même — sur `/login` et `/register`, qui n'ont aucune
         // raison d'interroger la base.
-        if (!user.value) {
+        if (!userIdOf(user.value)) {
             profile.value = null;
             return;
         }
 
-        // Pas de `.eq('user_id', …)` : la policy `profiles: lecture de son profil` ne rend que la
-        // ligne de l'appelant, donc `maybeSingle` est exact. Ajouter le filtre suggérerait que c'est
-        // lui qui protège, alors que c'est RLS.
-        const { data, error } = await client.from('profiles').select('city, approved, created_at').maybeSingle();
+        // ⚠️⚠️ **`.eq('user_id', …)` est obligatoire, et ne se retire pas.** Depuis
+        // « profiles: lecture des profils partagés » (`2609231743`), la table rend **plusieurs**
+        // lignes à un compte approuvé. Sans filtre, `maybeSingle()` lève, le repli fermé s'applique,
+        // et **tout le monde atterrit sur `/pending`** — un symptôme qui ne ressemble pas à sa cause.
+        const { data, error } = await client
+            .from('profiles')
+            .select('city, approved, created_at')
+            .eq('user_id', userIdOf(user.value))
+            .maybeSingle();
 
         if (error) {
             // ⚠️ Repli **fermé** : profil illisible → traité comme non approuvé, comme dans

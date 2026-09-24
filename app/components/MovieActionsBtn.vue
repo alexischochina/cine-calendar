@@ -61,7 +61,7 @@ onClickOutside(container, close);
 </script>
 
 <template>
-    <div class="actions-btn-wrapper" ref="container">
+    <div class="actions-btn-wrapper" ref="container" @keydown.escape="close">
         <button class="actions-btn" :class="{ '-active': !!manualReleaseDate }" @click.stop="toggle"
                 aria-label="Actions du film" :aria-expanded="isOpen">
             <Svg name="more"/>

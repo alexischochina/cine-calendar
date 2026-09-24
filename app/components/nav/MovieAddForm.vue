@@ -46,10 +46,14 @@ const resetForm = () => {
 const addMovie = async () => {
     if (!movieId.value) return;
     try {
+        // ⚠️ `.eq('user_id', …)` : la lecture de `calendar` n'est plus cloisonnée par RLS (cf.
+        // `useMovieCalendar.getMovies`). Sans lui, `maybeSingle()` **lève** dès que l'autre compte a
+        // le même film, et l'ajout part dans le `catch` — le seul indice étant une ligne de console.
         const { data: existing } = await client
             .from('calendar')
             .select('id')
             .eq('movie_id', movieId.value)
+            .eq('user_id', userIdOf(user.value))
             .maybeSingle()
         if (existing) {
             const existingMovieId = movieId.value;
@@ -71,7 +75,7 @@ const addMovie = async () => {
                 // ⚠️ Explicite bien que la colonne porte `default auth.uid()` : ce défaut vaut
                 // `null` en service-role (scripts, cron), donc s'y fier ici apprendrait à ne pas le
                 // poser là où il ne rattraperait rien.
-                user_id: user.value?.id,
+                user_id: userIdOf(user.value),
                 movie_id: movieId.value,
                 media: selectedMedia.value,
                 state: 'unseen',

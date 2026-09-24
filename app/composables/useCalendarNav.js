@@ -39,10 +39,22 @@ export function useCalendarNav() {
         routeYear.value === undefined ? lastSelectedYear.value : routeYear.value
     )
 
-    // Noms de route Nuxt : `year-timeline` / `year-stats` / `seances` / `evenements`. Lecture
-    // explicite plutôt qu'un `endsWith` : à quatre vues, deviner la vue par son suffixe est un piège.
-    const VIEW_BY_ROUTE = { seances: 'seances', evenements: 'events', 'year-stats': 'stats' }
+    // Noms de route Nuxt : `year-timeline` / `year-stats` / `seances` / `evenements` /
+    // `year-listes-user`. Lecture explicite plutôt qu'un `endsWith` : à cinq vues, deviner la vue
+    // par son suffixe est un piège.
+    const VIEW_BY_ROUTE = {
+        seances: 'seances',
+        evenements: 'events',
+        'year-stats': 'stats',
+        'year-listes-user': 'shared',
+    }
     const viewMode = computed(() => VIEW_BY_ROUTE[String(route.name || '')] ?? 'timeline')
+
+    // Le slug de la liste partagée affichée, ou `null` ailleurs. Il faut le distinguer de `viewMode`
+    // seul : le rail peut porter plusieurs onglets partagés, et c'est lui qui dit lequel est actif.
+    const sharedSlug = computed(() =>
+        viewMode.value === 'shared' ? String(route.params.user || '') || null : null
+    )
 
     // Navigue vers la timeline de l'année du film, puis scrolle jusqu'à lui.
     //
@@ -80,21 +92,37 @@ export function useCalendarNav() {
     const isCity = computed(() => isYearlessView(viewMode.value))
     const isLibrary = computed(() => !isCity.value)
 
+    // Le chemin d'une vue de la liste, pour une année donnée. ⚠️ `'shared'` n'est **pas** un segment
+    // d'URL : la route est `/[year]/listes/[user]`, donc `/2024/shared` n'existe pas. C'est ici, et
+    // nulle part ailleurs, qu'une vue redevient un chemin.
+    const libraryPath = (year, mode = viewMode.value, slug = sharedSlug.value) =>
+        mode === 'shared' && slug
+            ? `/${yearToSlug(year)}/listes/${slug}`
+            : `/${yearToSlug(year)}/${mode === 'shared' ? 'timeline' : mode}`
+
     const selectYear = async (year) => {
         clearHighlight()
         // `/2026/seances` n'existe pas : choisir une année depuis une vue hors année ramène sur sa
-        // timeline.
+        // timeline. Depuis une liste partagée, en revanche, on y **reste** — parcourir ses années
+        // est justement ce que la vue offre.
         const mode = YEARLESS_VIEWS[viewMode.value] ? 'timeline' : viewMode.value
-        await navigateTo(`/${yearToSlug(year)}/${mode}`)
+        await navigateTo(libraryPath(year, mode))
         await nextTick()
         scrollToTop()
+    }
+
+    // Le rail → la liste d'un autre compte, sur l'année regardée. Un slug et non un identifiant :
+    // l'URL doit rester lisible et partageable (cf. `listSlug` dans `app/utils/sharedLists.js`).
+    const selectSharedList = (slug) => {
+        clearHighlight()
+        return navigateTo(libraryPath(selectedYear.value, 'shared', slug))
     }
 
     const selectView = (mode) => {
         clearHighlight()
         return YEARLESS_VIEWS[mode]
             ? navigateTo(YEARLESS_VIEWS[mode])
-            : navigateTo(`/${yearToSlug(selectedYear.value)}/${mode}`)
+            : navigateTo(libraryPath(selectedYear.value, mode))
     }
 
     const onScrollToToday = async () => {
@@ -119,6 +147,7 @@ export function useCalendarNav() {
         currentYear,
         selectedYear,
         viewMode,
+        sharedSlug,
         isLibrary,
         isCity,
         yearOfMovie,
@@ -127,6 +156,7 @@ export function useCalendarNav() {
         goToEvents,
         selectYear,
         selectView,
+        selectSharedList,
         onScrollToToday,
         onSearch,
     }

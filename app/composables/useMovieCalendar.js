@@ -7,39 +7,14 @@ export function useMovieCalendar() {
     const sortedMovies = useState('sortedMovies', () => ({}))
     const moviesWithoutDate = useState('moviesWithoutDate', () => [])
 
-    const formatDate = (fullDate) => {
-        const date = new Date(fullDate)
-        const year = date.getFullYear();
-        const month = date.getMonth() + 1;
-        const day = date.getDate();
-        return `${year}-${month.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
-    }
-
+    // Le regroupement est une règle pure (`app/utils/moviesGrouping.js`), partagée avec la vue d'une
+    // liste partagée. Ne restent ici que les filtres du store et l'écriture des `useState`.
     const sortMovies = (list) => {
-        const sorted = {};
-
         const filtered = list.filter(m => matchesFilters(m, store.filters));
+        const { grouped, undated } = groupByYearMonthDay(filtered);
 
-        const dated = filtered
-            .map(movie => ({ movie, date: releaseDateOf(movie) }))
-            .filter(entry => entry.date !== null)
-            .sort((a, b) => a.date - b.date);
-
-        moviesWithoutDate.value = filtered.filter(m => releaseDateOf(m) === null);
-
-        dated.forEach(({ movie, date }) => {
-            const year = date.getFullYear();
-            const month = new Intl.DateTimeFormat('fr-FR', { month: 'long' }).format(date);
-            const day = date.getDate();
-
-            if (!sorted[year]) sorted[year] = {};
-            if (!sorted[year][month]) sorted[year][month] = {};
-            if (!sorted[year][month][day]) sorted[year][month][day] = [];
-
-            sorted[year][month][day].push(movie);
-        });
-
-        sortedMovies.value = sorted;
+        moviesWithoutDate.value = undated;
+        sortedMovies.value = grouped;
     }
 
     const applyAutoInTheaters = async (movieList) => {
@@ -71,13 +46,17 @@ export function useMovieCalendar() {
         return movieList.map(m => ids.includes(m.id) ? { ...m, state: 'inTheaters' } : m);
     }
 
-    // Résout la date effective d'une ligne : override manuel prioritaire, sinon date stockée.
-    const effectiveDate = (row) =>
-        row.manual_release_date ? formatDate(row.manual_release_date) : (row.release_date || null);
-
     // Appelé au montage du layout (une fois par montage ; un retour depuis une page `bare` rafraîchit).
+    //
+    // ⚠️⚠️ **`.eq('user_id', …)` ne se retire pas.** Depuis les listes partagées, la lecture de
+    // `calendar` n'est plus cloisonnée par RLS : un `select('*')` nu ramène **leur** liste dans ma
+    // timeline, sans erreur et sans signal. Le cloisonnement est porté par le code, et `userIdOf` est
+    // obligatoire (cf. `app/utils/currentUser.js`).
     const getMovies = async () => {
-        const { data, error } = await client.from('calendar').select('*');
+        const userId = userIdOf(user.value);
+        if (!userId) return;
+
+        const { data, error } = await client.from('calendar').select('*').eq('user_id', userId);
         if (error) return;
 
         // Filet de sécurité : lignes ajoutées pendant la transition, sans métadonnées.
@@ -108,7 +87,7 @@ export function useMovieCalendar() {
         const withDates = data.map(movie => ({
             ...movie,
             _tmdbReleaseDate: movie.release_date || null,
-            release_date: effectiveDate(movie),
+            release_date: effectiveReleaseDate(movie),
         }));
         const updated = await applyAutoInTheaters(withDates);
         movies.value = updated;
@@ -177,7 +156,7 @@ export function useMovieCalendar() {
         const newMovie = {
             ...newEntry,
             _tmdbReleaseDate: newEntry.release_date || null,
-            release_date: effectiveDate(newEntry),
+            release_date: effectiveReleaseDate(newEntry),
         };
         const [resolved] = await applyAutoInTheaters([newMovie]);
         movies.value = [...movies.value, resolved];
@@ -258,12 +237,16 @@ export function useMovieCalendar() {
     const addCatchupMovie = async ({ movieId, media = 'cinema', year = null }) => {
         // `.limit(1)` + repli sur le premier plutôt que `.maybeSingle()` : tolère d'éventuels
         // doublons de `movie_id` sans lever. Enveloppé pour ne jamais casser l'ajout.
+        //
+        // ⚠️ `.eq('user_id', …)` : sans lui, ce contrôle matche la ligne de **l'autre compte**, et
+        // l'`update` qui suit ne touche aucune ligne — sans lever.
         let existing = null;
         try {
             const { data } = await client
                 .from('calendar')
                 .select('id')
                 .eq('movie_id', movieId)
+                .eq('user_id', userIdOf(user.value))
                 .order('id')
                 .limit(1);
             existing = data?.[0] ?? null;
@@ -293,7 +276,7 @@ export function useMovieCalendar() {
             .insert({
                 // Cf. la note du jumeau dans `nav/MovieAddForm.vue` : explicite, pas laissé au
                 // `default auth.uid()` de la colonne.
-                user_id: user.value?.id,
+                user_id: userIdOf(user.value),
                 movie_id: movieId,
                 media,
                 state: 'unseen',
@@ -334,6 +317,68 @@ export function useMovieCalendar() {
         return entry;
     }
 
+    // Recopie chez moi un film vu dans la liste d'un autre compte. Troisième et dernier point
+    // d'insertion dans `calendar`, et le seul qui ne paie **aucun** aller-retour réseau : les
+    // métadonnées TMDB sont déjà dans sa ligne.
+    //
+    // Ce qui se recopie et ce qui ne se recopie pas : `_ressources/README-listes-partagees.md` (§3).
+    // En deux mots : les faits sur le film oui, son visionnage et ses corrections non.
+    const addFromSharedList = async (row) => {
+        const movieId = Number(row?.movie_id);
+        if (!Number.isFinite(movieId)) return null;
+
+        // Idempotence sur l'état local : `movies` est déjà chargé et fait autorité.
+        if (movies.value.some(m => Number(m.movie_id) === movieId)) return null;
+
+        // ⚠️ Même forme que les deux autres points d'insertion. Les colonnes Letterboxd sont posées
+        // juste après, par `patchCalendarRow` : les écrire ici obligerait à doubler l'insertion d'un
+        // repli maison pour le cas « colonne absente », que le helper porte déjà.
+        const payload = {
+            user_id: userIdOf(user.value),
+            movie_id: movieId,
+            media: row.media || 'cinema',
+            state: 'unseen',
+            title: row.title ?? null,
+            poster_path: row.poster_path ?? null,
+            // ⚠️ La date **TMDB**, pas la date effective : recopier son override me l'imposerait.
+            release_date: row.manual_release_date ? null : (row.release_date ?? null),
+            director: row.director ?? null,
+            genres: row.genres ?? null,
+            countries: row.countries ?? null,
+            tmdb_vote: row.tmdb_vote ?? null,
+        };
+
+        const { data: inserted, error } = await client
+            .from('calendar')
+            .insert(payload)
+            .select()
+            .single();
+
+        if (error) { console.error('Ajout depuis une liste partagée échoué:', error.message); return null; }
+
+        const entry = { ...payload, id: inserted.id, _tmdbReleaseDate: payload.release_date };
+
+        // Note et liens réalisateurs recopiés depuis sa ligne, donc **sans scraper**.
+        const extras = {
+            ...(row.letterboxd_rating != null ? { letterboxd_rating: row.letterboxd_rating } : {}),
+            ...(row.letterboxd_directors?.length ? { letterboxd_directors: row.letterboxd_directors } : {}),
+        };
+
+        if (Object.keys(extras).length) {
+            try {
+                Object.assign(entry, await patchCalendarRow(client, entry.id, extras) ?? {});
+            } catch (e) {
+                // L'ajout est acquis ; la note se rattrapera au prochain passage en Stats.
+                console.error('Note Letterboxd non recopiée pour', movieId, e.message);
+            }
+        } else {
+            // Sa ligne ne les portait pas : on les résout comme ailleurs, sans `await`.
+            void resolveLetterboxdDirectors(client, entry);
+        }
+
+        return entry;
+    }
+
     const handleMovieExists = (event) => event.detail?.movieId
 
     const handleMovieDeleted = (id) => {
@@ -346,7 +391,7 @@ export function useMovieCalendar() {
         if (!movie) return;
         // Override posé → date manuelle ; override retiré → on retombe sur la date TMDB stockée.
         const release_date = manual_release_date
-            ? formatDate(manual_release_date)
+            ? toLocalIsoDay(manual_release_date)
             : (movie._tmdbReleaseDate || null);
         movies.value = movies.value.map(m =>
             m.id === id ? { ...m, manual_release_date, release_date } : m
@@ -419,5 +464,6 @@ export function useMovieCalendar() {
         setCatchup,
         refreshLetterboxdRatings,
         addCatchupMovie,
+        addFromSharedList,
     }
 }

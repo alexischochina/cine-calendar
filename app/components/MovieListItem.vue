@@ -1,5 +1,5 @@
 <script setup>
-const emits = defineEmits(['movie-deleted', 'release-date-updated', 'toggle-catchup']);
+const emits = defineEmits(['movie-deleted', 'release-date-updated', 'toggle-catchup', 'add-to-list']);
 
 const props = defineProps({
     releaseDay: {
@@ -52,6 +52,18 @@ const props = defineProps({
         type: Boolean,
         default: false,
     },
+    // Ligne appartenant à un **autre compte** : lecture seule complète. ⚠️ Pas de la cosmétique — un
+    // `update` sur sa ligne toucherait **zéro ligne sans lever**, donc un sélecteur laissé actif
+    // changerait d'état à l'écran, rien en base, et personne ne le dirait.
+    shared: {
+        type: Boolean,
+        default: false,
+    },
+    // En mode `shared` : déjà dans ma liste ?
+    alreadyMine: {
+        type: Boolean,
+        default: false,
+    },
 })
 const selectedMedia = ref(props.media);
 const selectedState = ref(props.state);
@@ -92,6 +104,11 @@ const directors = computed(() => directorLinks(props.director, props.letterboxdD
 // sur le DOM, qu'un patch du `:class` ci-dessous effacerait (cf. `useMovieHighlight`).
 const { highlightedMovieId, clearMovieFlash } = useMovieHighlight();
 const isFlashing = computed(() => highlightedMovieId.value === props.movieId);
+// Libellés des pastilles inertes : sans texte visible, l'information passe par `aria-label`.
+const STATE_LABELS = { unseen: 'envie de voir', seen: 'vu', downloadAvailable: 'dispo en téléchargement', inTheaters: 'en salle' };
+const mediaLabel = computed(() => MEDIA_LABELS[selectedMedia.value] || 'Streaming');
+const stateLabel = computed(() => STATE_LABELS[selectedState.value] ?? selectedState.value);
+
 // Repli quand le réalisateur est inconnu : un libellé, jamais un lien.
 const subFallback = computed(() => {
     if (selectedState.value === 'seen') return MEDIA_LABELS[selectedMedia.value] || 'Streaming';
@@ -126,13 +143,25 @@ const subFallback = computed(() => {
                 <template v-else>{{ subFallback }}</template>
             </div>
         </div>
-        <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" />
-        <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected" />
-        <MovieActionsBtn :id="props.id" :manual-release-date="manualReleaseDate"
-                         :release-date="props.releaseDate" :catchup="props.catchup"
-                         @movie-deleted="emits('movie-deleted', $event)"
-                         @release-date-updated="emits('release-date-updated', $event)"
-                         @toggle-catchup="(id, value) => emits('toggle-catchup', id, value)" />
+        <!-- Des pastilles inertes plutôt que des sélecteurs neutralisés : un contrôle qui a l'air
+             d'ouvrir un menu et n'en ouvre aucun se lit comme une panne. -->
+        <template v-if="props.shared">
+            <MediaBadge :media="selectedMedia" class="ro-media" role="img" :aria-label="`Média : ${mediaLabel}`" />
+            <span class="ro-state" :class="`-${selectedState}`" role="img" :aria-label="`État : ${stateLabel}`">
+                <Svg :name="selectedState" aria-hidden="true" />
+            </span>
+            <AddToListAction :already-mine="props.alreadyMine" @add-to-list="emits('add-to-list')" />
+        </template>
+
+        <template v-else>
+            <SelectBtn type="media" :selected="selectedMedia" @option-selected="onMediaSelected" />
+            <SelectBtn type="state" :selected="selectedState" @option-selected="onStateSelected" />
+            <MovieActionsBtn :id="props.id" :manual-release-date="manualReleaseDate"
+                             :release-date="props.releaseDate" :catchup="props.catchup"
+                             @movie-deleted="emits('movie-deleted', $event)"
+                             @release-date-updated="emits('release-date-updated', $event)"
+                             @toggle-catchup="(id, value) => emits('toggle-catchup', id, value)" />
+        </template>
     </div>
 </template>
 
@@ -272,6 +301,30 @@ const subFallback = computed(() => {
         .title { color: $color-text-dim; }
         > .poster { opacity: .78; }
     }
+}
+
+// Mêmes gabarits que les sélecteurs qu'elles remplacent, sinon la colonne de droite se décale d'une
+// liste à l'autre.
+.movie-list-item {
+    > .ro-media { flex: none; }
+
+    > .ro-state {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 2.6rem;
+        height: 2.6rem;
+        color: $color-text-weak;
+
+        :deep(svg) { width: 1.9rem; height: 1.9rem; }
+
+        &.-seen { color: $color-yellow; }
+        &.-downloadAvailable { color: $color-text-muted; }
+        &.-inTheaters { color: $color-primary; }
+    }
+
+    // Vu au cinéma : vert, comme dans le sélecteur.
+    &.-cinema > .ro-state.-seen { color: $color-green; }
 }
 
 @media (max-width: 999px) {

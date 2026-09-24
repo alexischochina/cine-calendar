@@ -27,6 +27,11 @@ $color-event-light: #C99AE0;   // texte d'événement — 7,3:1 sur le fond du c
 // au lieu de trancher comme le ferait un aplat neutre.
 $color-event-ink: #1A0F22;
 
+// Indigo — l'avatar d'une liste partagée (onglet du rail, en-tête de la vue). Une troisième famille,
+// et volontairement : le rose dit « l'application », le violet dit « événement », celui-ci dit
+// « quelqu'un d'autre ». Le réutiliser pour autre chose lui ferait perdre ce sens.
+$color-shared: #5B6BD0;
+
 // Surfaces
 $color-surface-1: #14161C;
 $color-surface-2: #181A22;

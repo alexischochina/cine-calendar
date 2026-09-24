@@ -19,9 +19,14 @@ const props = defineProps({
         type: String,
         default: 'timeline',
     },
+    // Relayé à `NavViewTabs`, pour surligner le bon onglet parmi plusieurs listes partagées.
+    sharedSlug: {
+        type: [String, null],
+        default: null,
+    },
 });
 
-const emits = defineEmits(['select-year', 'select-view']);
+const emits = defineEmits(['select-year', 'select-view', 'select-shared-list']);
 
 // La règle vient de `useCalendarNav` (dérivée de `YEARLESS_VIEWS`), pas d'une liste réécrite ici.
 const isLibrary = computed(() => isLibraryView(props.viewMode));
@@ -64,8 +69,9 @@ const showsArrondissement = computed(() => cityInfo.value.groupsByArrondissement
     <aside class="side-nav scr">
         <div class="brand">Cinégenda</div>
 
-        <NavViewTabs :view-mode="viewMode" :event-count="nbEvents"
-                     @select-view="emits('select-view', $event)" />
+        <NavViewTabs :view-mode="viewMode" :shared-slug="sharedSlug" :event-count="nbEvents"
+                     @select-view="emits('select-view', $event)"
+                     @select-shared-list="emits('select-shared-list', $event)" />
 
         <div class="divider" />
 

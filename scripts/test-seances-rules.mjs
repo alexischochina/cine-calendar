@@ -23,6 +23,9 @@
 //  12. `viewport`           — la ligne est-elle déjà à l'écran ? (app/utils/viewport.js)
 //  13. `cities`             — périmètre et capacités d'une ville (shared/utils/cities.js)
 //  14. `safeUrl`            — quelles URL de tiers peuvent entrer dans un href (shared/utils/safeUrl.js)
+//  15. `sharedLists`        — slug, avatar et « ce qu'il a que je n'ai pas » (app/utils/sharedLists.js)
+//  16. `moviesGrouping`     — le regroupement année → mois → jour des deux timelines (app/utils/moviesGrouping.js)
+//  17. `userIdOf`           — l'identifiant du compte connecté, `sub` et non `id` (app/utils/currentUser.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -54,6 +57,9 @@ import {
 import { isMissingSchema } from '../shared/utils/pgErrors.js';
 import { CITIES, CITY_KEYS, DEFAULT_CITY, isCityKey, cityOf, cityConfig, belongsToCity } from '../shared/utils/cities.js';
 import { safeUrl } from '../shared/utils/safeUrl.js';
+import { listSlug, listInitial, missingFrom, sharedListStat } from '../app/utils/sharedLists.js';
+import { groupByYearMonthDay, yearsOf } from '../app/utils/moviesGrouping.js';
+import { userIdOf } from '../app/utils/currentUser.js';
 import { hasDatedEventFrom, isSeanceFilm, isFreshRelease } from '../shared/utils/seanceScope.js';
 import { parseLocalDate, daysBetween } from '../app/utils/localDate.js';
 import { directorLinks, letterboxdPersonSlug } from '../app/utils/movieHelpers.js';
@@ -1426,6 +1432,103 @@ console.log('\n\x1b[1msafeUrl — ce qui peut entrer dans un href\x1b[0m');
     t('undefined', safeUrl(undefined), null);
     t('non-chaîne', safeUrl({ toString: () => 'https://x' }), null);
     t('charabia', safeUrl('pas une url'), null);
+}
+
+// --- 15. Listes partagées -----------------------------------------------------------------------
+console.log('\n\x1b[1msharedLists — le slug, l\'avatar, et ce qu\'il a que je n\'ai pas\x1b[0m');
+{
+    // Le slug porte l'URL **et** sert à retrouver le profil : deux écritures, et l'onglet s'affiche
+    // pendant que la page rend 404.
+    t('slug simple', listSlug('Papa'), 'papa');
+    t('slug : accents retirés', listSlug('Jean-Éric'), 'jean-eric');
+    t('slug : espaces → tiret', listSlug('Marie Curie'), 'marie-curie');
+    t('slug : ponctuation compactée', listSlug("L'oncle  d'Amérique !"), 'l-oncle-d-amerique');
+    t('slug : tirets de bord retirés', listSlug('  Papa  '), 'papa');
+    t('slug : casse normalisée', listSlug('PAPA'), 'papa');
+    // ⚠️ Ce que l'index unique de la base (sur `lower`) ne rattrape PAS. Figé ici pour qu'on ne le
+    // redécouvre pas.
+    t('slug : « Jean Eric » collisionne avec « Jean-Éric »', listSlug('Jean Eric'), listSlug('Jean-Éric'));
+    t('slug : entrée vide', listSlug(''), '');
+    t('slug : null', listSlug(null), '');
+
+    t('initiale', listInitial('papa'), 'P');
+    t('initiale : espaces de tête ignorés', listInitial('  marie'), 'M');
+    t('initiale : repli sur ?', listInitial(null), '?');
+
+    // ⚠️ Sans le `Number()`, un identifiant arrivé en chaîne fait passer un film que j'ai déjà pour un
+    // film manquant — sur toute la liste.
+    const mine = [{ movie_id: 1 }, { movie_id: '2' }];
+    t('manquants : identifiants mixtes chaîne/nombre',
+        missingFrom([{ movie_id: '1' }, { movie_id: 2 }, { movie_id: 3 }], mine).map(f => f.movie_id), [3]);
+    t('manquants : recouvrement total', missingFrom([{ movie_id: 1 }], mine), []);
+    t('manquants : ma liste vide → tout manque',
+        missingFrom([{ movie_id: 7 }, { movie_id: 8 }], []).map(f => f.movie_id), [7, 8]);
+    t('manquants : sa liste vide', missingFrom([], mine), []);
+    t('manquants : entrées nulles tolérées', missingFrom(null, null), []);
+    // Montrée plutôt que masquée : l'arbitrage revient à l'utilisateur, pas à une donnée abîmée.
+    t('manquants : ligne sans movie_id → comptée comme manquante',
+        missingFrom([{ movie_id: null }], mine).length, 1);
+
+    t('résumé', sharedListStat(34, 12), '34 films · 12 que tu n\'as pas');
+    t('résumé : singulier', sharedListStat(1, 1), '1 film · 1 que tu n\'as pas');
+    // « 0 que tu n'as pas » se lit comme un compteur cassé.
+    t('résumé : rien ne manque', sharedListStat(12, 0), '12 films · tu les as tous');
+    t('résumé : liste vide', sharedListStat(0, 0), 'Liste vide');
+}
+
+// --- 16. Regroupement de la timeline ------------------------------------------------------------
+console.log('\n\x1b[1mmoviesGrouping — l\'ordre des clés EST l\'ordre d\'affichage\x1b[0m');
+{
+    const M = (id, release_date, extra = {}) => ({ id, movie_id: id, release_date, ...extra });
+
+    const { grouped, undated } = groupByYearMonthDay([
+        M(1, '2026-03-02'),
+        M(2, '2026-01-15'),
+        M(3, '2026-01-15'),
+        M(4, null),
+        M(5, '2025-12-31'),
+        M(6, 'pas-une-date'),
+    ]);
+
+    // ⚠️ Le gabarit itère l'objet tel quel, et JavaScript n'ordonne pas les clés texte : c'est le tri
+    // **avant** remplissage qui fait l'ordre. Ce test empêche de le déplacer après.
+    t('mois dans l\'ordre chronologique, pas alphabétique',
+        Object.keys(grouped['2026']), ['janvier', 'mars']);
+    t('années séparées', Object.keys(grouped).sort(), ['2025', '2026']);
+    t('deux films le même jour restent groupés',
+        grouped['2026']['janvier']['15'].map(m => m.id), [2, 3]);
+    t('sans date : null et date illisible', undated.map(m => m.id), [4, 6]);
+
+    // `effectiveReleaseDate` est appliquée en amont : ici on vérifie que le regroupement se fie bien
+    // à `release_date`.
+    const override = groupByYearMonthDay([M(7, '2024-05-04')]);
+    t('film rangé sur sa date effective', Object.keys(override.grouped), ['2024']);
+
+    t('liste vide', groupByYearMonthDay([]), { grouped: {}, undated: [] });
+    t('entrée nulle tolérée', groupByYearMonthDay(null), { grouped: {}, undated: [] });
+
+    // Le rail des années : ordre croissant, « Sans date » en dernier et seulement si elle a du contenu.
+    t('années + compteurs', yearsOf(grouped, undated),
+        [{ year: 2025, label: '2025', count: 1 }, { year: 2026, label: '2026', count: 3 },
+         { year: null, label: 'Sans date', count: 2 }]);
+    t('« Sans date » absente quand il n\'y a rien dedans',
+        yearsOf(grouped, []).map(y => y.label), ['2025', '2026']);
+    t('aucune année', yearsOf({}, []), []);
+}
+
+// --- 17. Identifiant du compte connecté -----------------------------------------------------------
+console.log('\n\x1b[1muserIdOf — trois lignes, et c\'est elle qui a cassé la connexion\x1b[0m');
+{
+    // ⚠️ Le cas **nominal**, pas un cas limite : `useSupabaseUser()` rend les claims du JWT.
+    t('claims JWT → sub', userIdOf({ sub: 'abc', email: 'x@y.z' }), 'abc');
+    // Repli si une version du module rend à nouveau un objet utilisateur.
+    t('objet utilisateur → id', userIdOf({ id: 'def' }), 'def');
+    t('sub gagne sur id', userIdOf({ sub: 'abc', id: 'def' }), 'abc');
+    // ⚠️ `null` et non `undefined` : ce dernier traverse jusqu'à PostgREST, qui répond `22P02` —
+    // l'erreur que les replis fermés traduisent en « compte non validé ».
+    t('sans session', userIdOf(null), null);
+    t('undefined', userIdOf(undefined), null);
+    t('objet vide', userIdOf({}), null);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);

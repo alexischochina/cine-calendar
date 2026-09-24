@@ -9,9 +9,11 @@ const {
 } = useMovieCalendar()
 
 const {
-    currentYear, selectedYear, viewMode, isLibrary,
-    selectYear, selectView, goToMovie, goToSeances, onScrollToToday, onSearch,
+    currentYear, selectedYear, viewMode, sharedSlug, isLibrary,
+    selectYear, selectView, selectSharedList, goToMovie, goToSeances, onScrollToToday, onSearch,
 } = useCalendarNav()
+
+const { warmSharedLists, sharedGrouped, sharedNotice } = useSharedLists()
 
 const { syncInTheaters } = useInTheatersSync()
 const { syncUpcomingEvents } = useUpcomingEvents()
@@ -23,19 +25,12 @@ const { dispatchMovieAdded, dispatchMovieExists, dispatchScrollToToday, dispatch
 const mobileYearMenu = ref(false)
 
 // Années disponibles + compteurs (rail gauche / menu mobile).
-const yearList = computed(() => {
-    const out = []
-    for (const [year, months] of Object.entries(sortedMovies.value)) {
-        let count = 0
-        for (const days of Object.values(months))
-            for (const list of Object.values(days)) count += list.length
-        out.push({ year: Number(year), label: year, count })
-    }
-    out.sort((a, b) => a.year - b.year)
-    if (moviesWithoutDate.value.length)
-        out.push({ year: null, label: 'Sans date', count: moviesWithoutDate.value.length })
-    return out
-})
+//
+// ⚠️ **La source suit la liste affichée** : garder mes années laisserait cliquer sur des années où
+// il n'a rien. `sharedGrouped` est posé par la page, pour que le rail ne diverge pas de l'écran.
+const yearList = computed(() => sharedGrouped.value
+    ? yearsOf(sharedGrouped.value.grouped, sharedGrouped.value.undated)
+    : yearsOf(sortedMovies.value, moviesWithoutDate.value))
 
 const selectedYearLabel = computed(() => selectedYear.value === null ? 'Sans date' : String(selectedYear.value))
 
@@ -71,12 +66,19 @@ watch(catchupNotice, (v) => {
     if (v) catchupNoticeTimer = setTimeout(() => { catchupNotice.value = null }, 4500)
 })
 
+// Les deux notices se rendent au même endroit : la nouvelle chasse l'ancienne.
+watch(sharedNotice, (v) => { if (v) catchupNotice.value = null })
+
 onMounted(async () => {
     window.addEventListener('movie-added', onMovieAdded)
     window.addEventListener('movie-exists', onMovieExists)
     window.addEventListener('scroll-to-today', onScrollToToday)
     window.addEventListener('search-movie', onSearch)
     await getMovies()
+
+    // En tâche de fond et sans `await`, comme `syncInTheaters` plus bas. ⚠️ Après `getMovies` : le
+    // compteur se calcule contre **ma** liste.
+    warmSharedLists().catch(e => console.error('Listes partagées illisibles', e))
     // Landing par défaut (année courante, timeline) → cadre sur le film du jour ; deep-link respecté.
     if (viewMode.value === 'timeline' && selectedYear.value === currentYear) onScrollToToday()
     else if (viewMode.value === 'stats' && selectedYear.value !== null) refreshLetterboxdRatings(selectedYear.value)
@@ -105,7 +107,9 @@ onBeforeUnmount(() => {
 <template>
     <div class="timeline-shell">
         <NavSideNav class="shell-rail -left" :years="yearList" :active-year="selectedYear" :view-mode="viewMode"
-                    @select-year="onSelectYear" @select-view="selectView" />
+                    :shared-slug="sharedSlug"
+                    @select-year="onSelectYear" @select-view="selectView"
+                    @select-shared-list="selectSharedList" />
 
         <!-- En-tête mobile : titre + pastille année (vues de la liste seulement) + bande d'onglets -->
         <div class="shell-mobilehead">
@@ -117,7 +121,8 @@ onBeforeUnmount(() => {
                     {{ selectedYearLabel }}<Svg name="chevron" class="chev" aria-hidden="true" />
                 </button>
             </div>
-            <NavViewTabs layout="row" :view-mode="viewMode" @select-view="selectView" />
+            <NavViewTabs layout="row" :view-mode="viewMode" :shared-slug="sharedSlug"
+                         @select-view="selectView" @select-shared-list="selectSharedList" />
         </div>
 
         <!-- `--rail-space` dépend seulement de la présence de films en salle (pas de la vue) → stable
@@ -126,9 +131,12 @@ onBeforeUnmount(() => {
             <slot />
         </div>
 
-        <!-- Rail droit en overlay (hors flux) → largeur de shell-main constante entre les vues. -->
+        <!-- Rail droit en overlay (hors flux) → largeur de shell-main constante entre les vues.
+             ⚠️ Affiché aussi sur une liste partagée, où il montre toujours **mes** films en salle
+             (comme la maquette) — le masquer ferait sauter la largeur du contenu. -->
         <Transition name="rail">
-            <CinemaNowPanel v-if="viewMode === 'timeline'" class="shell-rail -right" variant="rail"
+            <CinemaNowPanel v-if="viewMode === 'timeline' || viewMode === 'shared'"
+                            class="shell-rail -right" variant="rail"
                             :movies="cinemaNow" :event-movies="eventSoon" @select-movie="goToSeances" />
         </Transition>
 
@@ -141,6 +149,13 @@ onBeforeUnmount(() => {
             <div v-if="catchupNotice" class="catchup-notice" role="status">
                 <span class="msg">« {{ catchupNotice.title }} » ajouté à ta liste à rattraper de
                     <strong>{{ catchupNotice.yearLabel }}</strong></span>
+            </div>
+        </Transition>
+
+        <!-- Notice « ajouté à ta liste ». Même gabarit que ci-dessus, liseré vert plutôt que rose. -->
+        <Transition name="notice">
+            <div v-if="sharedNotice" class="catchup-notice -added" role="status">
+                <span class="msg">« {{ sharedNotice.title }} » ajouté à ta liste</span>
             </div>
         </Transition>
 
@@ -313,6 +328,8 @@ onBeforeUnmount(() => {
 
         > strong { color: $color-primary-light; font-weight: $bold; }
     }
+
+    &.-added { border-left-color: $color-green; }
 }
 
 .notice-enter-active,
