@@ -124,13 +124,17 @@ export function useCinemas() {
 
         // Sans session, l'écriture partirait pour être refusée par RLS. Autant ne pas bouger l'état
         // local : une étoile qui s'allume puis s'éteint toute seule est pire que rien.
-        if (!user.value) return;
+        // ⚠️ `userIdOf` et non `user.value.id` (cf. `app/utils/currentUser.js`).
+        // `cinema_favorites.user_id` est `not null` **sans défaut**, contrairement à
+        // `calendar.user_id` : l'insertion partait avec la clé absente et échouait.
+        const userId = userIdOf(user.value);
+        if (!userId) return;
 
         const next = !current.favorite;
         cinemas.value = { ...cinemas.value, [code]: { ...current, favorite: next } };
 
         const { error: dbError } = next
-            ? await client.from('cinema_favorites').insert({ user_id: user.value.id, code })
+            ? await client.from('cinema_favorites').insert({ user_id: userId, code })
             : await client.from('cinema_favorites').delete().eq('code', code);
 
         if (dbError) {
