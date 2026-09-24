@@ -271,6 +271,15 @@ const PROGRAMME_LABELS = {
     'BoostPos.XpEtLabels.LenfanceDeLart': 'L’enfance de l’art',
 };
 
+// ⚠️ Les deux seules exceptions à « un membre inconnu de `Showtime.Event.*` s'affiche » : ils
+// décrivent une **position d'affichage**, pas un événement — le relevé du 14/08/2026 les avait déjà
+// rangés dans le bruit sous `BoostPos` (« boost position »). Arbitrage sur données incomplètes et
+// réversible en une ligne, détaillé dans `_ressources/README-seances.md`.
+const IGNORED_EVENT_TAGS = new Set([
+    'Showtime.Event.Premier',
+    'Showtime.Event.Headline',
+]);
+
 // Signalé une fois par instance, pas une fois par séance : sur un blockbuster le même tag reviendrait
 // des dizaines de fois par requête.
 const unknownEventTags = new Set();
@@ -319,6 +328,9 @@ export const showtimeEventLabels = (showtime, tags) => {
             labels.add(known);
             continue;
         }
+
+        // Ni badge ni avertissement : il n'y a rien à ajouter à `EVENT_LABELS`.
+        if (IGNORED_EVENT_TAGS.has(tag)) continue;
 
         if (!unknownEventTags.has(tag)) {
             unknownEventTags.add(tag);

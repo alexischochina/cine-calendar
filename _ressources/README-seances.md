@@ -321,8 +321,23 @@ Ce qui existe est une table de correspondance, tenue dans `showtimeEventLabels`
 |---|---|
 | `isPreview: true` ou `Showtime.Event.Preview` | Avant-première |
 | `Showtime.Event.OnlySession` | Séance unique |
+| `Showtime.Event.Premier`, `Showtime.Event.Headline` | *(ignorés — voir ci-dessous)* |
 | `BoostPos.XpEtLabels.JeunePublic` | Jeune public |
 | `BoostPos.XpEtLabels.LenfanceDeLart` | L'enfance de l'art |
+
+⚠️ **Deux exceptions à la règle « un membre inconnu de `Showtime.Event.*` s'affiche ».**
+`Premier` et `Headline` ne qualifient pas une séance, ils décrivent une **position d'affichage** —
+c'est le sens même de `BoostPos` (« boost position »), l'autre namespace où le relevé du 14/08/2026
+les avait déjà croisés et rangés dans le bruit (« Premier » ×14, « Headline » y figurent nommément).
+Allociné les sert maintenant aussi sous `Showtime.Event.*`, où le repli les traduisait en
+« Premier » et « Headline » — deux mots anglais posés sur des séances ordinaires.
+Ils sont donc ignorés (`IGNORED_EVENT_TAGS`), sans badge et sans avertissement.
+
+⚠️ C'est un **arbitrage sur données incomplètes** : ces tags sont trop rares (6 séances sur 2 293)
+pour être observés à la demande, et une sortie sur Allociné pour les débusquer coûte un 429. Il suit
+la règle que ce fichier a apprise à ses dépens — ne pas deviner un libellé d'interface — au prix
+assumé de taire un badge légitime si l'un des deux désignait vraiment une première. Les basculer vers
+`EVENT_LABELS` est une ligne, le jour où une séance prouve le contraire.
 
 Un membre inconnu de **`Showtime.Event.*`** est affiché quand même, sous une forme dégradée
 (`Showtime.Event.CineClub` → « Cine club ») et signalé en console : taire un événement est pire que

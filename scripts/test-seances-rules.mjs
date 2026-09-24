@@ -316,6 +316,15 @@ console.log('\n\x1b[1mshowtimeEventLabels — ce qui est un événement, et surt
     // que de taire.
     t('membre inconnu de `Showtime.Event.*` → libellé lisible plutôt que silence',
         labels(['Showtime.Event.CineClub']), ['Cine club']);
+
+    // ⚠️ Les deux exceptions : une **position d'affichage**, pas un événement. Le repli les traduisait
+    // en « Premier » et « Headline », deux mots anglais sur des séances ordinaires.
+    t('`Showtime.Event.Premier` → ignoré (position, pas événement)',
+        labels(['Showtime.Event.Premier']), []);
+    t('`Showtime.Event.Headline` → ignoré (position, pas événement)',
+        labels(['Showtime.Event.Headline']), []);
+    t('   … sans masquer un vrai événement sur la même séance',
+        labels(['Showtime.Event.Headline', 'Showtime.Event.OnlySession']), ['Séance unique']);
     t('   … y compris sur un sigle', labels(['Showtime.Event.VOSTFR']), ['Vostfr']);
 
     // ⚠️⚠️ Le bug de production : `BoostPos.XpEtLabels.*` mélange programmation et **noms de salles**.
