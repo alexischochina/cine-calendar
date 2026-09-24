@@ -104,6 +104,10 @@ const directors = computed(() => directorLinks(props.director, props.letterboxdD
 // sur le DOM, qu'un patch du `:class` ci-dessous effacerait (cf. `useMovieHighlight`).
 const { highlightedMovieId, clearMovieFlash } = useMovieHighlight();
 const isFlashing = computed(() => highlightedMovieId.value === props.movieId);
+// ⚠️ Ancre de scroll, et **seulement sur ma liste** : `useMovieScroll` la cible par un
+// `document.querySelector`, donc en global, et deux listes coexistent le temps d'un crossfade.
+const anchorClass = computed(() => props.shared ? null : `-id-${props.movieId}`);
+
 // Libellés des pastilles inertes : sans texte visible, l'information passe par `aria-label`.
 const STATE_LABELS = { unseen: 'envie de voir', seen: 'vu', downloadAvailable: 'dispo en téléchargement', inTheaters: 'en salle' };
 const mediaLabel = computed(() => MEDIA_LABELS[selectedMedia.value] || 'Streaming');
@@ -122,7 +126,7 @@ const subFallback = computed(() => {
     <!-- `.self` : `animationend` remonte, et `MovieActionsBtn` anime son popover à l'intérieur de la
          ligne — sans le modificateur, ouvrir le menu ⋯ couperait le clignotement. -->
     <div class="movie-list-item"
-         :class="[`-${selectedMedia}`, `-state-${selectedState}`, `-id-${props.movieId}`, { '-flash': isFlashing }]"
+         :class="[`-${selectedMedia}`, `-state-${selectedState}`, anchorClass, { '-flash': isFlashing }]"
          @animationend.self="clearMovieFlash(props.movieId)">
         <div class="day">{{ props.releaseDay }}</div>
         <NuxtImg v-if="props.posterPath" :src="`https://image.tmdb.org/t/p/w342${props.posterPath}`"

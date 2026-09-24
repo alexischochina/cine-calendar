@@ -1,7 +1,8 @@
 <script setup>
 // Corps scrollable du calendrier : une année à la fois, groupée par mois → jour, ou la
 // section « Sans date ». Chaque film est un MovieListItem. Le conteneur garde la classe
-// `.timeline` : useMovieScroll cible `.timeline` / `.-id-<movieId>` en global (querySelector).
+// `.timeline` : useMovieScroll cible `.timeline` / `.-id-<movieId>` en global (querySelector), d'où
+// l'ancre réservée à ma liste (cf. `MovieListItem`).
 //
 // Sert **deux** listes : la mienne, et celle d'un autre compte — `shared` le dit une fois ici et le
 // propage à chaque ligne.
