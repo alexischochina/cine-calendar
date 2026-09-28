@@ -35,3 +35,13 @@ export function effectiveReleaseDate(row) {
         ? toLocalIsoDay(row.manual_release_date)
         : (row?.release_date || null)
 }
+
+// Une valeur d'`<input type="date">` est-elle une date complète, donc enregistrable ?
+//
+// ⚠️ Chrome émet `change` **à chaque chiffre** du segment année, chaque fois avec une valeur
+// complète et valide : taper `1988` produit d'abord `0001-…`, `0019-…`, `0198-…`, et un cinquième
+// chiffre donne `19888-…`, que le type `date` de Postgres accepte. D'où les deux bornes.
+export function isCompleteDateInput(value) {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+    return Number(value.slice(0, 4)) >= 1000
+}

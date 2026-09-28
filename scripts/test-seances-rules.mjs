@@ -26,6 +26,7 @@
 //  15. `sharedLists`        — slug, avatar et « ce qu'il a que je n'ai pas » (app/utils/sharedLists.js)
 //  16. `moviesGrouping`     — le regroupement année → mois → jour des deux timelines (app/utils/moviesGrouping.js)
 //  17. `userIdOf`           — l'identifiant du compte connecté, `sub` et non `id` (app/utils/currentUser.js)
+//  18. `isCompleteDateInput` — quelle saisie de date est enregistrable (app/utils/movieDate.js)
 //
 // Sort en code 1 au premier échec, pour être branchable sur un hook ou une CI.
 
@@ -67,6 +68,7 @@ import { parseLetterboxdFilm, isLetterboxdDirectorUrl } from '../shared/utils/le
 import { bestSearchMatch, closestToToday } from '../app/utils/movieSearch.js';
 import { matchesFilters, blockingFilters } from '../app/utils/movieFilters.js';
 import { isFullyVisible } from '../app/utils/viewport.js';
+import { isCompleteDateInput } from '../app/utils/movieDate.js';
 
 // --- Auto-imports simulés ------------------------------------------------------------------------
 //
@@ -1538,6 +1540,30 @@ console.log('\n\x1b[1muserIdOf — trois lignes, et c\'est elle qui a cassé la 
     t('sans session', userIdOf(null), null);
     t('undefined', userIdOf(undefined), null);
     t('objet vide', userIdOf({}), null);
+}
+
+// --- 18. Saisie de date enregistrable -----------------------------------------------------------
+//
+// Valeurs relevées au clavier sur un `<input type="date">` en locale FR : toutes complètes, toutes
+// valides — c'est bien là le piège.
+console.log('\n\x1b[1misCompleteDateInput — n\'enregistrer qu\'une année finie\x1b[0m');
+{
+    t('date complète → enregistrable', isCompleteDateInput('1988-07-11'), true);
+    t('année à 4 chiffres récente → enregistrable', isCompleteDateInput('2026-03-01'), true);
+
+    t('1er chiffre de l\'année (an 1) → refusé', isCompleteDateInput('0001-07-11'), false);
+    t('2e chiffre (an 19) → refusé', isCompleteDateInput('0019-07-11'), false);
+    t('3e chiffre (an 198) → refusé', isCompleteDateInput('0198-07-11'), false);
+
+    t('5e chiffre (an 19888) → refusé', isCompleteDateInput('19888-07-11'), false);
+
+    t('borne basse incluse', isCompleteDateInput('1000-01-01'), true);
+    t('juste sous la borne', isCompleteDateInput('0999-12-31'), false);
+
+    t('champ vide → refusé', isCompleteDateInput(''), false);
+    t('null → refusé', isCompleteDateInput(null), false);
+    t('undefined → refusé', isCompleteDateInput(undefined), false);
+    t('format libre → refusé', isCompleteDateInput('11/07/1988'), false);
 }
 
 console.log(`\n${pass} passé(s), ${fail} échoué(s)`);
